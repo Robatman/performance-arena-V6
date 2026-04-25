@@ -44,17 +44,10 @@ export default function RiddleTask({ gameId, isAdmin, defaultTab = 'riddle' }: P
 
   return (
     <div style={{paddingBottom:100}}>
-      <div style={{display:"flex", gap:8, marginBottom:16}}>
-        <button onClick={() => setTab('riddle')} style={{flex:1, padding:"10px 0", borderRadius:10, border:`2px solid ${tab==='riddle'?C.purple:C.border}`, background:tab==='riddle'?`${C.purple}12`:C.card, color:tab==='riddle'?C.purple:C.muted, fontWeight:800, fontSize:14, cursor:"pointer", fontFamily:"inherit"}}>
-          🧩 Riddle
-        </button>
-        <button onClick={() => setTab('task')} style={{flex:1, padding:"10px 0", borderRadius:10, border:`2px solid ${tab==='task'?C.blue:C.border}`, background:tab==='task'?`${C.blue}12`:C.card, color:tab==='task'?C.blue:C.muted, fontWeight:800, fontSize:14, cursor:"pointer", fontFamily:"inherit"}}>
-          📋 Task
-        </button>
-      </div>
-      {tab === 'riddle' && <RiddleSection gameId={gameId} isAdmin={isAdmin} />}
-      {tab === 'task' && <TaskSection gameId={gameId} isAdmin={isAdmin} />}
+      {defaultTab === 'riddle' && <RiddleSection gameId={gameId} isAdmin={isAdmin} />}
+      {defaultTab === 'task' && <TaskSection gameId={gameId} isAdmin={isAdmin} />}
     </div>
+  )
   )
 }
 
