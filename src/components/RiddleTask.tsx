@@ -36,18 +36,24 @@ const inp = {
 interface Props {
   gameId: string
   isAdmin: boolean
-  defaultTab?: 'riddle' | 'task'
 }
 
-export default function RiddleTask({ gameId, isAdmin, defaultTab = 'riddle' }: Props) {
-  const [tab, setTab] = useState<'riddle' | 'task'>(defaultTab)
+export default function RiddleTask({ gameId, isAdmin }: Props) {
+  const [tab, setTab] = useState<'riddle' | 'task'>('riddle')
 
   return (
     <div style={{paddingBottom:100}}>
-      {defaultTab === 'riddle' && <RiddleSection gameId={gameId} isAdmin={isAdmin} />}
-      {defaultTab === 'task' && <TaskSection gameId={gameId} isAdmin={isAdmin} />}
+      <div style={{display:"flex", gap:8, marginBottom:16}}>
+        <button onClick={() => setTab('riddle')} style={{flex:1, padding:"10px 0", borderRadius:10, border:`2px solid ${tab==='riddle'?C.purple:C.border}`, background:tab==='riddle'?`${C.purple}12`:C.card, color:tab==='riddle'?C.purple:C.muted, fontWeight:800, fontSize:14, cursor:"pointer", fontFamily:"inherit"}}>
+          🧩 Riddle
+        </button>
+        <button onClick={() => setTab('task')} style={{flex:1, padding:"10px 0", borderRadius:10, border:`2px solid ${tab==='task'?C.blue:C.border}`, background:tab==='task'?`${C.blue}12`:C.card, color:tab==='task'?C.blue:C.muted, fontWeight:800, fontSize:14, cursor:"pointer", fontFamily:"inherit"}}>
+          📋 Task
+        </button>
+      </div>
+      {tab === 'riddle' && <RiddleSection gameId={gameId} isAdmin={isAdmin} />}
+      {tab === 'task' && <TaskSection gameId={gameId} isAdmin={isAdmin} />}
     </div>
-  )
   )
 }
 
@@ -182,21 +188,8 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
 
           {/* Pending approvals */}
           {adminTab === 'pending' && (
-  <div>
-    {activeRiddle && (
-      <div style={{background:`${C.purple}12`, border:`1.5px solid ${C.purple}33`, borderRadius:12, padding:14, marginBottom:14}}>
-        <div style={{color:C.muted, fontSize:11, marginBottom:4}}>{activeRiddle.week}</div>
-        <div style={{color:C.purple, fontWeight:800, fontSize:14, marginBottom:8}}>🧩 {activeRiddle.question}</div>
-        <div style={{display:"flex", flexDirection:"column", gap:4}}>
-          {(['a','b','c','d'] as const).map(opt => activeRiddle[`option_${opt}`] && (
-            <div key={opt} style={{color:opt===activeRiddle.correct_answer?.toLowerCase()?C.green:C.text, fontSize:13}}>
-              <strong>{opt.toUpperCase()}.</strong> {activeRiddle[`option_${opt}`]}{opt===activeRiddle.correct_answer?.toLowerCase()?' ✅':''}
-            </div>
-          ))}
-        </div>
-      </div>
-    )}
-    {pendingAnswers.length === 0 ? (
+            <div>
+              {pendingAnswers.length === 0 ? (
                 <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:32, textAlign:"center"}}>
                   <div style={{fontSize:40, marginBottom:8}}>✅</div>
                   <div style={{color:C.muted}}>No hay respuestas pendientes</div>
@@ -356,7 +349,7 @@ function TaskSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) 
   const [tasks, setTasks] = useState<any[]>([])
   const [activeTask, setActiveTask] = useState<any>(null)
   const [mySubmission, setMySubmission] = useState<any>(null)
-  const [completionPct, setCompletionPct] = useState(100)
+  const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(true)
   const [pendingSubs, setPendingSubs] = useState<any[]>([])
   const [adminTab, setAdminTab] = useState<'pending'|'manage'|'create'>('pending')
@@ -419,13 +412,13 @@ function TaskSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) 
   }
 
   async function submitTask() {
-    if (!activeTask) return
+    if (!activeTask || !description.trim()) return
     try {
       await sbFetch("agent_task_submissions", { method:"POST", body: JSON.stringify({
         game_id: gameId, task_id: activeTask.id,
-        completion_pct: completionPct, approved: false, points_awarded: 0
+        description: description.trim(), approved: false, points_awarded: 0
       })})
-      setMySubmission({ completion_pct: completionPct, approved: false })
+      setMySubmission({ description: description.trim(), approved: false })
       showToast('✅ Task entregada — pendiente de aprobación')
     } catch(e) { showToast('Error al entregar') }
   }
@@ -484,11 +477,8 @@ function TaskSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) 
                 <div key={sub.id} style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:16, marginBottom:10}}>
                   <div style={{marginBottom:10}}>
                     <div style={{color:C.text, fontWeight:800, fontSize:15}}>🎮 {sub.game_id}</div>
-                    <div style={{color:C.muted, fontSize:12, marginTop:2}}>Completó al <strong style={{color:C.blue}}>{sub.completion_pct}%</strong></div>
                     <div style={{color:C.muted, fontSize:11, marginTop:2}}>{new Date(sub.submitted_at).toLocaleString()}</div>
-                    <div style={{color:C.blue, fontSize:12, marginTop:2}}>
-                      Puntos: {sub.completion_pct===100?'10pts':sub.completion_pct===75?'5pts':'1pt'}
-                    </div>
+                    {sub.description && <div style={{color:C.text, fontSize:13, marginTop:8, padding:"10px 12px", background:C.bg, borderRadius:9, lineHeight:1.6}}>{sub.description}</div>}
                   </div>
                   <div style={{display:"flex", gap:8}}>
                     <button onClick={() => approveSubmission(sub, true)} style={{flex:1, padding:"9px 0", borderRadius:9, border:"none", background:C.green, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>✅ Aprobar</button>
@@ -565,32 +555,35 @@ function TaskSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) 
                   {mySubmission.approved ? (
                     <div>
                       <div style={{fontSize:48, marginBottom:8}}>✅</div>
-                      <div style={{color:C.green, fontWeight:800, fontSize:18}}>¡Aprobado! +{mySubmission.points_awarded} pts</div>
+                      <div style={{color:C.green, fontWeight:800, fontSize:18}}>¡Task aprobada!</div>
+                      <div style={{color:C.muted, fontSize:13, marginTop:8}}>Los puntos se calcularán al cierre del mes</div>
                     </div>
                   ) : (
                     <div>
                       <div style={{fontSize:48, marginBottom:8}}>📬</div>
-                      <div style={{color:C.yellow, fontWeight:800, fontSize:18}}>Entregado al {mySubmission.completion_pct}%</div>
+                      <div style={{color:C.yellow, fontWeight:800, fontSize:18}}>Task entregada</div>
                       <div style={{color:C.muted, fontSize:13, marginTop:8}}>Pendiente de aprobación</div>
                     </div>
                   )}
                 </div>
               ) : (
                 <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:16}}>
-                  <div style={{color:C.muted, fontSize:12, marginBottom:12}}>¿Qué porcentaje completaste?</div>
-                  {[
-                    {pct:100, label:'🏆 100% — Completo', pts:'+10pts'},
-                    {pct:75, label:'✅ 75% — Casi todo', pts:'+5pts'},
-                    {pct:50, label:'⚡ 50% — La mitad', pts:'+1pt'},
-                  ].map(opt => (
-                    <div key={opt.pct} onClick={() => setCompletionPct(opt.pct)} style={{padding:"12px 14px", borderRadius:11, border:`2px solid ${completionPct===opt.pct?C.blue:C.border}`, background:completionPct===opt.pct?`${C.blue}0e`:C.bg, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
-                      <span style={{color:C.text, fontSize:14}}>{opt.label}</span>
-                      <span style={{color:C.blue, fontWeight:800, fontSize:13}}>{opt.pts}</span>
-                    </div>
-                  ))}
-                  <button onClick={submitTask} style={{width:"100%", padding:12, borderRadius:10, border:"none", background:C.blue, color:"#fff", fontWeight:800, fontSize:14, cursor:"pointer", fontFamily:"inherit", marginTop:8}}>
+                  <div style={{color:C.muted, fontSize:11, letterSpacing:1, marginBottom:10}}>DESCRIBE LO QUE HICISTE</div>
+                  <textarea
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    rows={5}
+                    placeholder="Explica qué hiciste, cómo lo hiciste y qué resultado obtuviste..."
+                    style={{width:"100%", border:`1.5px solid ${C.border}`, borderRadius:9, padding:"10px 13px", fontSize:14, outline:"none", fontFamily:"inherit", boxSizing:"border-box" as const, background:C.bg, color:C.text, resize:"vertical", marginBottom:12}}
+                  />
+                  <div style={{background:`${C.blue}0e`, border:`1.5px solid ${C.blue}22`, borderRadius:10, padding:"10px 14px", marginBottom:14, display:"flex", alignItems:"center", gap:10}}>
+                    <div style={{fontSize:22}}>📱</div>
+                    <div style={{color:C.text, fontSize:13, lineHeight:1.5}}>Envía tu evidencia (foto o PDF) al WhatsApp que te indique tu coach</div>
+                  </div>
+                  <button onClick={submitTask} disabled={description.trim().length < 20} style={{width:"100%", padding:12, borderRadius:10, border:"none", background:description.trim().length>=20?C.blue:"#c5cae9", color:"#fff", fontWeight:800, fontSize:14, cursor:description.trim().length>=20?"pointer":"not-allowed", fontFamily:"inherit"}}>
                     Entregar Task
                   </button>
+                  {description.trim().length < 20 && description.length > 0 && <div style={{color:C.muted, fontSize:11, textAlign:"center", marginTop:6}}>Escribe al menos 20 caracteres</div>}
                 </div>
               )}
             </div>
