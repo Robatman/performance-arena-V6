@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import ExcelUpload from "./components/ExcelUpload";
-import OperationsDashboard from "./components/OperationsDashboard";
 import ReferralsPanel from "./components/ReferralsPanel";
+import OperationsDashboard from "./components/OperationsDashboard";
 // @ts-nocheck
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
@@ -166,7 +166,6 @@ function UnifiedLogin({onLoginAgent,onLoginStaff}){
   );
 }
 
-// ── AGENTS SCREENS ──
 function Dashboard({user,allUsers,notifs}){const sc=gs(user);const lv=user.level;const maxP=lv===4?9999:lv===3?80:lv===2?64:48;const toNext=lv<4?Math.max(0,maxP-sc.total):0;return(<div style={{paddingBottom:100}}><Card style={{marginBottom:12,background:`linear-gradient(135deg,${C.blue},${C.red})`,border:"none",color:"#fff"}}><div style={{display:"flex",alignItems:"center",gap:14,marginBottom:14}}><Av av={user.avatar} sz={68}/><div style={{flex:1}}><div style={{fontSize:18,fontWeight:900}}>{user.name}</div><div style={{marginTop:4}}><Bdg l={lv}/></div><div style={{color:"rgba(255,255,255,0.7)",fontSize:12,marginTop:4}}>{user.project}</div></div></div><div style={{marginBottom:8}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:"rgba(255,255,255,0.7)",fontSize:12}}>Puntos del mes</span><span style={{color:"#fde68a",fontWeight:800,fontSize:14}}>{sc.total} pts</span></div><div style={{display:"flex",justifyContent:"space-between",marginBottom:5,alignItems:"center"}}><span style={{color:"rgba(255,255,255,0.55)",fontSize:11}}>Meta nivel {lv+1>4?lv:lv+1}</span><span style={{color:C.redLt,fontSize:12,fontWeight:700}}>{toNext>0?`Faltan ${toNext} pts`:"MAX LEVEL"}</span></div><Bar val={sc.total} max={maxP} color={C.red} h={10}/></div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{color:"rgba(255,255,255,0.45)",fontSize:10,marginBottom:3}}>PUZZLE</div><Pzl pieces={user.puzzlePieces}/></div><div style={{textAlign:"right"}}><div style={{color:"rgba(255,255,255,0.45)",fontSize:10}}>MESES PERFECTOS</div><div style={{color:"#fde68a",fontWeight:800,fontSize:18}}>{user.perfectMonths} ★</div></div></div></Card><Card style={{marginBottom:12}}><div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:10}}>SEMANAS DEL MES</div>{(user.weeklyPerf||[]).length===0?(<div style={{textAlign:"center",color:C.muted,fontSize:13,padding:20}}>No hay datos de semanas aun.</div>):(<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>{(user.weeklyPerf||[]).map((w,i)=>(<div key={i} style={{background:w.tot>=12?"#dcfce7":w.tot>=8?"#fef9c3":"#fee2e2",border:`1px solid ${w.tot>=12?"#86efac":w.tot>=8?"#fde68a":"#fca5a5"}`,borderRadius:10,padding:"9px 5px",textAlign:"center"}}><div style={{color:C.muted,fontSize:10}}>S{w.week||i+1}</div><div style={{color:C.text,fontWeight:900,fontSize:19}}>{w.tot}</div><div style={{color:C.muted,fontSize:9}}>/15</div></div>))}</div>)}</Card><Card style={{marginBottom:12}}><div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:12}}>METRICAS SOCIALES</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><div style={{background:`${C.blue}0c`,border:`1px solid ${C.blue}2a`,borderRadius:12,padding:12}}><div style={{fontSize:24,marginBottom:3}}>👏</div><div style={{color:C.text,fontWeight:700}}>Kudos</div><div style={{color:C.muted,fontSize:12}}>{user.kudos||0} reg - {user.goldKudos||0} gold</div><div style={{color:C.blue,fontWeight:700,fontSize:17,marginTop:4}}>{kp(user)} pts</div></div><div style={{background:`${C.red}0c`,border:`1px solid ${C.red}2a`,borderRadius:12,padding:12}}><div style={{fontSize:24,marginBottom:3}}>🤝</div><div style={{color:C.text,fontWeight:700}}>Referidos</div><div style={{color:C.muted,fontSize:12}}>{(user.referrals||[]).length} total</div><div style={{color:C.red,fontWeight:700,fontSize:17,marginTop:4}}>{rp(user)} pts</div></div></div></Card><Card><div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:10}}>HISTORIAL MENSUAL</div>{(user.monthsHistory||[]).length===0?(<div style={{textAlign:"center",color:C.muted,fontSize:13,padding:10}}>Sin historial aun.</div>):((user.monthsHistory||[]).map((m,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:10,marginBottom:9}}><div style={{width:34,color:C.muted,fontSize:12,flexShrink:0}}>{m.month}</div><div style={{flex:1}}><Bar val={m.score} max={80} color={lc(m.level)} h={7}/></div><Bdg l={m.level}/>{m.piece&&<span>🧩</span>}</div>)))}</Card></div>);}
 
 function Leaderboard({user,allUsers,shop}){const ranked=[...allUsers].filter(u=>u.active).sort((a,b)=>gs(b).total-gs(a).total);const medals=["🥇","🥈","🥉"];return(<div style={{paddingBottom:100}}><Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.red},${C.blue})`,border:"none",textAlign:"center"}}><div style={{fontSize:34}}>🏆</div><div style={{color:"#fff",fontWeight:800,fontSize:20}}>LEADERBOARD</div><div style={{color:"rgba(255,255,255,0.55)",fontSize:12}}>Mes Actual</div></Card>{ranked.map((u,i)=>{const sc=gs(u);const isMe=u.id===user.id;return(<div key={u.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",marginBottom:8,borderRadius:14,background:isMe?`${C.blue}10`:C.card,border:`1.5px solid ${isMe?C.blue:C.border}`,boxShadow:isMe?`0 0 14px ${C.blue}2a`:"none"}}><div style={{width:30,textAlign:"center",fontWeight:900,color:i<3?"#f59e0b":C.muted,fontSize:i<3?20:14}}>{i<3?medals[i]:`#${i+1}`}</div><Av av={u.avatar} sz={42} shop={shop}/><div style={{flex:1}}><div style={{color:C.text,fontWeight:700,fontSize:14}}>{u.name}{isMe&&<span style={{color:C.blue,fontSize:11}}> - TU</span>}</div><Bdg l={u.level}/></div><div style={{textAlign:"right"}}><div style={{color:lc(u.level),fontWeight:900,fontSize:19}}>{sc.total}</div><div style={{color:C.muted,fontSize:11}}>pts</div></div></div>);})}</div>);}
@@ -179,7 +178,7 @@ function Rewards({user,prizes,onRedeem}){const sc=gs(user);const lv=user.level;c
 
 function Notifs({user,notifs,onMarkRead,onMarkAll}){const mine=(notifs||[]).filter(n=>n.recipient_id===user.id||n.toId===user.id).sort((a,b)=>new Date(b.created_at||b.ts)-new Date(a.created_at||a.ts));const unread=mine.filter(n=>!n.is_read&&!n.read).length;return(<div style={{paddingBottom:100}}><Card style={{marginBottom:14,background:`${C.blue}0e`,border:`1.5px solid ${C.blue}33`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:28}}>🔔</div><div style={{color:C.blue,fontWeight:800,fontSize:17}}>Notificaciones</div><div style={{color:C.muted,fontSize:12}}>{unread} sin leer de {mine.length}</div></div>{unread>0&&<Btn onClick={onMarkAll} color={C.blue} sm>Todas leidas</Btn>}</div></Card>{mine.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>📭</div><div style={{color:C.muted}}>No tienes notificaciones aun.</div></Card>}{mine.map(n=>{const isRead=n.is_read||n.read;return(<Card key={n.id} onClick={()=>onMarkRead(n.id)} style={{marginBottom:10,border:`1.5px solid ${isRead?C.border:C.blue}`,background:isRead?C.card:`${C.blue}06`,cursor:"pointer"}}><div style={{display:"flex",gap:10,alignItems:"flex-start"}}><div style={{fontSize:28,flexShrink:0}}>{n.emoji||"📢"}</div><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}><div style={{color:C.text,fontWeight:700,fontSize:14}}>{n.title}</div>{!isRead&&<div style={{width:8,height:8,borderRadius:"50%",background:C.blue,flexShrink:0,marginTop:4}}/>}</div><div style={{color:C.text,fontSize:13,lineHeight:1.55,marginBottom:4}}>{n.message||n.body}</div></div></div></Card>);})}</div>);}
 
-function Info(){const secs=[{icon:"📊",color:C.blue,title:"Como se calculan tus puntos",items:["QA Score: superas meta=5pts, igual=2pts, debajo=0pts","AHT: mejor que meta=5pts, igual=2pts, peor=0pts","Attendance: perfecta=5pts, 1 tardanza=2pts, falta o 2 tardanzas=0pts","Riddle: completas todos del mes=10pts, fallas uno=0pts","Task: 100%=10pts, 75%=5pts, 50%=1pt, menos=0pts","Kudos: cada kudo=1pt, cada gold kudo=5pts","Referidos: referido enviado=1pt, si es aprobado=5pts total"]},{icon:"🏆",color:C.purple,title:"Como subes de nivel",items:["Level 1 ROOKIE: menos del 80% del maximo posible","Level 2 RISING: 80% o mas","Level 3 ELITE: 90% o mas","Level 4 LEGEND: 100% del maximo posible"]},{icon:"🎁",color:C.red,title:"Como obtener premios",items:["Cada nivel desbloquea premios diferentes","Level 4: premios exclusivos"]},{icon:"🧩",color:C.green,title:"El rompecabezas",items:["Mes perfecto = maxima performance + Riddle 100% + Task 100%","Cada mes perfecto = 1 pieza del rompecabezas","Al juntar 3 piezas desbloqueas un premio sorpresa"]},{icon:"👏",color:C.yellow,title:"Kudos y Referidos",items:["Kudo regular = 1 punto, Gold Kudo = 5 puntos","Referido enviado = 1 pt inmediato","Si tu referido es contratado = +4 pts adicionales (total 5 pts)"]}];return(<div style={{paddingBottom:100}}><Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.blue},${C.purple})`,border:"none",textAlign:"center"}}><div style={{fontSize:36}}>📖</div><div style={{color:"#fff",fontWeight:800,fontSize:20}}>COMO FUNCIONA</div><div style={{color:"rgba(255,255,255,0.6)",fontSize:12}}>Guia completa del sistema</div></Card>{secs.map(s=>(<Card key={s.title} style={{marginBottom:12,borderLeft:`4px solid ${s.color}`}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><div style={{fontSize:26}}>{s.icon}</div><div style={{color:s.color,fontWeight:800,fontSize:15}}>{s.title}</div></div>{s.items.map((item,i)=>(<div key={i} style={{display:"flex",gap:8,marginBottom:7,alignItems:"flex-start"}}><div style={{width:20,height:20,borderRadius:"50%",background:`${s.color}18`,border:`1px solid ${s.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:s.color,flexShrink:0,marginTop:1}}>{i+1}</div><div style={{color:C.text,fontSize:13,lineHeight:1.55}}>{item}</div></div>))}</Card>))}</div>);}
+function Info(){const secs=[{icon:"📊",color:C.blue,title:"Como se calculan tus puntos",items:["QA Score: superas meta=5pts, igual=2pts, debajo=0pts","AHT: mejor que meta=5pts, igual=2pts, peor=0pts","Attendance: perfecta=5pts, 1 tardanza=2pts, falta o 2 tardanzas=0pts","Riddle: completas todos del mes=10pts, fallas uno=0pts","Task: 100%=10pts, 75%=5pts, 50%=1pt, menos=0pts","Kudos: cada kudo=1pt, cada gold kudo=5pts","Referidos: enviado=1pt, si es aprobado=5pts total"]},{icon:"🏆",color:C.purple,title:"Como subes de nivel",items:["Level 1 ROOKIE: menos del 80% del maximo posible","Level 2 RISING: 80% o mas","Level 3 ELITE: 90% o mas","Level 4 LEGEND: 100% del maximo posible"]},{icon:"🎁",color:C.red,title:"Como obtener premios",items:["Cada nivel desbloquea premios diferentes","Level 4: premios exclusivos"]},{icon:"🧩",color:C.green,title:"El rompecabezas",items:["Mes perfecto = maxima performance + Riddle 100% + Task 100%","Cada mes perfecto = 1 pieza del rompecabezas","Al juntar 3 piezas desbloqueas un premio sorpresa"]},{icon:"👏",color:C.yellow,title:"Kudos y Referidos",items:["Kudo regular = 1 punto, Gold Kudo = 5 puntos","Referido enviado = 1 pt inmediato","Si tu referido es contratado = +4 pts adicionales (total 5 pts)"]}];return(<div style={{paddingBottom:100}}><Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.blue},${C.purple})`,border:"none",textAlign:"center"}}><div style={{fontSize:36}}>📖</div><div style={{color:"#fff",fontWeight:800,fontSize:20}}>COMO FUNCIONA</div><div style={{color:"rgba(255,255,255,0.6)",fontSize:12}}>Guia completa del sistema</div></Card>{secs.map(s=>(<Card key={s.title} style={{marginBottom:12,borderLeft:`4px solid ${s.color}`}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><div style={{fontSize:26}}>{s.icon}</div><div style={{color:s.color,fontWeight:800,fontSize:15}}>{s.title}</div></div>{s.items.map((item,i)=>(<div key={i} style={{display:"flex",gap:8,marginBottom:7,alignItems:"flex-start"}}><div style={{width:20,height:20,borderRadius:"50%",background:`${s.color}18`,border:`1px solid ${s.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:s.color,flexShrink:0,marginTop:1}}>{i+1}</div><div style={{color:C.text,fontSize:13,lineHeight:1.55}}>{item}</div></div>))}</Card>))}</div>);}
 
 function Profile({user,onUpdate,toast,shop}){const [av,setAv]=useState(user.avatar||{base:"b1",hair:null,accessory:null,outfit:null,background:null});const [tab,setTab]=useState("edit");const [saving,setSaving]=useState(false);const sc=gs(user);const types=["hair","accessory","outfit","background"];const tl={hair:"Cabello",accessory:"Accesorios",outfit:"Ropa",background:"Fondo"};const isOwned=id=>(user.ownedItems||[]).includes(id);const equipped=item=>av[item.type]===item.id;const equip=item=>{if(!isOwned(item.id)){toast("Compra este item primero");return;}setAv(p=>({...p,[item.type]:p[item.type]===item.id?null:item.id}));};const saveAv=async()=>{setSaving(true);try{await db.updateUser(user.id,{avatar_accessories:av});onUpdate({...user,avatar:av});toast("Avatar guardado!");}catch(e){toast("Error al guardar avatar");}setSaving(false);};const buy=async(item)=>{if(sc.total<item.pts){toast("No tienes suficientes puntos");return;}const newOwned=[...(user.ownedItems||[]),item.id];try{await db.updateUser(user.id,{owned_items:newOwned});onUpdate({...user,ownedItems:newOwned});toast(`${item.label} comprado!`);}catch(e){toast("Error al comprar item");}};const myKudos=(user.kudosLog||[]).sort((a,b)=>new Date(b.created_at||b.ts)-new Date(a.created_at||a.ts));return(<div style={{paddingBottom:100}}><Card style={{marginBottom:14,textAlign:"center"}}><div style={{display:"flex",justifyContent:"center",marginBottom:10}}><Av av={av} sz={100} shop={shop}/></div><div style={{color:C.text,fontWeight:800,fontSize:18}}>{user.name}</div><div style={{marginTop:4}}><Bdg l={user.level}/></div><div style={{color:C.muted,fontSize:13,marginTop:6}}>Puntos: <strong style={{color:C.blue}}>{sc.total}</strong></div><div style={{display:"flex",justifyContent:"center",gap:16,marginTop:8}}><div style={{textAlign:"center"}}><div style={{color:C.blue,fontWeight:800,fontSize:18}}>{user.kudos||0}</div><div style={{color:C.muted,fontSize:10}}>KUDOS</div></div><div style={{textAlign:"center"}}><div style={{color:"#f59e0b",fontWeight:800,fontSize:18}}>{user.goldKudos||0}</div><div style={{color:C.muted,fontSize:10}}>GOLD</div></div><div style={{textAlign:"center"}}><div style={{color:C.red,fontWeight:800,fontSize:18}}>{(user.referrals||[]).length}</div><div style={{color:C.muted,fontSize:10}}>REFS</div></div></div></Card>{myKudos.length>0&&(<Card style={{marginBottom:14}}><div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:12}}>MIS KUDOS RECIBIDOS</div>{myKudos.slice(0,6).map((k,i)=>(<div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:10,paddingBottom:10,borderBottom:i<Math.min(myKudos.length,6)-1?`1px solid ${C.border}`:"none"}}><div style={{fontSize:24,flexShrink:0}}>{k.gold||k.points_given>=5?"🌟":"👏"}</div><div style={{flex:1}}><div style={{color:C.text,fontWeight:700,fontSize:13}}>{k.gold||k.points_given>=5?"Gold Kudo":"Kudo"}</div><div style={{color:C.muted,fontSize:12,marginTop:2,fontStyle:"italic"}}>"{k.reason}"</div></div></div>))}</Card>)}<div style={{display:"flex",gap:8,marginBottom:14,overflowX:"auto",paddingBottom:2}}>{["edit","base","shop"].map(t=><button key={t} onClick={()=>setTab(t)} style={{padding:"8px 15px",borderRadius:9,border:`1.5px solid ${tab===t?C.blue:C.border}`,background:tab===t?`${C.blue}12`:"#fff",color:tab===t?C.blue:C.muted,fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{{edit:"Equipar",base:"Base",shop:"Tienda"}[t]}</button>)}</div>{tab==="base"&&(<Card><div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:12}}>ELIGE TU BASE (GRATIS)</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>{BASES.map(b=><div key={b.id} onClick={()=>setAv(p=>({...p,base:b.id}))} style={{padding:13,borderRadius:12,border:`2px solid ${av.base===b.id?C.blue:C.border}`,background:av.base===b.id?`${C.blue}0e`:C.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:36}}>{b.emoji}</div><div style={{color:C.text,fontWeight:700,fontSize:13,marginTop:5}}>{b.label}</div><div style={{color:C.green,fontSize:11}}>Gratis</div></div>)}</div><Btn onClick={saveAv} disabled={saving} color={C.blue} style={{width:"100%",padding:11,marginTop:12}}>{saving?"Guardando...":"GUARDAR"}</Btn></Card>)}{tab==="edit"&&(<Card><div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:12}}>EQUIPAR ITEMS COMPRADOS</div>{types.map(type=>(<div key={type} style={{marginBottom:14}}><div style={{color:C.text,fontWeight:700,fontSize:12,marginBottom:7}}>{tl[type]}</div><div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}><div onClick={()=>setAv(p=>({...p,[type]:null}))} style={{flexShrink:0,padding:"7px 13px",borderRadius:9,border:`1.5px solid ${!av[type]?C.red:C.border}`,background:!av[type]?"#fee2e2":C.bg,cursor:"pointer",fontSize:12,color:!av[type]?C.red:C.muted,fontWeight:700}}>Ninguno</div>{shop.filter(i=>i.type===type).map(item=>(<div key={item.id} onClick={()=>equip(item)} style={{flexShrink:0,padding:"7px 10px",borderRadius:9,border:`1.5px solid ${equipped(item)?C.blue:isOwned(item.id)?C.border:"#e5e7eb"}`,background:equipped(item)?`${C.blue}12`:isOwned(item.id)?C.bg:"#f9fafb",cursor:"pointer",textAlign:"center",minWidth:62,opacity:isOwned(item.id)?1:0.45}}><div style={{fontSize:20}}>{item.emoji}</div><div style={{color:C.text,fontSize:10,fontWeight:600}}>{item.label}</div>{!isOwned(item.id)&&<div style={{color:C.muted,fontSize:9}}>🔒</div>}</div>))}</div></div>))}<Btn onClick={saveAv} disabled={saving} color={C.blue} style={{width:"100%",padding:11,marginTop:4}}>{saving?"Guardando...":"GUARDAR AVATAR"}</Btn></Card>)}{tab==="shop"&&(<div>{types.map(type=>(<Card key={type} style={{marginBottom:12}}><div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:10}}>{tl[type].toUpperCase()}</div>{shop.filter(i=>i.type===type).map(item=>{const owned=isOwned(item.id);const canBuy=sc.total>=item.pts;return(<div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderRadius:10,border:`1.5px solid ${owned?"#86efac":C.border}`,background:owned?C.greenBg:C.bg,marginBottom:7}}><div style={{fontSize:26,flexShrink:0}}>{item.emoji}</div><div style={{flex:1}}><div style={{color:C.text,fontWeight:700,fontSize:13}}>{item.label}</div>{owned?<Tag color={C.green}>En posesion</Tag>:<Tag color={canBuy?C.blue:C.muted}>{item.pts} pts</Tag>}</div>{!owned&&<Btn onClick={()=>buy(item)} disabled={!canBuy} color={C.blue} sm>Comprar</Btn>}</div>);})}</Card>))}</div>)}</div>);}
 
@@ -201,7 +200,6 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const addPrize=async()=>{if(!pf.name.trim()){toast("Escribe el nombre");return;}try{await db.createPrize({name:pf.name,points_cost:pf.pts,stock:pf.stock,category:"general",is_active:true,min_level:pf.minLevel});const updated=await db.getPrizes();setPrizes(updated||[]);setPf({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1});toast("Premio anadido");}catch(e){toast("Error al crear premio");}};
   const updPz=async(id,field,val)=>{const dbField=field==="pts"?"points_cost":field==="stock"?"stock":field==="minLevel"?"min_level":field;try{await db.updatePrize(id,{[dbField]:val});const updated=await db.getPrizes();setPrizes(updated||[]);}catch(e){toast("Error");}};
   const filtered=allUsers.filter(u=>filter==="active"?u.active:!u.active);
-  // ── TABS incluye Referidos ──
   const tabs=[{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"referrals",label:"🤝 Referidos"}];
   return(
     <div style={{paddingBottom:100}}>
@@ -221,7 +219,6 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   );
 }
 
-// ── STAFF SCREENS ──
 function StaffDashboard({user,allStaff,metrics,points,badges,kudos}){
   const totalPts=(points?.points_month)||0;const totalPtsAll=(points?.points_total)||0;
   const roleEmoji=ROLE_EMOJI[user.role]||"👤";
@@ -255,7 +252,7 @@ function StaffDashboard({user,allStaff,metrics,points,badges,kudos}){
       <SCard style={{marginBottom:12}}>
         <div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:12}}>RECENT WEEKLY PERFORMANCE</div>
         {(metrics||[]).length===0?(
-          <div style={{textAlign:"center",color:S.muted,fontSize:13,padding:20}}>No metrics uploaded yet. Check back after your admin uploads this week's data.</div>
+          <div style={{textAlign:"center",color:S.muted,fontSize:13,padding:20}}>No metrics uploaded yet.</div>
         ):(
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
             {(metrics||[]).slice(0,4).map((w,i)=>{const pts=w.pts_week_total||0;const pct=Math.min((pts/20)*100,100);return(
@@ -307,7 +304,7 @@ function StaffLeaderboard({user,allStaff}){
         <div style={{color:S.text,fontWeight:800,fontSize:20}}>LEADERBOARD</div>
         <div style={{color:S.muted,fontSize:12}}>{STAFF_ROLES[user.role]} · {user.project}</div>
       </SCard>
-      {sorted.length===0&&<SCard style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>👥</div><div style={{color:S.muted}}>No peers found in your role and project.</div></SCard>}
+      {sorted.length===0&&<SCard style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>👥</div><div style={{color:S.muted}}>No peers found.</div></SCard>}
       {sorted.map((u,i)=>{const isMe=u.id===user.id;const pts=u.monthPts||0;return(
         <div key={u.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:8,borderRadius:14,background:isMe?`${S.accent}18`:S.bgCard,border:`1px solid ${isMe?S.accent:S.border}`}}>
           <div style={{width:30,textAlign:"center",fontWeight:900,color:i<3?"#f59e0b":S.muted,fontSize:i<3?20:14}}>{i<3?medals[i]:`#${i+1}`}</div>
@@ -334,181 +331,41 @@ function StaffInnovation({user,innovations,onSubmit,onApprove,isSuperAdmin}){
   const pending=(innovations||[]).filter(i=>i.status==="pending");
   const isManager=user.role==="manager"||user.role==="training_manager"||isSuperAdmin;
   const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};
-  const submit=async()=>{
-    if(!form.title.trim()||!form.description.trim())return;
-    setSubmitting(true);
-    const cat=INNOVATION_CATS[form.category];
-    await onSubmit({...form,staff_id:user.id,status:"pending",points_awarded:cat.pts,week_reference:new Date().toISOString().split("T")[0]});
-    setForm({category:"process_improvement",title:"",description:"",tool_used:""});
-    setSubmitting(false);
-  };
+  const submit=async()=>{if(!form.title.trim()||!form.description.trim())return;setSubmitting(true);const cat=INNOVATION_CATS[form.category];await onSubmit({...form,staff_id:user.id,status:"pending",points_awarded:cat.pts,week_reference:new Date().toISOString().split("T")[0]});setForm({category:"process_improvement",title:"",description:"",tool_used:""});setSubmitting(false);};
   const tabs=[{id:"my",label:"My Submissions",show:true},{id:"submit",label:"+ Submit",show:true},{id:"pending",label:`Pending (${pending.length})`,show:isManager}];
   return(
     <div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}>
-      <SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}>
-        <div style={{fontSize:32}}>🚀</div>
-        <div style={{color:S.text,fontWeight:800,fontSize:18}}>Innovation & AI Projects</div>
-        <div style={{color:S.muted,fontSize:12,marginTop:4}}>Submit projects to earn bonus points</div>
-      </SCard>
-      <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>
-        {tabs.filter(t=>t.show).map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",borderRadius:9,border:`1px solid ${tab===t.id?S.accent:S.border}`,background:tab===t.id?`${S.accent}22`:S.bgCard,color:tab===t.id?S.accent:S.muted,fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{t.label}</button>)}
-      </div>
-      {tab==="my"&&(
-        <div>
-          {myInnovations.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>💡</div><div style={{color:S.muted}}>No submissions yet. Submit your first project!</div></SCard>}
-          {myInnovations.map((inn,i)=>{const cat=INNOVATION_CATS[inn.category]||{};return(
-            <SCard key={i} style={{marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  <div style={{fontSize:22}}>{cat.emoji||"💡"}</div>
-                  <div><div style={{color:S.text,fontWeight:700}}>{inn.title}</div><div style={{color:S.muted,fontSize:11}}>{cat.label}</div></div>
-                </div>
-                <div style={{padding:"3px 10px",borderRadius:20,background:inn.status==="approved"?`${S.green}22`:inn.status==="rejected"?`${S.red}22`:`${S.yellow}22`,color:inn.status==="approved"?S.green:inn.status==="rejected"?S.red:S.yellow,fontSize:11,fontWeight:700}}>{inn.status.toUpperCase()}</div>
-              </div>
-              {inn.status==="approved"&&<div style={{color:S.green,fontWeight:700,fontSize:13}}>+{inn.points_awarded} pts earned</div>}
-              {inn.review_notes&&<div style={{color:S.muted,fontSize:12,marginTop:4,fontStyle:"italic"}}>"{inn.review_notes}"</div>}
-            </SCard>
-          );})}
-        </div>
-      )}
-      {tab==="submit"&&(
-        <SCard>
-          <div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:14}}>NEW SUBMISSION</div>
-          <div style={{marginBottom:12}}>
-            <div style={{color:S.muted,fontSize:11,marginBottom:5}}>CATEGORY</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {Object.entries(INNOVATION_CATS).filter(([k,v])=>!v.adminOnly||isSuperAdmin).map(([k,v])=>(
-                <div key={k} onClick={()=>setForm(p=>({...p,category:k}))} style={{padding:10,borderRadius:9,border:`1.5px solid ${form.category===k?S.accent:S.border}`,background:form.category===k?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}>
-                  <div style={{fontSize:20}}>{v.emoji}</div>
-                  <div style={{color:S.text,fontSize:11,fontWeight:700,marginTop:3}}>{v.label}</div>
-                  <div style={{color:S.accent,fontSize:10}}>+{v.pts} pts</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div style={{marginBottom:10}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TITLE</div><input value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} style={inp} placeholder="Project or initiative name"/></div>
-          <div style={{marginBottom:10}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>DESCRIPTION</div><textarea value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} rows={4} style={{...inp,resize:"vertical"}} placeholder="Describe what you did and the impact..."/></div>
-          {(form.category==="ai_project"||form.category==="process_improvement")&&(<div style={{marginBottom:14}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TOOL / RESOURCE USED</div><input value={form.tool_used} onChange={e=>setForm(p=>({...p,tool_used:e.target.value}))} style={inp} placeholder="e.g. ChatGPT, Claude, Copilot..."/></div>)}
-          <SBtn onClick={submit} disabled={submitting||!form.title.trim()||!form.description.trim()} style={{width:"100%",padding:11}}>{submitting?"Submitting...":"SUBMIT PROJECT"}</SBtn>
-        </SCard>
-      )}
-      {tab==="pending"&&isManager&&(
-        <div>
-          {pending.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>✅</div><div style={{color:S.muted}}>No pending submissions.</div></SCard>}
-          {pending.map((inn,i)=>{const cat=INNOVATION_CATS[inn.category]||{};const canApprove=inn.category==="ai_project"?isSuperAdmin:true;return(
-            <SCard key={i} style={{marginBottom:12}}>
-              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
-                <div style={{fontSize:22}}>{cat.emoji||"💡"}</div>
-                <div><div style={{color:S.text,fontWeight:700}}>{inn.title}</div><div style={{color:S.muted,fontSize:11}}>{cat.label} · +{inn.points_awarded} pts</div></div>
-              </div>
-              <div style={{color:S.muted,fontSize:12,marginBottom:8}}>{inn.description}</div>
-              {inn.tool_used&&<div style={{color:S.muted,fontSize:11,marginBottom:10}}>Tool: {inn.tool_used}</div>}
-              {!canApprove&&<div style={{color:S.yellow,fontSize:12,padding:"8px 12px",background:`${S.yellow}18`,borderRadius:8,marginBottom:8}}>⚠️ Only Super Admin can approve AI Projects</div>}
-              {canApprove&&(<div style={{display:"flex",gap:8}}><SBtn onClick={()=>onApprove(inn.id,true,"")} color={S.green} style={{flex:1}}>✓ Approve</SBtn><SBtn onClick={()=>onApprove(inn.id,false,"Not meeting criteria")} color={S.red} style={{flex:1}}>✗ Reject</SBtn></div>)}
-            </SCard>
-          );})}
-        </div>
-      )}
+      <SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}><div style={{fontSize:32}}>🚀</div><div style={{color:S.text,fontWeight:800,fontSize:18}}>Innovation & AI Projects</div><div style={{color:S.muted,fontSize:12,marginTop:4}}>Submit projects to earn bonus points</div></SCard>
+      <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>{tabs.filter(t=>t.show).map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",borderRadius:9,border:`1px solid ${tab===t.id?S.accent:S.border}`,background:tab===t.id?`${S.accent}22`:S.bgCard,color:tab===t.id?S.accent:S.muted,fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{t.label}</button>)}</div>
+      {tab==="my"&&(<div>{myInnovations.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>💡</div><div style={{color:S.muted}}>No submissions yet.</div></SCard>}{myInnovations.map((inn,i)=>{const cat=INNOVATION_CATS[inn.category]||{};return(<SCard key={i} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}><div style={{display:"flex",gap:8,alignItems:"center"}}><div style={{fontSize:22}}>{cat.emoji||"💡"}</div><div><div style={{color:S.text,fontWeight:700}}>{inn.title}</div><div style={{color:S.muted,fontSize:11}}>{cat.label}</div></div></div><div style={{padding:"3px 10px",borderRadius:20,background:inn.status==="approved"?`${S.green}22`:inn.status==="rejected"?`${S.red}22`:`${S.yellow}22`,color:inn.status==="approved"?S.green:inn.status==="rejected"?S.red:S.yellow,fontSize:11,fontWeight:700}}>{inn.status.toUpperCase()}</div></div>{inn.status==="approved"&&<div style={{color:S.green,fontWeight:700,fontSize:13}}>+{inn.points_awarded} pts earned</div>}</SCard>);})}</div>)}
+      {tab==="submit"&&(<SCard><div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:14}}>NEW SUBMISSION</div><div style={{marginBottom:12}}><div style={{color:S.muted,fontSize:11,marginBottom:5}}>CATEGORY</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{Object.entries(INNOVATION_CATS).filter(([k,v])=>!v.adminOnly||isSuperAdmin).map(([k,v])=>(<div key={k} onClick={()=>setForm(p=>({...p,category:k}))} style={{padding:10,borderRadius:9,border:`1.5px solid ${form.category===k?S.accent:S.border}`,background:form.category===k?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:20}}>{v.emoji}</div><div style={{color:S.text,fontSize:11,fontWeight:700,marginTop:3}}>{v.label}</div><div style={{color:S.accent,fontSize:10}}>+{v.pts} pts</div></div>))}</div></div><div style={{marginBottom:10}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TITLE</div><input value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} style={inp} placeholder="Project name"/></div><div style={{marginBottom:10}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>DESCRIPTION</div><textarea value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} rows={4} style={{...inp,resize:"vertical"}} placeholder="Describe what you did..."/></div>{(form.category==="ai_project"||form.category==="process_improvement")&&(<div style={{marginBottom:14}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TOOL USED</div><input value={form.tool_used} onChange={e=>setForm(p=>({...p,tool_used:e.target.value}))} style={inp} placeholder="e.g. ChatGPT, Claude..."/></div>)}<SBtn onClick={submit} disabled={submitting||!form.title.trim()||!form.description.trim()} style={{width:"100%",padding:11}}>{submitting?"Submitting...":"SUBMIT"}</SBtn></SCard>)}
+      {tab==="pending"&&isManager&&(<div>{pending.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>✅</div><div style={{color:S.muted}}>No pending.</div></SCard>}{pending.map((inn,i)=>{const cat=INNOVATION_CATS[inn.category]||{};const canApprove=inn.category==="ai_project"?isSuperAdmin:true;return(<SCard key={i} style={{marginBottom:12}}><div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}><div style={{fontSize:22}}>{cat.emoji||"💡"}</div><div><div style={{color:S.text,fontWeight:700}}>{inn.title}</div><div style={{color:S.muted,fontSize:11}}>{cat.label} · +{inn.points_awarded} pts</div></div></div><div style={{color:S.muted,fontSize:12,marginBottom:8}}>{inn.description}</div>{!canApprove&&<div style={{color:S.yellow,fontSize:12,padding:"8px 12px",background:`${S.yellow}18`,borderRadius:8,marginBottom:8}}>⚠️ Only Super Admin can approve AI Projects</div>}{canApprove&&(<div style={{display:"flex",gap:8}}><SBtn onClick={()=>onApprove(inn.id,true,"")} color={S.green} style={{flex:1}}>✓ Approve</SBtn><SBtn onClick={()=>onApprove(inn.id,false,"Not meeting criteria")} color={S.red} style={{flex:1}}>✗ Reject</SBtn></div>)}</SCard>);})}</div>)}
     </div>
   );
 }
 
 function StaffKudos({user,allStaff,kudos,onSendKudo,onApproveKudo,isManager}){
-  const [tab,setTab]=useState("received");
-  const [form,setForm]=useState({toId:"",type:"regular",reason:""});
-  const [sending,setSending]=useState(false);
-  const received=(kudos||[]).filter(k=>k.status==="approved");
-  const pending=(kudos||[]).filter(k=>k.status==="pending");
+  const [tab,setTab]=useState("received");const [form,setForm]=useState({toId:"",type:"regular",reason:""});const [sending,setSending]=useState(false);
+  const received=(kudos||[]).filter(k=>k.status==="approved");const pending=(kudos||[]).filter(k=>k.status==="pending");
   const peers=allStaff.filter(u=>u.active&&u.id!==user.id&&(user.role==="superadmin"||u.project===user.project));
   const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};
-  const send=async()=>{
-    if(!form.toId||!form.reason.trim())return;
-    setSending(true);
-    await onSendKudo({recipient_id:form.toId,given_by:user.id,kudo_type:form.type,reason:form.reason,points_awarded:form.type==="gold"?5:1,status:"pending"});
-    setForm({toId:"",type:"regular",reason:""});
-    setSending(false);
-  };
+  const send=async()=>{if(!form.toId||!form.reason.trim())return;setSending(true);await onSendKudo({recipient_id:form.toId,given_by:user.id,kudo_type:form.type,reason:form.reason,points_awarded:form.type==="gold"?5:1,status:"pending"});setForm({toId:"",type:"regular",reason:""});setSending(false);};
   const tabs=[{id:"received",label:"Received",show:true},{id:"send",label:"Send Kudo",show:true},{id:"pending",label:`Pending (${pending.length})`,show:isManager}];
   return(
     <div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}>
-      <SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}>
-        <div style={{fontSize:32}}>👏</div>
-        <div style={{color:S.text,fontWeight:800,fontSize:18}}>Kudos</div>
-        <div style={{display:"flex",gap:16,marginTop:10}}>
-          <div style={{textAlign:"center"}}><div style={{color:S.yellow,fontWeight:900,fontSize:20}}>{received.filter(k=>k.kudo_type==="gold").length}</div><div style={{color:S.muted,fontSize:10}}>GOLD</div></div>
-          <div style={{textAlign:"center"}}><div style={{color:S.accent,fontWeight:900,fontSize:20}}>{received.filter(k=>k.kudo_type==="regular").length}</div><div style={{color:S.muted,fontSize:10}}>REGULAR</div></div>
-        </div>
-      </SCard>
-      <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>
-        {tabs.filter(t=>t.show).map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",borderRadius:9,border:`1px solid ${tab===t.id?S.accent:S.border}`,background:tab===t.id?`${S.accent}22`:S.bgCard,color:tab===t.id?S.accent:S.muted,fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{t.label}</button>)}
-      </div>
-      {tab==="received"&&(
-        <div>
-          {received.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>👏</div><div style={{color:S.muted}}>No kudos received yet.</div></SCard>}
-          {received.map((k,i)=>(
-            <SCard key={i} style={{marginBottom:10}}>
-              <div style={{display:"flex",gap:10,alignItems:"center"}}>
-                <div style={{fontSize:28}}>{k.kudo_type==="gold"?"🌟":"👏"}</div>
-                <div style={{flex:1}}>
-                  <div style={{color:k.kudo_type==="gold"?S.yellow:S.accent,fontWeight:700}}>{k.kudo_type==="gold"?"Gold Kudo":"Kudo"} · +{k.points_awarded} pts</div>
-                  <div style={{color:S.muted,fontSize:12,fontStyle:"italic",marginTop:2}}>"{k.reason}"</div>
-                </div>
-              </div>
-            </SCard>
-          ))}
-        </div>
-      )}
-      {tab==="send"&&(
-        <SCard>
-          <div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:14}}>SEND A KUDO</div>
-          <div style={{marginBottom:12}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TO</div><select value={form.toId} onChange={e=>setForm(p=>({...p,toId:e.target.value}))} style={inp}><option value="">Select a colleague</option>{peers.map(u=><option key={u.id} value={u.id}>{u.name} · {STAFF_ROLES[u.role]}</option>)}</select></div>
-          <div style={{marginBottom:12}}><div style={{display:"flex",gap:8}}><div onClick={()=>setForm(p=>({...p,type:"regular"}))} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${form.type==="regular"?S.accent:S.border}`,background:form.type==="regular"?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>👏</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Kudo (+1pt)</div></div><div onClick={()=>setForm(p=>({...p,type:"gold"}))} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${form.type==="gold"?S.yellow:S.border}`,background:form.type==="gold"?`${S.yellow}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>🌟</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Gold (+5pts)</div></div></div></div>
-          <div style={{marginBottom:14}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>REASON</div><textarea value={form.reason} onChange={e=>setForm(p=>({...p,reason:e.target.value}))} rows={3} style={{...inp,resize:"vertical"}} placeholder="Why do they deserve this recognition?"/></div>
-          <SBtn onClick={send} disabled={sending||!form.toId||!form.reason.trim()} style={{width:"100%",padding:11}}>{sending?"Sending...":"SEND KUDO"}</SBtn>
-        </SCard>
-      )}
-      {tab==="pending"&&isManager&&(
-        <div>
-          {pending.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>✅</div><div style={{color:S.muted}}>No pending kudos.</div></SCard>}
-          {pending.map((k,i)=>(
-            <SCard key={i} style={{marginBottom:10}}>
-              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}><div style={{fontSize:24}}>{k.kudo_type==="gold"?"🌟":"👏"}</div><div><div style={{color:S.text,fontWeight:700}}>{k.kudo_type==="gold"?"Gold Kudo":"Kudo"}</div><div style={{color:S.muted,fontSize:11}}>+{k.points_awarded} pts</div></div></div>
-              <div style={{color:S.muted,fontSize:12,marginBottom:12,fontStyle:"italic"}}>"{k.reason}"</div>
-              <div style={{display:"flex",gap:8}}><SBtn onClick={()=>onApproveKudo(k.id,true)} color={S.green} style={{flex:1}} sm>✓ Approve</SBtn><SBtn onClick={()=>onApproveKudo(k.id,false)} color={S.red} style={{flex:1}} sm>✗ Reject</SBtn></div>
-            </SCard>
-          ))}
-        </div>
-      )}
+      <SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}><div style={{fontSize:32}}>👏</div><div style={{color:S.text,fontWeight:800,fontSize:18}}>Kudos</div><div style={{display:"flex",gap:16,marginTop:10}}><div style={{textAlign:"center"}}><div style={{color:S.yellow,fontWeight:900,fontSize:20}}>{received.filter(k=>k.kudo_type==="gold").length}</div><div style={{color:S.muted,fontSize:10}}>GOLD</div></div><div style={{textAlign:"center"}}><div style={{color:S.accent,fontWeight:900,fontSize:20}}>{received.filter(k=>k.kudo_type==="regular").length}</div><div style={{color:S.muted,fontSize:10}}>REGULAR</div></div></div></SCard>
+      <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>{tabs.filter(t=>t.show).map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",borderRadius:9,border:`1px solid ${tab===t.id?S.accent:S.border}`,background:tab===t.id?`${S.accent}22`:S.bgCard,color:tab===t.id?S.accent:S.muted,fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{t.label}</button>)}</div>
+      {tab==="received"&&(<div>{received.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>👏</div><div style={{color:S.muted}}>No kudos yet.</div></SCard>}{received.map((k,i)=>(<SCard key={i} style={{marginBottom:10}}><div style={{display:"flex",gap:10,alignItems:"center"}}><div style={{fontSize:28}}>{k.kudo_type==="gold"?"🌟":"👏"}</div><div style={{flex:1}}><div style={{color:k.kudo_type==="gold"?S.yellow:S.accent,fontWeight:700}}>{k.kudo_type==="gold"?"Gold Kudo":"Kudo"} · +{k.points_awarded} pts</div><div style={{color:S.muted,fontSize:12,fontStyle:"italic",marginTop:2}}>"{k.reason}"</div></div></div></SCard>))}</div>)}
+      {tab==="send"&&(<SCard><div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:14}}>SEND A KUDO</div><div style={{marginBottom:12}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TO</div><select value={form.toId} onChange={e=>setForm(p=>({...p,toId:e.target.value}))} style={inp}><option value="">Select colleague</option>{peers.map(u=><option key={u.id} value={u.id}>{u.name} · {STAFF_ROLES[u.role]}</option>)}</select></div><div style={{marginBottom:12}}><div style={{display:"flex",gap:8}}><div onClick={()=>setForm(p=>({...p,type:"regular"}))} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${form.type==="regular"?S.accent:S.border}`,background:form.type==="regular"?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>👏</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Kudo (+1pt)</div></div><div onClick={()=>setForm(p=>({...p,type:"gold"}))} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${form.type==="gold"?S.yellow:S.border}`,background:form.type==="gold"?`${S.yellow}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>🌟</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Gold (+5pts)</div></div></div></div><div style={{marginBottom:14}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>REASON</div><textarea value={form.reason} onChange={e=>setForm(p=>({...p,reason:e.target.value}))} rows={3} style={{...inp,resize:"vertical"}} placeholder="Why do they deserve this?"/></div><SBtn onClick={send} disabled={sending||!form.toId||!form.reason.trim()} style={{width:"100%",padding:11}}>{sending?"Sending...":"SEND KUDO"}</SBtn></SCard>)}
+      {tab==="pending"&&isManager&&(<div>{pending.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>✅</div><div style={{color:S.muted}}>No pending.</div></SCard>}{pending.map((k,i)=>(<SCard key={i} style={{marginBottom:10}}><div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}><div style={{fontSize:24}}>{k.kudo_type==="gold"?"🌟":"👏"}</div><div><div style={{color:S.text,fontWeight:700}}>{k.kudo_type==="gold"?"Gold Kudo":"Kudo"}</div><div style={{color:S.muted,fontSize:11}}>+{k.points_awarded} pts</div></div></div><div style={{color:S.muted,fontSize:12,marginBottom:12,fontStyle:"italic"}}>"{k.reason}"</div><div style={{display:"flex",gap:8}}><SBtn onClick={()=>onApproveKudo(k.id,true)} color={S.green} style={{flex:1}} sm>✓ Approve</SBtn><SBtn onClick={()=>onApproveKudo(k.id,false)} color={S.red} style={{flex:1}} sm>✗ Reject</SBtn></div></SCard>))}</div>)}
     </div>
   );
 }
 
 function StaffProfile({user,onUpdate,toast}){
-  const [av,setAv]=useState(user.avatar||{base:"b1",hair:null,accessory:null,outfit:null,background:null});
-  const [saving,setSaving]=useState(false);
-  const saveAv=async()=>{setSaving(true);try{await staffDb.update(user.id,{avatar_accessories:av});onUpdate({...user,avatar:av});toast("Avatar saved!");}catch(e){toast("Error saving avatar");}setSaving(false);};
-  return(
-    <div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}>
-      <SCard style={{marginBottom:14,textAlign:"center"}}>
-        <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><Av av={av} sz={90}/></div>
-        <div style={{color:S.text,fontWeight:800,fontSize:18}}>{user.name}</div>
-        <div style={{color:S.accent,fontSize:13,marginTop:2}}>{STAFF_ROLES[user.role]}</div>
-        <div style={{color:S.muted,fontSize:12,marginTop:2}}>{user.project} · {user.gameId}</div>
-      </SCard>
-      <SCard>
-        <div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:12}}>CHOOSE YOUR AVATAR</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          {BASES.map(b=>(
-            <div key={b.id} onClick={()=>setAv(p=>({...p,base:b.id}))} style={{padding:13,borderRadius:12,border:`2px solid ${av.base===b.id?S.accent:S.border}`,background:av.base===b.id?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}>
-              <div style={{fontSize:36}}>{b.emoji}</div>
-              <div style={{color:S.text,fontWeight:700,fontSize:13,marginTop:5}}>{b.label}</div>
-            </div>
-          ))}
-        </div>
-        <SBtn onClick={saveAv} disabled={saving} style={{width:"100%",padding:11,marginTop:12}}>{saving?"Saving...":"SAVE AVATAR"}</SBtn>
-      </SCard>
-    </div>
-  );
+  const [av,setAv]=useState(user.avatar||{base:"b1",hair:null,accessory:null,outfit:null,background:null});const [saving,setSaving]=useState(false);
+  const saveAv=async()=>{setSaving(true);try{await staffDb.update(user.id,{avatar_accessories:av});onUpdate({...user,avatar:av});toast("Avatar saved!");}catch(e){toast("Error");}setSaving(false);};
+  return(<div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}><SCard style={{marginBottom:14,textAlign:"center"}}><div style={{display:"flex",justifyContent:"center",marginBottom:12}}><Av av={av} sz={90}/></div><div style={{color:S.text,fontWeight:800,fontSize:18}}>{user.name}</div><div style={{color:S.accent,fontSize:13,marginTop:2}}>{STAFF_ROLES[user.role]}</div><div style={{color:S.muted,fontSize:12,marginTop:2}}>{user.project} · {user.gameId}</div></SCard><SCard><div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:12}}>CHOOSE YOUR AVATAR</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>{BASES.map(b=>(<div key={b.id} onClick={()=>setAv(p=>({...p,base:b.id}))} style={{padding:13,borderRadius:12,border:`2px solid ${av.base===b.id?S.accent:S.border}`,background:av.base===b.id?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:36}}>{b.emoji}</div><div style={{color:S.text,fontWeight:700,fontSize:13,marginTop:5}}>{b.label}</div></div>))}</div><SBtn onClick={saveAv} disabled={saving} style={{width:"100%",padding:11,marginTop:12}}>{saving?"Saving...":"SAVE AVATAR"}</SBtn></SCard></div>);
 }
 
 function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
@@ -518,27 +375,16 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
   const [form,setForm]=useState(blank);const [filter,setFilter]=useState("active");
   const [resetId,setResetId]=useState(null);const [newPw,setNewPw]=useState("");const [loading,setLoading]=useState(false);
   const roleColor={team_coach:S.accent,quality_coach:S.green,training_coach:S.purple,manager:S.yellow,training_manager:"#f97316",superadmin:S.red};
-  const createStaff=async()=>{
-    if(!form.username.trim()||!form.fullName.trim()||!form.password.trim()||!form.project.trim()){toast("Complete all fields");return;}
-    setLoading(true);
-    try{
-      await staffDb.create({game_id:form.gameId||`${form.role.substring(0,2).toUpperCase()}-${Date.now()}`,username:form.username.trim(),full_name:form.fullName.trim(),password_hash:form.password,role:form.role,project:form.project,is_active:true,level:1});
-      await reloadStaff();setForm(blank);toast(`${form.fullName} created`);
-    }catch(e){toast("Error: "+e.message);}
-    setLoading(false);
-  };
+  const createStaff=async()=>{if(!form.username.trim()||!form.fullName.trim()||!form.password.trim()||!form.project.trim()){toast("Complete all fields");return;}setLoading(true);try{await staffDb.create({game_id:form.gameId||`${form.role.substring(0,2).toUpperCase()}-${Date.now()}`,username:form.username.trim(),full_name:form.fullName.trim(),password_hash:form.password,role:form.role,project:form.project,is_active:true,level:1});await reloadStaff();setForm(blank);toast(`${form.fullName} created`);}catch(e){toast("Error: "+e.message);}setLoading(false);};
   const toggleActive=async(u)=>{try{await staffDb.update(u.id,{is_active:!u.active});await reloadStaff();toast(u.active?"Deactivated":"Activated");}catch(e){toast("Error");}};
-  const savePw=async(u)=>{if(!newPw.trim()||newPw.length<4){toast("Minimum 4 characters");return;}try{await staffDb.update(u.id,{password_hash:newPw.trim(),needs_pw_change:true,temp_pw:newPw.trim()});await reloadStaff();setResetId(null);setNewPw("");toast("Temporary password set");}catch(e){toast("Error");}};
+  const savePw=async(u)=>{if(!newPw.trim()||newPw.length<4){toast("Minimum 4 characters");return;}try{await staffDb.update(u.id,{password_hash:newPw.trim(),needs_pw_change:true,temp_pw:newPw.trim()});await reloadStaff();setResetId(null);setNewPw("");toast("Password set");}catch(e){toast("Error");}};
   const filtered=allStaff.filter(u=>filter==="active"?u.active:!u.active);
   return(
     <div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}>
       {showExcel&&<ExcelUpload onClose={()=>setShowExcel(false)}/>}
       <SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{fontSize:30}}>⚡</div>
-            <div><div style={{color:S.text,fontWeight:800,fontSize:17}}>SUPER ADMIN PANEL</div><div style={{color:S.muted,fontSize:12}}>{cu.name} · Staff Arena</div></div>
-          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{fontSize:30}}>⚡</div><div><div style={{color:S.text,fontWeight:800,fontSize:17}}>SUPER ADMIN PANEL</div><div style={{color:S.muted,fontSize:12}}>{cu.name}</div></div></div>
           <SBtn onClick={()=>setShowExcel(true)} color={S.green} style={{flexShrink:0,fontSize:12}}>📊 Cargar Excel</SBtn>
         </div>
       </SCard>
@@ -583,7 +429,7 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
           </div>
           {resetId===u.id&&(
             <div style={{marginTop:12,padding:"12px 14px",background:`${S.yellow}18`,borderRadius:10,border:`1px solid ${S.yellow}44`,display:"flex",gap:8,alignItems:"flex-end"}}>
-              <div style={{flex:1}}><div style={{color:S.yellow,fontSize:11,fontWeight:700,marginBottom:4}}>TEMPORARY PASSWORD</div><input type="text" value={newPw} onChange={e=>setNewPw(e.target.value)} style={inp}/></div>
+              <div style={{flex:1}}><div style={{color:S.yellow,fontSize:11,fontWeight:700,marginBottom:4}}>TEMP PASSWORD</div><input type="text" value={newPw} onChange={e=>setNewPw(e.target.value)} style={inp}/></div>
               <SBtn onClick={()=>savePw(u)} color={S.green} sm>Save</SBtn>
             </div>
           )}
@@ -593,7 +439,6 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
   );
 }
 
-// ── MAIN APP ──
 export default function App(){
   const [users,setUsers]=useState([]);const [prizes,setPrizes]=useState([]);
   const [shop]=useState(DEFAULT_SHOP);const [notifs,setNotifs]=useState([]);
@@ -603,10 +448,7 @@ export default function App(){
   const [staffPoints,setStaffPoints]=useState(null);const [staffBadges,setStaffBadges]=useState([]);
   const [staffKudos,setStaffKudos]=useState([]);const [staffInnovations,setStaffInnovations]=useState([]);
 
-  const loadInitialData=async()=>{
-    try{const [usersData,prizesData]=await Promise.all([db.getUsers(),db.getPrizes()]);setUsers((usersData||[]).map(adaptProfile));setPrizes(prizesData||[]);}catch(e){console.error(e);}
-    setAppLoading(false);
-  };
+  const loadInitialData=async()=>{try{const [usersData,prizesData]=await Promise.all([db.getUsers(),db.getPrizes()]);setUsers((usersData||[]).map(adaptProfile));setPrizes(prizesData||[]);}catch(e){console.error(e);}setAppLoading(false);};
   useEffect(()=>{loadInitialData();},[]);
 
   const loadNotifs=async(uid)=>{try{const d=await db.getNotifs(uid);setNotifs(d||[]);}catch(e){}};
@@ -645,6 +487,7 @@ export default function App(){
   // ── STAFF APP ──
   if(loggedIn?.appType==="staff"){
     const isManager=cu?.role==="manager"||cu?.role==="training_manager"||cu?.role==="superadmin";
+    const isSAorManager=cu?.role==="superadmin"||cu?.role==="manager";
     const staffNav=[
       {id:"dashboard",icon:"🏠",label:"Home"},
       {id:"leaderboard",icon:"🏆",label:"Rankings"},
@@ -666,14 +509,17 @@ export default function App(){
         </div>
       </div>
       <div style={{padding:"14px 14px 0"}}>
-        {screen==="dashboard"&&(cu?.role==="superadmin"||cu?.role==="manager"?<OperationsDashboard user={cu}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos}/>)}
+        {screen==="dashboard"&&(isSAorManager
+          ? <OperationsDashboard user={cu}/>
+          : <StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos}/>
+        )}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
         {screen==="kudos"&&<StaffKudos user={cu} allStaff={allStaff} kudos={staffKudos} isManager={isManager}
-          onSendKudo={async d=>{try{await staffDb.createKudo(d);const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast("Kudo sent!");}catch(e){toast("Error sending kudo");}}}
-          onApproveKudo={async(id,approved)=>{try{await staffDb.updateKudo(id,{status:approved?"approved":"rejected",approved_by:cu.id,approved_at:new Date().toISOString()});const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast(approved?"Kudo approved!":"Kudo rejected");}catch(e){toast("Error");}}}
+          onSendKudo={async d=>{try{await staffDb.createKudo(d);const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast("Kudo sent!");}catch(e){toast("Error");}}}
+          onApproveKudo={async(id,approved)=>{try{await staffDb.updateKudo(id,{status:approved?"approved":"rejected",approved_by:cu.id,approved_at:new Date().toISOString()});const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast(approved?"Approved!":"Rejected");}catch(e){toast("Error");}}}
         />}
         {screen==="innovation"&&<StaffInnovation user={cu} innovations={staffInnovations} isSuperAdmin={cu?.role==="superadmin"}
-          onSubmit={async d=>{try{await staffDb.createInnovation(d);const i=await staffDb.getInnovations(cu.id);setStaffInnovations(i||[]);toast("Submitted successfully!");}catch(e){toast("Error submitting");}}}
+          onSubmit={async d=>{try{await staffDb.createInnovation(d);const i=await staffDb.getInnovations(cu.id);setStaffInnovations(i||[]);toast("Submitted!");}catch(e){toast("Error");}}}
           onApprove={async(id,approved,notes)=>{try{await staffDb.updateInnovation(id,{status:approved?"approved":"rejected",reviewed_by:cu.id,review_notes:notes,reviewed_at:new Date().toISOString()});const i=await staffDb.getInnovations(cu.id);setStaffInnovations(i||[]);toast(approved?"Approved!":"Rejected");}catch(e){toast("Error");}}}
         />}
         {screen==="profile"&&<StaffProfile user={cu} onUpdate={u=>{setLoggedIn(u);}} toast={toast}/>}
