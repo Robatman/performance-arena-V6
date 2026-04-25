@@ -188,8 +188,21 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
 
           {/* Pending approvals */}
           {adminTab === 'pending' && (
-            <div>
-              {pendingAnswers.length === 0 ? (
+  <div>
+    {activeRiddle && (
+      <div style={{background:`${C.purple}12`, border:`1.5px solid ${C.purple}33`, borderRadius:12, padding:14, marginBottom:14}}>
+        <div style={{color:C.muted, fontSize:11, marginBottom:4}}>{activeRiddle.week}</div>
+        <div style={{color:C.purple, fontWeight:800, fontSize:14, marginBottom:8}}>🧩 {activeRiddle.question}</div>
+        <div style={{display:"flex", flexDirection:"column", gap:4}}>
+          {(['a','b','c','d'] as const).map(opt => activeRiddle[`option_${opt}`] && (
+            <div key={opt} style={{color:opt===activeRiddle.correct_answer?.toLowerCase()?C.green:C.text, fontSize:13}}>
+              <strong>{opt.toUpperCase()}.</strong> {activeRiddle[`option_${opt}`]}{opt===activeRiddle.correct_answer?.toLowerCase()?' ✅':''}
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+    {pendingAnswers.length === 0 ? (
                 <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:32, textAlign:"center"}}>
                   <div style={{fontSize:40, marginBottom:8}}>✅</div>
                   <div style={{color:C.muted}}>No hay respuestas pendientes</div>
