@@ -205,7 +205,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
         }
 
         if (!processed.length) { setErrors(["No agentes válidos."]); setStage("error"); return; }
-        setAgents(processed); setCoaches(parsedCoaches); setStage("preview");
+        const hasNew = processed.some(a => !existingIds.has(a.game_id.toUpperCase())); if (!hasNew) setImportNew("none"); setAgents(processed); setCoaches(parsedCoaches); setStage("preview");
       } catch(err) { setErrors([`Error: ${err}`]); setStage("error"); }
     };
     reader.readAsArrayBuffer(f);
