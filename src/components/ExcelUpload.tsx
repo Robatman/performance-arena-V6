@@ -5,7 +5,7 @@ const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2pqcHRqeWhpaXRlanVwdmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODgwMjEsImV4cCI6MjA5MjU2NDAyMX0.UgQDse6To0oe49llGDC7e9jYO1_bR6gxk-YcE6h7Bn8";
 const DEFAULT_PASSWORD = "Centris2026";
 
-const BASE_HEADERS = {
+const HEADERS = {
   apikey: SUPABASE_KEY,
   Authorization: `Bearer ${SUPABASE_KEY}`,
   "Content-Type": "application/json",
@@ -14,37 +14,30 @@ const BASE_HEADERS = {
 async function dbInsert(table: string, body: any) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: "POST",
-    headers: { ...BASE_HEADERS, Prefer: "return=minimal" },
+    headers: { ...HEADERS, Prefer: "return=minimal" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(txt);
-  }
+  if (!res.ok) throw new Error(await res.text());
   return true;
 }
 
 async function dbDelete(table: string, filter: string) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+  await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
     method: "DELETE",
-    headers: { ...BASE_HEADERS, Prefer: "return=minimal" },
+    headers: { ...HEADERS, Prefer: "return=minimal" },
   });
-  return res.ok;
 }
 
 async function dbPatch(table: string, filter: string, body: any) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+  await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
     method: "PATCH",
-    headers: { ...BASE_HEADERS, Prefer: "return=minimal" },
+    headers: { ...HEADERS, Prefer: "return=minimal" },
     body: JSON.stringify(body),
   });
-  return res.ok;
 }
 
 async function dbGet(table: string, filter = "") {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${filter ? "?" + filter : ""}`, {
-    headers: BASE_HEADERS,
-  });
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${filter ? "?" + filter : ""}`, { headers: HEADERS });
   const txt = await res.text();
   return txt ? JSON.parse(txt) : [];
 }
@@ -66,16 +59,18 @@ interface ProcessedAgent {
 interface CoachRow { game_id: string; position: string; manager: string; attrition: number; }
 interface UploadSummary { week: string; agents_processed: number; agents_created: number; agents_updated: number; coaches_processed: number; errors: string[]; }
 
-const isMSL = (v: any) => ["MSL"].includes(String(v ?? "").trim().toUpperCase());
-const isNA  = (v: any) => ["N/A","NA","#N/A","-"].includes(String(v ?? "").trim().toUpperCase());
+const isMSL = (v: any) => String(v ?? "").trim().toUpperCase() === "MSL";
+const isNA  = (v: any) => ["N/A","NA","#N/A","-",""].includes(String(v ?? "").trim().toUpperCase());
 
 function convertAHT(raw: any, type: AhtType): number | null {
   if (raw === null || raw === undefined || raw === "") return null;
   if (isMSL(raw) || isNA(raw)) return null;
   const n = Number(raw);
-  if (isNaN(n)) return null;
-  if (type === "Productivity") return n;
+  if (isNaN(n) || n === 0) return null;
+  if (type === "Productivity") return parseFloat(n.toFixed(4));
+  // Excel time serial (fraction of day) → seconds
   if (n > 0 && n < 1) return Math.round(n * 86400);
+  // Already in seconds
   return Math.round(n);
 }
 
@@ -93,8 +88,10 @@ function calcPts(val: number | null, goal: number | null, higherBetter: boolean)
 
 function detectFlag(ahtRaw: any, qaRaw: any, abs: number, tard: number): AgentFlag {
   if (isMSL(ahtRaw) || isMSL(qaRaw)) return "msl";
+  const ahtEmpty = ahtRaw === "" || ahtRaw === null || ahtRaw === undefined;
+  const qaEmpty  = qaRaw  === "" || qaRaw  === null || qaRaw  === undefined;
   if (isNA(ahtRaw) || isNA(qaRaw)) return "na";
-  if ((ahtRaw === "" || ahtRaw === null) && (qaRaw === "" || qaRaw === null)) return "no_aht";
+  if (ahtEmpty && qaEmpty) return "no_aht";
   if (Number(ahtRaw) === 0 && Number(qaRaw) === 0 && abs === 0 && tard === 0) return "zero_all";
   return "ok";
 }
@@ -107,6 +104,14 @@ function getWeekLabel(filename: string): string {
   const now = new Date();
   const w = Math.ceil(((now.getTime() - new Date(now.getFullYear(),0,1).getTime()) / 86400000 + new Date(now.getFullYear(),0,1).getDay() + 1) / 7);
   return `W${w}-${now.getFullYear()}`;
+}
+
+// ── Find column by possible names (case-insensitive, space-insensitive) ──
+function findCol(keys: string[], ...names: string[]): string {
+  return keys.find(k => {
+    const kn = k.toLowerCase().replace(/[\s_]/g, "");
+    return names.some(n => kn === n.toLowerCase().replace(/[\s_]/g, "") || kn.includes(n.toLowerCase().replace(/[\s_]/g, "")));
+  }) || "";
 }
 
 export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
@@ -130,6 +135,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     setErrors([]);
     const week = getWeekLabel(f.name);
     setWeekLabel(week);
+
     try {
       const ex = await dbGet("weekly_metrics", `week=eq.${encodeURIComponent(week)}&limit=1&select=id`);
       setWeekAlreadyLoaded(Array.isArray(ex) && ex.length > 0);
@@ -145,6 +151,8 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     reader.onload = (ev) => {
       try {
         const wb = XLSX.read(new Uint8Array(ev.target?.result as ArrayBuffer), { type:"array" });
+
+        // Find metrics sheet
         const mName = wb.SheetNames.find(n => /april|week|kpi|metric/i.test(n)) || wb.SheetNames[1] || wb.SheetNames[0];
         const ms = wb.Sheets[mName];
         if (!ms) { setErrors([`No hoja de métricas. Hojas: ${wb.SheetNames.join(", ")}`]); setStage("error"); return; }
@@ -152,157 +160,194 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
         const rows: any[] = XLSX.utils.sheet_to_json(ms, { defval: "" });
         if (!rows.length) { setErrors(["Hoja vacía."]); setStage("error"); return; }
 
+        // ── HARDCODED column mapping based on exact Excel headers ──
         const keys = Object.keys(rows[0] || {});
-        const col = (...names: string[]) => keys.find(k => names.some(n => k.toLowerCase().replace(/[\s_]/g,"").includes(n.toLowerCase().replace(/[\s_]/g,"")))) || "";
 
-        const cId   = col("gameid","game_id","login");
-        const cProj = col("project","campaign","campaing");
-        const cCoach= keys.find(k => /^coach\s*id$/i.test(k)) || col("coachid","coach_id");
-        const cQc   = col("qcoach","qacoach");
-        const cAht  = keys.find(k => /^aht$/i.test(k)) || col("aht");
-        const cAhtG = col("ahtgoal","aht goal","aht_goal");
-        const cAhtT = col("ahttype","aht_type","aht type");
-        const cQa   = col("qascore","qa_score","qa score");
-        const cQaG  = col("qagoal","qa_goal","qa goal");
-        const cAbs  = col("absent","absence","absences");
-        const cTard = col("tardie","tardies","late");
+        // Log available columns for debugging
+        console.log("Excel columns found:", keys);
+
+        const cGameId  = findCol(keys, "Game ID", "gameid", "game_id", "Login", "ID");
+        const cProject = findCol(keys, "Project", "campaign", "Campaing");
+        const cCoach   = findCol(keys, "Coach ID", "CoachID", "coach_id", "Coach");
+        const cQcoach  = findCol(keys, "Qcoach", "QA Coach", "QACoach", "Quality Coach");
+        const cAht     = findCol(keys, "AHT");
+        const cAhtGoal = findCol(keys, "AHT Goal", "AHTGoal", "aht_goal");
+        const cAhtType = findCol(keys, "AHT type", "AHTtype", "aht_type", "AHT Type");
+        const cQa      = findCol(keys, "QA Score", "QAScore", "qa_score", "QA");
+        const cQaGoal  = findCol(keys, "QA Goal", "QAGoal", "qa_goal");
+        const cAbsent  = findCol(keys, "Absent", "Absences", "absence");
+        const cTardies = findCol(keys, "Tardies", "Tardie", "Late");
+
+        console.log("Column mapping:", { cGameId, cProject, cCoach, cQcoach, cAht, cAhtGoal, cAhtType, cQa, cQaGoal, cAbsent, cTardies });
 
         const processed: ProcessedAgent[] = rows
-          .filter((r:any) => r[cId] && String(r[cId]).trim() && String(r[cId]).trim() !== "Game ID")
+          .filter((r:any) => {
+            const gid = String(r[cGameId] ?? "").trim();
+            return gid !== "" && gid !== "Game ID" && gid !== "game_id";
+          })
           .map((r:any) => {
-            const gid = String(r[cId]||"").trim();
-            const ahtRaw = r[cAht]; const qaRaw = r[cQa];
-            const ahtType: AhtType = /productivity/i.test(String(r[cAhtT]||"")) ? "Productivity" : "time";
-            const abs = Number(r[cAbs]||0); const tard = Number(r[cTard]||0);
-            const flag = detectFlag(ahtRaw, qaRaw, abs, tard);
-            const ahtSec = convertAHT(ahtRaw, ahtType);
-            const ahtGoalSec = convertAHT(r[cAhtG], ahtType);
-            const qaN = isNA(qaRaw)||String(qaRaw).trim()===""||isMSL(qaRaw) ? null : Number(qaRaw);
-            const qaGoal = isNaN(Number(r[cQaG])) ? 0 : Number(r[cQaG]);
-            const att = calcAttendance(abs, tard);
-            const ahtPts = flag==="ok" ? calcPts(ahtSec, ahtGoalSec, ahtType==="Productivity") : 0;
+            const gid      = String(r[cGameId] ?? "").trim();
+            const ahtRaw   = r[cAht];
+            const qaRaw    = r[cQa];
+            const ahtType: AhtType = /productivity/i.test(String(r[cAhtType] ?? "")) ? "Productivity" : "time";
+            const abs      = Number(r[cAbsent]  ?? 0) || 0;
+            const tard     = Number(r[cTardies] ?? 0) || 0;
+            const flag     = detectFlag(ahtRaw, qaRaw, abs, tard);
+            const ahtSec   = convertAHT(ahtRaw, ahtType);
+            const ahtGoal  = convertAHT(r[cAhtGoal], ahtType);
+
+            // QA — handle as percentage (0-100 scale)
+            let qaN: number | null = null;
+            if (!isMSL(qaRaw) && !isNA(qaRaw) && qaRaw !== "" && qaRaw !== null) {
+              qaN = parseFloat(String(qaRaw));
+              if (isNaN(qaN)) qaN = null;
+            }
+            let qaGoal = parseFloat(String(r[cQaGoal] ?? "0")) || 0;
+
+            const att    = calcAttendance(abs, tard);
+            const ahtPts = flag==="ok" ? calcPts(ahtSec, ahtGoal, ahtType==="Productivity") : 0;
             const qaPts  = flag==="ok" ? calcPts(qaN, qaGoal, true) : 0;
             const attPts = flag==="msl" ? 0 : att.pts;
+
             return {
-              game_id: gid, project: String(r[cProj]||"").trim(),
-              coach_id: String(r[cCoach]||"").trim(), qcoach: String(r[cQc]||"").trim(),
-              aht_seconds: ahtSec, aht_goal_seconds: ahtGoalSec, aht_type: ahtType,
-              qa_score: qaN, qa_goal: qaGoal, absences: abs, tardies: tard, flag,
-              attendance_status: att.status, attendance_pts: attPts, aht_pts: ahtPts, qa_pts: qaPts,
-              total_pts: attPts+ahtPts+qaPts,
+              game_id: gid,
+              project: String(r[cProject] ?? "").trim(),
+              coach_id: String(r[cCoach] ?? "").trim(),
+              qcoach: String(r[cQcoach] ?? "").trim(),
+              aht_seconds: ahtSec,
+              aht_goal_seconds: ahtGoal,
+              aht_type: ahtType,
+              qa_score: qaN,
+              qa_goal: qaGoal,
+              absences: abs,
+              tardies: tard,
+              flag,
+              attendance_status: att.status,
+              attendance_pts: attPts,
+              aht_pts: ahtPts,
+              qa_pts: qaPts,
+              total_pts: attPts + ahtPts + qaPts,
               is_new: !existingIds.has(gid.toUpperCase()),
-              review_reason: flag!=="ok" ? "" : undefined,
+              review_reason: flag !== "ok" ? "" : undefined,
             };
           });
 
+        // ── Coach Attrition sheet ──
         const csName = wb.SheetNames.find(n => /coach|attrition/i.test(n)) || "";
         let parsedCoaches: CoachRow[] = [];
         if (csName && wb.Sheets[csName]) {
-          const cr: any[] = XLSX.utils.sheet_to_json(wb.Sheets[csName], { defval:"" });
+          const cr: any[] = XLSX.utils.sheet_to_json(wb.Sheets[csName], { defval: "" });
           parsedCoaches = cr
-            .filter((r:any) => String(r["Game ID"]||r["game_id"]||"").trim() && /coach|manager/i.test(String(r["Position"]||r["position"]||"")))
+            .filter((r:any) => String(r["Game ID"] ?? r["game_id"] ?? "").trim() && /coach|manager/i.test(String(r["Position"] ?? r["position"] ?? "")))
             .map((r:any) => ({
-              game_id: String(r["Game ID"]||r["game_id"]||"").trim(),
-              position: String(r["Position"]||r["position"]||"").trim(),
-              manager: String(r["Manager"]||r["manager"]||"").trim(),
-              attrition: Number(r["Attrition"]||r["attrition"]||0),
+              game_id:    String(r["Game ID"]   ?? r["game_id"]  ?? "").trim(),
+              position:   String(r["Position"]  ?? r["position"] ?? "").trim(),
+              manager:    String(r["Manager"]   ?? r["manager"]  ?? "").trim(),
+              attrition:  Number(r["Attrition"] ?? r["attrition"] ?? 0),
             }));
         }
 
-        if (!processed.length) { setErrors(["No se encontraron agentes válidos."]); setStage("error"); return; }
-        setAgents(processed); setCoaches(parsedCoaches); setStage("preview");
-      } catch(err) { setErrors([`Error leyendo archivo: ${err}`]); setStage("error"); }
+        if (!processed.length) { setErrors(["No agentes válidos encontrados."]); setStage("error"); return; }
+        setAgents(processed);
+        setCoaches(parsedCoaches);
+        setStage("preview");
+      } catch(err) { setErrors([`Error: ${err}`]); setStage("error"); }
     };
     reader.readAsArrayBuffer(f);
   };
 
   const updateReason = (gid: string, reason: ReviewReason) =>
-    setAgents(prev => prev.map(a => a.game_id===gid ? {...a, review_reason: reason} : a));
+    setAgents(prev => prev.map(a => a.game_id === gid ? { ...a, review_reason: reason } : a));
 
   const handleUpload = async () => {
     setStage("uploading"); setProgress(0); setProgressMsg("Iniciando...");
-    const errs: string[] = []; let created=0, updated=0;
+    const errs: string[] = []; let created = 0, updated = 0;
     const week = weekLabel;
-    const total = agents.length + coaches.length + 1; // +1 for delete step
-    let done = 0;
-    const tick = (msg: string) => { done++; setProgress(Math.round((done/total)*100)); setProgressMsg(msg); };
 
-    // STEP 1: Delete existing records for this week (clean slate)
-    setProgressMsg("Limpiando semana anterior...");
-    try {
-      await dbDelete("weekly_metrics", `week=eq.${encodeURIComponent(week)}`);
-    } catch(e:any) { errs.push(`Delete: ${e.message}`); }
-    tick("Preparando agentes...");
+    // STEP 1: Delete existing week data
+    setProgressMsg("Limpiando datos anteriores...");
+    try { await dbDelete("weekly_metrics", `week=eq.${encodeURIComponent(week)}`); } catch {}
+    setProgress(5);
 
-    // STEP 2: Create new agents if selected
+    // STEP 2: Create new agents
     if (importNew === "all") {
       setProgressMsg("Creando usuarios nuevos...");
-      for (const a of agents.filter(x=>x.is_new)) {
+      const newOnes = agents.filter(x => x.is_new);
+      for (let i = 0; i < newOnes.length; i++) {
+        const a = newOnes[i];
         try {
           await dbInsert("profiles", {
             game_id: a.game_id, username: a.game_id, full_name: a.game_id,
             password_hash: DEFAULT_PASSWORD, needs_pw_change: true, temp_pw: DEFAULT_PASSWORD,
             role: "usuario", team: a.project, is_active: true, level: 1,
-            kudos:0, gold_kudos:0, referrals:[], weekly_perf:[],
+            kudos: 0, gold_kudos: 0, referrals: [], weekly_perf: [],
           });
           created++;
-        } catch(e:any) {
-          // Ignore duplicate key errors (user already exists)
-          if (!e.message.includes("duplicate") && !e.message.includes("unique")) {
+        } catch(e: any) {
+          if (!e.message?.includes("duplicate") && !e.message?.includes("unique")) {
             errs.push(`Crear ${a.game_id}: ${e.message}`);
           }
         }
+        setProgress(5 + Math.round((i / newOnes.length) * 20));
       }
     }
+    setProgress(25);
 
-    // STEP 3: Insert metrics — BATCH by 50 to avoid timeouts
-    setProgressMsg("Guardando métricas...");
-    const BATCH = 50;
-    const metricsRows = agents.map(a => {
-      const skip = a.review_reason==="vacation"||a.review_reason==="sick_leave"||a.review_reason==="skip";
-      const terminate = a.review_reason==="termination";
-      if (terminate) return null;
-      return {
-        game_id: a.game_id, week,
-        project: a.project, coach: a.coach_id, qa_coach: a.qcoach,
-        aht: a.aht_seconds, aht_goal: a.aht_goal_seconds, aht_type: a.aht_type,
-        qa_pct: a.qa_score, qa_goal: a.qa_goal,
-        absences: skip ? 0 : a.absences,
-        tardies: skip ? 0 : a.tardies,
-        attendance_status: skip ? "excused" : a.attendance_status,
-        attendance_pts: skip ? 0 : a.attendance_pts,
-        aht_pts: skip ? 0 : a.aht_pts,
-        qa_pts: skip ? 0 : a.qa_pts,
-        total_pts: skip ? 0 : a.total_pts,
-        flag: a.flag,
-        review_reason: a.review_reason || null,
-      };
-    }).filter(Boolean);
-
-    // Handle terminations
-    for (const a of agents.filter(x=>x.review_reason==="termination")) {
-      try { await dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, {is_active:false}); }
-      catch(e:any) { errs.push(`Baja ${a.game_id}: ${e.message}`); }
+    // STEP 3: Handle terminations
+    for (const a of agents.filter(x => x.review_reason === "termination")) {
+      try { await dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, { is_active: false }); }
+      catch(e: any) { errs.push(`Baja ${a.game_id}: ${e.message}`); }
     }
 
-    // Batch insert metrics
+    // STEP 4: Build metrics rows
+    const metricsRows = agents
+      .filter(a => a.review_reason !== "termination")
+      .map(a => {
+        const skip = a.review_reason === "vacation" || a.review_reason === "sick_leave" || a.review_reason === "skip";
+        return {
+          game_id:          a.game_id,
+          week,
+          project:          a.project,
+          coach:            a.coach_id,
+          qa_coach:         a.qcoach,
+          aht:              a.aht_seconds,
+          aht_goal:         a.aht_goal_seconds,
+          aht_type:         a.aht_type,
+          qa_pct:           a.qa_score,
+          qa_goal:          a.qa_goal,
+          absences:         skip ? 0 : a.absences,
+          tardies:          skip ? 0 : a.tardies,
+          attendance_status: skip ? "excused" : a.attendance_status,
+          attendance_pts:   skip ? 0 : a.attendance_pts,
+          aht_pts:          skip ? 0 : a.aht_pts,
+          qa_pts:           skip ? 0 : a.qa_pts,
+          total_pts:        skip ? 0 : a.total_pts,
+          flag:             a.flag,
+          review_reason:    a.review_reason || null,
+        };
+      });
+
+    // STEP 5: Batch insert metrics (50 at a time)
+    setProgressMsg("Guardando métricas...");
+    const BATCH = 50;
     for (let i = 0; i < metricsRows.length; i += BATCH) {
       const batch = metricsRows.slice(i, i + BATCH);
       try {
         await dbInsert("weekly_metrics", batch);
         updated += batch.length;
-      } catch(e:any) {
+      } catch(e: any) {
         errs.push(`Batch ${Math.floor(i/BATCH)+1}: ${e.message}`);
-        // Try one by one if batch fails
+        // Fallback: insert one by one
         for (const row of batch) {
           try { await dbInsert("weekly_metrics", row); updated++; }
-          catch(e2:any) { errs.push(`${(row as any).game_id}: ${e2.message}`); }
+          catch(e2: any) { errs.push(`${row.game_id}: ${e2.message}`); }
         }
       }
-      tick(`Guardando métricas... ${Math.min(i+BATCH, metricsRows.length)}/${metricsRows.length}`);
+      setProgress(25 + Math.round(((i + BATCH) / metricsRows.length) * 65));
+      setProgressMsg(`Guardando... ${Math.min(i + BATCH, metricsRows.length)}/${metricsRows.length}`);
     }
 
-    // STEP 4: Coach attrition
+    // STEP 6: Coach attrition
     setProgressMsg("Actualizando coaches...");
     for (const c of coaches) {
       try {
@@ -312,31 +357,33 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
           position: c.position,
           manager_id: c.manager || null,
         });
-      } catch(e:any) {
-        // Try patch if already exists
+      } catch {
         try {
           await dbPatch("staff_attrition_monthly",
             `coach_name=eq.${encodeURIComponent(c.game_id)}&week=eq.${encodeURIComponent(week)}`,
             { voluntary_exits: c.attrition });
         } catch {}
       }
-      tick(`Coach ${c.game_id}`);
     }
 
     setProgress(100); setProgressMsg("¡Completado!");
-    setSummary({ week, agents_processed:agents.length, agents_created:created, agents_updated:updated, coaches_processed:coaches.length, errors:errs });
+    setSummary({ week, agents_processed: agents.length, agents_created: created, agents_updated: updated, coaches_processed: coaches.length, errors: errs });
     setStage("done");
   };
 
-  const reset = () => { setStage("idle"); setAgents([]); setCoaches([]); setErrors([]); setSummary(null); setWeekLabel(""); setWeekAlreadyLoaded(false); setImportNew("pending"); setProgress(0); setProgressMsg(""); };
+  const reset = () => {
+    setStage("idle"); setAgents([]); setCoaches([]); setErrors([]);
+    setSummary(null); setWeekLabel(""); setWeekAlreadyLoaded(false);
+    setImportNew("pending"); setProgress(0); setProgressMsg("");
+  };
 
-  const flagged = agents.filter(a=>a.flag!=="ok");
-  const ok = agents.filter(a=>a.flag==="ok");
-  const newA = agents.filter(a=>a.is_new);
-  const reviewPending = flagged.some(a=>!a.review_reason);
-  const canUpload = !reviewPending && importNew !== "pending";
+  const flagged = agents.filter(a => a.flag !== "ok");
+  const ok      = agents.filter(a => a.flag === "ok");
+  const newA    = agents.filter(a => a.is_new);
+  const reviewPending = flagged.some(a => !a.review_reason);
+  const canUpload     = !reviewPending && importNew !== "pending";
 
-  const SD = { border:"1px solid #1e3a5f", muted:"#64748b", text:"#f1f5f9", card:"#1e293b" };
+  const SD = { border: "1px solid #1e3a5f", muted: "#64748b", text: "#f1f5f9", card: "#1e293b" };
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999,padding:16}}>
@@ -348,48 +395,57 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
           <div>
             <h2 style={{color:SD.text,fontSize:20,fontWeight:700,margin:0}}>📊 Carga Semanal de Métricas</h2>
             <div style={{marginTop:6,display:"flex",gap:8,flexWrap:"wrap"}}>
-              {weekLabel&&<span style={{background:"#1d4ed8",color:"#bfdbfe",padding:"2px 12px",borderRadius:999,fontSize:12,fontWeight:600}}>{weekLabel}</span>}
-              {weekAlreadyLoaded&&<span style={{background:"#78350f",color:"#fbbf24",padding:"2px 10px",borderRadius:999,fontSize:11,fontWeight:700}}>⚠️ Semana ya cargada — se sobreescribirá</span>}
+              {weekLabel && <span style={{background:"#1d4ed8",color:"#bfdbfe",padding:"2px 12px",borderRadius:999,fontSize:12,fontWeight:600}}>{weekLabel}</span>}
+              {weekAlreadyLoaded && <span style={{background:"#78350f",color:"#fbbf24",padding:"2px 10px",borderRadius:999,fontSize:11,fontWeight:700}}>⚠️ Semana ya cargada — se sobreescribirá</span>}
             </div>
           </div>
-          <button onClick={onClose||reset} style={{background:"transparent",border:"none",color:SD.muted,fontSize:20,cursor:"pointer"}}>✕</button>
+          <button onClick={onClose || reset} style={{background:"transparent",border:"none",color:SD.muted,fontSize:20,cursor:"pointer"}}>✕</button>
         </div>
 
         {/* IDLE */}
-        {stage==="idle"&&(
+        {stage === "idle" && (
           <div onDragOver={handleDrag} onDragLeave={handleDrag} onDrop={handleDrop}
             style={{border:`2px dashed ${isDragging?"#3b82f6":"#1e3a5f"}`,borderRadius:12,padding:"48px 32px",textAlign:"center",background:isDragging?"rgba(59,130,246,0.08)":"transparent",cursor:"pointer"}}>
             <div style={{fontSize:52,marginBottom:12}}>📁</div>
             <p style={{color:SD.text,fontSize:18,fontWeight:600,margin:"0 0 4px"}}>Arrastra tu archivo aquí</p>
             <p style={{color:SD.muted,fontSize:13,margin:"0 0 20px"}}>Ej: April_12_to_April_18_KPI.xlsx</p>
-            <label style={{display:"inline-block",background:"#1d4ed8",color:"#fff",padding:"11px 28px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:14,marginBottom:24}}>
+            <label style={{display:"inline-block",background:"#1d4ed8",color:"#fff",padding:"11px 28px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:14,marginBottom:16}}>
               Seleccionar archivo
               <input type="file" accept=".xlsx,.xls" onChange={handleInput} style={{display:"none"}}/>
             </label>
+            <div style={{background:"#0c2240",borderRadius:8,padding:"14px 18px",textAlign:"left",maxWidth:580,margin:"16px auto 0"}}>
+              <p style={{color:"#93c5fd",fontWeight:600,margin:"0 0 8px",fontSize:13}}>Columnas esperadas en hoja de métricas:</p>
+              <p style={{color:SD.muted,fontSize:12,margin:"3px 0"}}>Game ID · Project · Coach ID · Qcoach · AHT · AHT Goal · AHT type · QA Score · QA Goal · Absent · Tardies</p>
+              <p style={{color:SD.muted,fontSize:12,margin:"8px 0 3px"}}><b>AHT type:</b> <span style={{color:"#60a5fa"}}>"time"</span> (menor=mejor) o <span style={{color:"#4ade80"}}>"Productivity"</span> (mayor=mejor)</p>
+              <p style={{color:SD.muted,fontSize:12,margin:"3px 0"}}><b>QA Score/Goal:</b> escala 0-100 (ej. 97 = 97%)</p>
+              <p style={{color:SD.muted,fontSize:12,margin:"3px 0"}}><b>AHT:</b> segundos (ej. 547) o formato tiempo (0:09:07)</p>
+            </div>
           </div>
         )}
 
         {/* ERROR */}
-        {stage==="error"&&(
+        {stage === "error" && (
           <div>
             <div style={{background:"#2d1515",border:"1px solid #7f1d1d",borderRadius:10,padding:16,marginBottom:16}}>
-              <p style={{color:"#f87171",fontWeight:700,margin:"0 0 8px"}}>❌ Error</p>
-              {errors.map((e,i)=><p key={i} style={{color:"#fca5a5",fontSize:13,margin:"3px 0"}}>• {e}</p>)}
+              <p style={{color:"#f87171",fontWeight:700,margin:"0 0 8px"}}>❌ Error al procesar</p>
+              {errors.map((e,i) => <p key={i} style={{color:"#fca5a5",fontSize:13,margin:"3px 0"}}>• {e}</p>)}
             </div>
             <button onClick={reset} style={{background:"transparent",color:"#94a3b8",border:"1px solid #334155",padding:"10px 22px",borderRadius:8,cursor:"pointer",fontWeight:600}}>Intentar de nuevo</button>
           </div>
         )}
 
         {/* PREVIEW */}
-        {stage==="preview"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:16}}>
-            {weekAlreadyLoaded&&(
-              <div style={{background:"#2d2000",border:"1px solid #78350f",borderRadius:10,padding:14}}>
-                <p style={{color:"#fbbf24",fontWeight:700,margin:"0 0 4px"}}>⚠️ Semana <b>{weekLabel}</b> ya cargada — se sobreescribirá</p>
+        {stage === "preview" && (
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {weekAlreadyLoaded && (
+              <div style={{background:"#2d2000",border:"1px solid #78350f",borderRadius:10,padding:12}}>
+                <p style={{color:"#fbbf24",fontWeight:700,margin:0}}>⚠️ Semana <b>{weekLabel}</b> ya cargada — se sobreescribirá</p>
               </div>
             )}
-            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              {[{n:agents.length,l:"Total",c:"#60a5fa"},{n:ok.length,l:"OK",c:"#4ade80"},{n:flagged.length,l:"Revisión",c:"#fbbf24"},{n:newA.length,l:"Nuevos",c:"#a78bfa"},{n:coaches.length,l:"Coaches",c:"#f97316"}].map(c=>(
+
+            {/* Stats */}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {[{n:agents.length,l:"Total",c:"#60a5fa"},{n:ok.length,l:"OK",c:"#4ade80"},{n:flagged.length,l:"Revisión",c:"#fbbf24"},{n:newA.length,l:"Nuevos",c:"#a78bfa"},{n:coaches.length,l:"Coaches",c:"#f97316"}].map(c => (
                 <div key={c.l} style={{flex:1,minWidth:90,background:SD.card,borderRadius:10,padding:12,textAlign:"center"}}>
                   <div style={{fontSize:22,fontWeight:700,color:c.c}}>{c.n}</div>
                   <div style={{fontSize:11,color:SD.muted}}>{c.l}</div>
@@ -397,13 +453,14 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
               ))}
             </div>
 
-            {newA.length>0&&(
-              <div style={{background:"#160d33",border:"1px solid #4c1d95",borderRadius:10,padding:16}}>
-                <p style={{color:"#a78bfa",fontWeight:700,margin:"0 0 8px"}}>🆕 {newA.length} agentes nuevos</p>
-                <p style={{color:"#7c3aed",fontSize:13,margin:"0 0 12px"}}>Password temporal: <b style={{color:"#c4b5fd"}}>{DEFAULT_PASSWORD}</b></p>
+            {/* New agents */}
+            {newA.length > 0 && (
+              <div style={{background:"#160d33",border:"1px solid #4c1d95",borderRadius:10,padding:14}}>
+                <p style={{color:"#a78bfa",fontWeight:700,margin:"0 0 6px"}}>🆕 {newA.length} agentes nuevos detectados</p>
+                <p style={{color:"#7c3aed",fontSize:13,margin:"0 0 10px"}}>Password temporal: <b style={{color:"#c4b5fd"}}>{DEFAULT_PASSWORD}</b></p>
                 <div style={{display:"flex",gap:8}}>
-                  {[{k:"all",l:`✅ Crear todos (${newA.length})`},{k:"none",l:"⏭️ Omitir"}].map(b=>(
-                    <button key={b.k} onClick={()=>setImportNew(b.k as any)}
+                  {[{k:"all",l:`✅ Crear todos (${newA.length})`},{k:"none",l:"⏭️ Omitir"}].map(b => (
+                    <button key={b.k} onClick={() => setImportNew(b.k as any)}
                       style={{background:importNew===b.k?"#7c3aed":"#1e293b",color:importNew===b.k?"#fff":"#94a3b8",border:`1px solid ${importNew===b.k?"#7c3aed":"#334155"}`,padding:"8px 16px",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:13}}>
                       {b.l}
                     </button>
@@ -412,72 +469,98 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
               </div>
             )}
 
-            {flagged.length>0&&(
-              <div style={{background:"#1a1200",border:"1px solid #78350f",borderRadius:10,padding:16}}>
-                <p style={{color:"#fbbf24",fontWeight:700,margin:"0 0 12px"}}>⚠️ Requieren acción ({flagged.length})</p>
-                {flagged.map((a,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:"#0f0a00",borderRadius:8,padding:"10px 12px",marginBottom:6,flexWrap:"wrap"}}>
+            {/* Flagged */}
+            {flagged.length > 0 && (
+              <div style={{background:"#1a1200",border:"1px solid #78350f",borderRadius:10,padding:14}}>
+                <p style={{color:"#fbbf24",fontWeight:700,margin:"0 0 10px"}}>⚠️ Requieren acción ({flagged.length})</p>
+                {flagged.map((a,i) => (
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:"#0f0a00",borderRadius:8,padding:"9px 12px",marginBottom:6,flexWrap:"wrap"}}>
                     <div style={{flex:1}}>
                       <span style={{color:"#e2e8f0",fontWeight:700}}>{a.game_id}</span>
                       <span style={{color:SD.muted,fontSize:11,marginLeft:8}}>{a.project}</span>
-                      <span style={{marginLeft:8,padding:"1px 7px",borderRadius:999,fontSize:10,fontWeight:700,
-                        background:a.flag==="msl"?"#164e63":"#1e1b4b",
-                        color:a.flag==="msl"?"#67e8f9":"#a5b4fc"}}>
+                      <span style={{marginLeft:8,padding:"1px 7px",borderRadius:999,fontSize:10,fontWeight:700,background:"#164e63",color:"#67e8f9"}}>
                         {a.flag==="msl"?"🏥 MSL":"❓ N/A"}
                       </span>
                     </div>
-                    <select value={a.review_reason||""} onChange={e=>updateReason(a.game_id,e.target.value as ReviewReason)}
+                    <select value={a.review_reason||""} onChange={e => updateReason(a.game_id, e.target.value as ReviewReason)}
                       style={{background:"#1e293b",border:`1px solid ${!a.review_reason?"#dc2626":"#334155"}`,borderRadius:6,padding:"6px 10px",color:"#e2e8f0",fontSize:12,cursor:"pointer",outline:"none"}}>
                       <option value="">-- Razón --</option>
                       <option value="vacation">🏖️ Vacaciones</option>
-                      <option value="sick_leave">🏥 Sick Leave</option>
+                      <option value="sick_leave">🏥 Sick Leave / MSL</option>
                       <option value="termination">📤 Baja</option>
                       <option value="skip">⏭️ Omitir</option>
                     </select>
                   </div>
                 ))}
-                {reviewPending&&<p style={{color:"#ef4444",fontSize:12,marginTop:8}}>⚠️ Selecciona razón para todos.</p>}
+                {reviewPending && <p style={{color:"#ef4444",fontSize:12,marginTop:8,margin:"8px 0 0"}}>⚠️ Selecciona razón para todos.</p>}
               </div>
             )}
 
+            {/* Preview table */}
             <p style={{color:"#94a3b8",fontSize:13,fontWeight:600,margin:0}}>Vista previa — {ok.length} agentes OK</p>
             <div style={{overflowX:"auto",borderRadius:8,border:SD.border}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr>{["Game ID","Proj","Coach","AHT","Meta","Tipo","QA","MetaQA","Att","AHTpts","QApts","Total"].map(h=>(
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead><tr>{["Game ID","Proj","Coach","AHT","MetaAHT","Tipo","QA%","MetaQA","Aus","Tard","Att","AHTpts","QApts","Total"].map(h => (
                   <th key={h} style={{background:"#0c2240",color:"#93c5fd",fontWeight:600,padding:"7px 8px",textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
                 ))}</tr></thead>
-                <tbody>{ok.slice(0,20).map((a,i)=>(
+                <tbody>{ok.slice(0, 20).map((a,i) => (
                   <tr key={i} style={{background:i%2===0?"#0f172a":"#0c1a2e"}}>
-                    <td style={{padding:"6px 8px",color:a.is_new?"#c4b5fd":"#cbd5e1",fontWeight:a.is_new?700:400,fontSize:11}}>{a.game_id}{a.is_new&&<span style={{color:"#a78bfa",fontSize:8,marginLeft:3}}>NEW</span>}</td>
-                    <td style={{padding:"6px 8px",color:SD.muted,fontSize:11}}>{a.project}</td>
-                    <td style={{padding:"6px 8px",color:SD.muted,fontSize:11}}>{a.coach_id}</td>
-                    <td style={{padding:"6px 8px",color:"#cbd5e1",fontSize:11}}>{a.aht_type==="Productivity"?a.aht_seconds?.toFixed(2):a.aht_seconds?`${a.aht_seconds}s`:"-"}</td>
-                    <td style={{padding:"6px 8px",color:SD.muted,fontSize:11}}>{a.aht_type==="Productivity"?a.aht_goal_seconds?.toFixed(2):a.aht_goal_seconds?`${a.aht_goal_seconds}s`:"-"}</td>
-                    <td style={{padding:"6px 8px"}}><span style={{fontSize:9,fontWeight:700,color:a.aht_type==="Productivity"?"#4ade80":"#60a5fa"}}>{a.aht_type==="Productivity"?"📈Prod":"⏱Time"}</span></td>
-                    <td style={{padding:"6px 8px",color:"#cbd5e1",fontSize:11}}>{a.qa_score!==null?(a.qa_score>1?`${a.qa_score}`:`${(a.qa_score*100).toFixed(0)}%`):"-"}</td>
-                    <td style={{padding:"6px 8px",color:SD.muted,fontSize:11}}>{a.qa_goal>1?a.qa_goal:`${(a.qa_goal*100).toFixed(0)}%`}</td>
+                    <td style={{padding:"6px 8px",color:a.is_new?"#c4b5fd":"#cbd5e1",fontWeight:a.is_new?700:400}}>{a.game_id}{a.is_new && <span style={{color:"#a78bfa",fontSize:8,marginLeft:3}}>NEW</span>}</td>
+                    <td style={{padding:"6px 8px",color:SD.muted}}>{a.project}</td>
+                    <td style={{padding:"6px 8px",color:SD.muted}}>{a.coach_id}</td>
+                    <td style={{padding:"6px 8px",color:"#cbd5e1"}}>{a.aht_type==="Productivity" ? a.aht_seconds?.toFixed(2) : a.aht_seconds ? `${a.aht_seconds}s` : "-"}</td>
+                    <td style={{padding:"6px 8px",color:SD.muted}}>{a.aht_type==="Productivity" ? a.aht_goal_seconds?.toFixed(2) : a.aht_goal_seconds ? `${a.aht_goal_seconds}s` : "-"}</td>
+                    <td style={{padding:"6px 8px"}}><span style={{fontSize:9,fontWeight:700,color:a.aht_type==="Productivity"?"#4ade80":"#60a5fa"}}>{a.aht_type==="Productivity"?"📈":"⏱"}</span></td>
+                    <td style={{padding:"6px 8px",color:"#cbd5e1"}}>{a.qa_score !== null ? `${a.qa_score}%` : "-"}</td>
+                    <td style={{padding:"6px 8px",color:SD.muted}}>{a.qa_goal}%</td>
+                    <td style={{padding:"6px 8px",color:"#cbd5e1",textAlign:"center"}}>{a.absences}</td>
+                    <td style={{padding:"6px 8px",color:"#cbd5e1",textAlign:"center"}}>{a.tardies}</td>
                     <td style={{padding:"6px 8px"}}><span style={{padding:"1px 5px",borderRadius:999,fontSize:9,fontWeight:600,color:"#fff",background:a.attendance_status==="perfect"?"#16a34a":a.attendance_status==="late"?"#d97706":"#dc2626"}}>{a.attendance_pts}p</span></td>
-                    <td style={{padding:"6px 8px",color:"#cbd5e1",textAlign:"center",fontSize:11}}>{a.aht_pts}</td>
-                    <td style={{padding:"6px 8px",color:"#cbd5e1",textAlign:"center",fontSize:11}}>{a.qa_pts}</td>
-                    <td style={{padding:"6px 8px",fontWeight:700,color:"#60a5fa",textAlign:"center",fontSize:12}}>{a.total_pts}</td>
+                    <td style={{padding:"6px 8px",color:"#cbd5e1",textAlign:"center"}}>{a.aht_pts}</td>
+                    <td style={{padding:"6px 8px",color:"#cbd5e1",textAlign:"center"}}>{a.qa_pts}</td>
+                    <td style={{padding:"6px 8px",fontWeight:700,color:"#60a5fa",textAlign:"center"}}>{a.total_pts}</td>
                   </tr>
                 ))}</tbody>
               </table>
-              {ok.length>20&&<p style={{color:"#475569",fontSize:11,padding:"6px 10px",margin:0}}>...y {ok.length-20} más</p>}
+              {ok.length > 20 && <p style={{color:"#475569",fontSize:11,padding:"6px 10px",margin:0}}>...y {ok.length-20} más</p>}
             </div>
 
+            {/* Coaches */}
+            {coaches.length > 0 && (
+              <>
+                <p style={{color:"#94a3b8",fontSize:13,fontWeight:600,margin:0}}>Coaches ({coaches.length})</p>
+                <div style={{overflowX:"auto",borderRadius:8,border:SD.border}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                    <thead><tr>{["Game ID","Posición","Manager","Attrition","Impacto"].map(h => <th key={h} style={{background:"#0c2240",color:"#93c5fd",fontWeight:600,padding:"7px 8px",textAlign:"left"}}>{h}</th>)}</tr></thead>
+                    <tbody>{coaches.map((c,i) => {
+                      const imp = c.attrition===0?"+10 pts":c.attrition===1?"+2 pts":c.attrition===2?"0 pts":"-5 pts";
+                      const col = c.attrition===0?"#16a34a":c.attrition===1?"#d97706":c.attrition===2?"#6b7280":"#dc2626";
+                      return (<tr key={i} style={{background:i%2===0?"#0f172a":"#0c1a2e"}}>
+                        <td style={{padding:"6px 8px",color:"#e2e8f0",fontWeight:600}}>{c.game_id}</td>
+                        <td style={{padding:"6px 8px",color:SD.muted}}>{c.position}</td>
+                        <td style={{padding:"6px 8px",color:"#94a3b8"}}>{c.manager||"—"}</td>
+                        <td style={{padding:"6px 8px",color:"#cbd5e1",textAlign:"center"}}>{c.attrition}</td>
+                        <td style={{padding:"6px 8px",fontWeight:700,color:col,textAlign:"center"}}>{imp}</td>
+                      </tr>);
+                    })}</tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* Actions */}
             <div style={{display:"flex",gap:10,justifyContent:"flex-end",paddingTop:4}}>
               <button onClick={reset} style={{background:"transparent",color:"#94a3b8",border:"1px solid #334155",padding:"11px 24px",borderRadius:8,cursor:"pointer",fontWeight:600}}>Cancelar</button>
               <button onClick={handleUpload} disabled={!canUpload}
                 style={{background:canUpload?"#1d4ed8":"#334155",color:"#fff",border:"none",padding:"11px 28px",borderRadius:8,cursor:canUpload?"pointer":"not-allowed",fontWeight:700}}>
-                {!canUpload?(reviewPending?"⚠️ Completa revisión":"⚠️ Define agentes nuevos"):`✅ Confirmar y subir ${weekLabel}`}
+                {!canUpload ? (reviewPending ? "⚠️ Completa revisión" : "⚠️ Define agentes nuevos") : `✅ Confirmar y subir ${weekLabel}`}
               </button>
             </div>
           </div>
         )}
 
         {/* UPLOADING */}
-        {stage==="uploading"&&(
+        {stage === "uploading" && (
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"60px 0",gap:16}}>
             <div style={{width:52,height:52,border:"4px solid #1e3a5f",borderTop:"4px solid #3b82f6",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
             <p style={{color:SD.text,fontSize:18,fontWeight:600,margin:0}}>Subiendo {weekLabel}...</p>
@@ -489,25 +572,25 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
         )}
 
         {/* DONE */}
-        {stage==="done"&&summary&&(
-          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+        {stage === "done" && summary && (
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <div style={{background:"#052e16",border:"1px solid #14532d",borderRadius:12,padding:24,textAlign:"center"}}>
               <p style={{fontSize:42,margin:"0 0 8px"}}>🎉</p>
               <p style={{color:"#4ade80",fontSize:20,fontWeight:700,margin:"0 0 4px"}}>¡Carga completada!</p>
               <p style={{color:"#86efac",fontSize:14,margin:0}}>Semana <b>{summary.week}</b></p>
             </div>
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              {[{n:summary.agents_processed,l:"Procesados",c:"#60a5fa"},{n:summary.agents_created,l:"Creados",c:"#a78bfa"},{n:summary.agents_updated,l:"Métricas guardadas",c:"#4ade80"},{n:summary.coaches_processed,l:"Coaches",c:"#f97316"}].map(c=>(
+              {[{n:summary.agents_processed,l:"Procesados",c:"#60a5fa"},{n:summary.agents_created,l:"Creados",c:"#a78bfa"},{n:summary.agents_updated,l:"Métricas guardadas",c:"#4ade80"},{n:summary.coaches_processed,l:"Coaches",c:"#f97316"}].map(c => (
                 <div key={c.l} style={{flex:1,minWidth:100,background:SD.card,borderRadius:10,padding:14,textAlign:"center"}}>
                   <div style={{fontSize:22,fontWeight:700,color:c.c}}>{c.n}</div>
                   <div style={{fontSize:11,color:SD.muted}}>{c.l}</div>
                 </div>
               ))}
             </div>
-            {summary.errors.length>0&&(
-              <div style={{background:"#2d2000",border:"1px solid #78350f",borderRadius:10,padding:16}}>
+            {summary.errors.length > 0 && (
+              <div style={{background:"#2d2000",border:"1px solid #78350f",borderRadius:10,padding:14}}>
                 <p style={{color:"#fbbf24",fontWeight:700,margin:"0 0 8px"}}>⚠️ {summary.errors.length} errores</p>
-                {summary.errors.slice(0,5).map((e,i)=><p key={i} style={{color:"#fca5a5",fontSize:12,margin:"2px 0"}}>• {e}</p>)}
+                {summary.errors.slice(0,5).map((e,i) => <p key={i} style={{color:"#fca5a5",fontSize:12,margin:"2px 0"}}>• {e}</p>)}
               </div>
             )}
             <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
