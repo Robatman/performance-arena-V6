@@ -247,6 +247,17 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
       catch(e:any) { errs.push(`Baja ${a.game_id}: ${e.message}`); }
     }
 
+    setProgressMsg("Actualizando proyectos y coaches...");
+    for (const a of agents.filter(x=>x.review_reason!=="termination")) {
+      try {
+        await dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, {
+          team: a.project,
+          coach_id: a.coach_id,
+          qa_coach: a.qcoach,
+        });
+      } catch {}
+    }
+
     setProgressMsg("Guardando métricas...");
     const metricsRows = agents.filter(a=>a.review_reason!=="termination").map(a=>{
       const skip = a.review_reason==="vacation"||a.review_reason==="sick_leave"||a.review_reason==="skip";
