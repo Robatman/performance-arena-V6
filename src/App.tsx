@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import ExcelUpload from "./components/ExcelUpload";
+import OperationsDashboard from "./components/OperationsDashboard";
 import ReferralsPanel from "./components/ReferralsPanel";
 // @ts-nocheck
 
@@ -665,7 +666,7 @@ export default function App(){
         </div>
       </div>
       <div style={{padding:"14px 14px 0"}}>
-        {screen==="dashboard"&&<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos}/>}
+        {screen==="dashboard"&&(cu?.role==="superadmin"||cu?.role==="manager"?<OperationsDashboard user={cu}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos}/>)}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
         {screen==="kudos"&&<StaffKudos user={cu} allStaff={allStaff} kudos={staffKudos} isManager={isManager}
           onSendKudo={async d=>{try{await staffDb.createKudo(d);const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast("Kudo sent!");}catch(e){toast("Error sending kudo");}}}
