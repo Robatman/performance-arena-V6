@@ -553,7 +553,8 @@ export default function App(){
     </div>
     <div style={{padding:"14px 14px 0",animation:"fadeIn 0.25s ease"}}>
       {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs}/>}
-      {screen==="riddle"&&<RiddleTask gameId={cu.game_id} isAdmin={isSA}/>}
+      {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA}/>}
+{screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA}/>}
 {screen==="task"&&<RiddleTask gameId={cu.game_id} isAdmin={isSA}/>}
       {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop}/>}
       {screen==="rewards"&&<Rewards user={cu} prizes={prizes} onRedeem={async p=>{const stock=p.stock||0;if(stock<=0){toast("Sin stock");return;}try{await db.createRedemption({user_id:cu.id,reward_id:p.id,points_spent:p.points_cost||p.pts,status:"pending"});await db.updatePrize(p.id,{stock:stock-1});const updated=await db.getPrizes();setPrizes(updated||[]);toast(`${p.name} canjeado!`);}catch(e){toast("Error al canjear");}}}/>}
