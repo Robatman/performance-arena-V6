@@ -426,7 +426,7 @@ function TaskSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) 
   async function approveSubmission(sub: any, approve: boolean) {
     try {
       if (approve) {
-        const points = sub.completion_pct === 100 ? 10 : sub.completion_pct === 75 ? 5 : 1
+        const points = 2
         await sbFetch(`agent_task_submissions?id=eq.${sub.id}`, {
           method:"PATCH", body: JSON.stringify({ approved: true, points_awarded: points })
         })
@@ -544,7 +544,7 @@ function TaskSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) 
               <div style={{background:C.card, border:`1.5px solid ${C.blue}44`, borderRadius:14, padding:14, marginBottom:12}}>
                 <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
                   <span style={{color:C.muted, fontSize:12}}>{activeTask.week}</span>
-                  <span style={{color:C.blue, fontWeight:800, fontSize:14}}>+10 pts</span>
+                  <span style={{color:C.blue, fontWeight:800, fontSize:14}}>+2 pts</span>
                 </div>
                 <div style={{color:C.blue, fontWeight:800, fontSize:16}}>{activeTask.title}</div>
                 {activeTask.instructions && <div style={{color:C.text, fontSize:13, marginTop:8, lineHeight:1.6, whiteSpace:"pre-line"}}>{activeTask.instructions}</div>}
@@ -555,8 +555,8 @@ function TaskSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) 
                   {mySubmission.approved ? (
                     <div>
                       <div style={{fontSize:48, marginBottom:8}}>✅</div>
-                      <div style={{color:C.green, fontWeight:800, fontSize:18}}>¡Task aprobada!</div>
-                      <div style={{color:C.muted, fontSize:13, marginTop:8}}>Los puntos se calcularán al cierre del mes</div>
+                      <div style={{color:C.green, fontWeight:800, fontSize:18}}>¡Task aprobada! +2 pts</div>
+                      <div style={{color:C.muted, fontSize:13, marginTop:8}}>Puntos agregados a tu total</div>
                     </div>
                   ) : (
                     <div>
