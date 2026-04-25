@@ -71,7 +71,7 @@ export default function OperationsDashboard({ user }: { user: any }) {
     setLoading(false);
   };
 
-  const weekData = allMetrics.filter((m: any) => m.week === week);
+  const weekData = allMetrics.filter((m: any) => m.week === week && (isSA || m.project === user.project));
   const withBuckets = weekData.map((a: any) => ({ ...a, bucket: getBucket(a) }));
 
   const projects = [...new Set(weekData.map((m: any) => m.project).filter(Boolean))].sort() as string[];
