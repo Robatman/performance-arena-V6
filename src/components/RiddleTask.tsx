@@ -229,7 +229,7 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
                       </div>
                       <div style={{color:C.text, fontWeight:700, fontSize:14}}>{r.question}</div>
                       <div style={{color:C.muted, fontSize:12, marginTop:4}}>
-                        A: {r.option_a} · B: {r.option_b}{r.option_c?` · C: ${r.option_c}`''}{r.option_d?` · D: ${r.option_d}`:''}
+                        A: {r.option_a} · B: {r.option_b}{r.option_c?` · C: ${r.option_c}`:''}{r.option_d?` · D: ${r.option_d}`:''}
                       </div>
                       <div style={{color:C.purple, fontSize:12, fontWeight:700, marginTop:2}}>Correcta: {r.correct_answer}</div>
                     </div>
