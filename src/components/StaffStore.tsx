@@ -583,25 +583,25 @@ function AdminStoreView({ user }) {
   );
 }
 
+// ─── SA WRAPPER (hooks must be at top level) ──────────────────────────────────
+function SAStoreWrapper({ user, staffProfile, onCoinsUpdate }) {
+  const [view, setView] = useState<"admin"|"store">("admin");
+  return (
+    <div style={{background:S.bg,minHeight:"100vh"}}>
+      <div style={{display:"flex",gap:6,marginBottom:14,padding:"14px 0 0"}}>
+        {[{id:"admin",label:"⚙️ Gestionar"},{id:"store",label:"🏪 Mi Tienda"}].map(t=>(
+          <button key={t.id} onClick={()=>setView(t.id as any)} style={{padding:"8px 14px",borderRadius:9,border:`1px solid ${view===t.id?S.accent:S.border}`,background:view===t.id?`${S.accent}22`:S.card,color:view===t.id?"#a5b4fc":S.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{t.label}</button>
+        ))}
+      </div>
+      {view==="admin"&&<AdminStoreView user={user}/>}
+      {view==="store"&&<StoreView user={user} staffProfile={staffProfile} onCoinsUpdate={onCoinsUpdate}/>}
+    </div>
+  );
+}
+
 // ─── MAIN EXPORT ──────────────────────────────────────────────────────────────
 export default function StaffStore({ user, staffProfile, onCoinsUpdate }) {
   const isSA = user?.role === "superadmin";
-
-  // SA sees both: admin panel + their own store
-  if (isSA) {
-    const [view, setView] = useState<"admin"|"store">("admin");
-    return (
-      <div style={{background:S.bg,minHeight:"100vh"}}>
-        <div style={{display:"flex",gap:6,marginBottom:14,padding:"14px 0 0"}}>
-          {[{id:"admin",label:"⚙️ Gestionar"},{id:"store",label:"🏪 Mi Tienda"}].map(t=>(
-            <button key={t.id} onClick={()=>setView(t.id as any)} style={{padding:"8px 14px",borderRadius:9,border:`1px solid ${view===t.id?S.accent:S.border}`,background:view===t.id?`${S.accent}22`:S.card,color:view===t.id?"#a5b4fc":S.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{t.label}</button>
-          ))}
-        </div>
-        {view==="admin"&&<AdminStoreView user={user}/>}
-        {view==="store"&&<StoreView user={user} staffProfile={staffProfile} onCoinsUpdate={onCoinsUpdate}/>}
-      </div>
-    );
-  }
-
+  if (isSA) return <SAStoreWrapper user={user} staffProfile={staffProfile} onCoinsUpdate={onCoinsUpdate}/>;
   return <StoreView user={user} staffProfile={staffProfile} onCoinsUpdate={onCoinsUpdate}/>;
 }
