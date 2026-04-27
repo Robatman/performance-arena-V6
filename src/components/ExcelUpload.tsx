@@ -205,7 +205,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
         }
 
         if (!processed.length) { setErrors(["No agentes válidos."]); setStage("error"); return; }
-        const hasNew = processed.some(a => !existingIds.has(a.game_id.toUpperCase())); if (!hasNew) setImportNew("none"); setAgents(processed); setCoaches(parsedCoaches); setStage("preview");
+        setAgents(processed); setCoaches(parsedCoaches); setStage("preview");
       } catch(err) { setErrors([`Error: ${err}`]); setStage("error"); }
     };
     reader.readAsArrayBuffer(f);
@@ -247,22 +247,19 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
       catch(e:any) { errs.push(`Baja ${a.game_id}: ${e.message}`); }
     }
 
-    setProgressMsg("Actualizando proyectos y coaches...");
-    for (const a of agents.filter(x=>x.review_reason!=="termination")) {
-      try {
-        await dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, {
-          team: a.project,
-          coach_id: a.coach_id,
-          qa_coach: a.qcoach,
-        });
-      } catch {}
+    setProgressMsg("Guardando métricas...");
+    const // Build coach->manager map from sheet 2
+    const coachManagerMap: Record<string,string> = {};
+    for (const c of coaches) {
+      if (c.game_id && c.manager) coachManagerMap[c.game_id.trim()] = c.manager.trim();
     }
 
-    setProgressMsg("Guardando métricas...");
-    const metricsRows = agents.filter(a=>a.review_reason!=="termination").map(a=>{
+    metricsRows = agents.filter(a=>a.review_reason!=="termination").map(a=>{
       const skip = a.review_reason==="vacation"||a.review_reason==="sick_leave"||a.review_reason==="skip";
+      const managerGameId = coachManagerMap[a.coach_id?.trim()||""||"null"] || coachManagerMap[a.qcoach?.trim()||"null"] || null;
       return {
         game_id:a.game_id, week, project:a.project, coach:a.coach_id, qa_coach:a.qcoach,
+        manager_game_id:managerGameId,
         aht:a.aht_seconds, aht_goal:a.aht_goal_seconds, aht_type:a.aht_type,
         qa_pct:a.qa_score, qa_goal:a.qa_goal,
         absences:skip?0:a.absences, tardies:skip?0:a.tardies,
