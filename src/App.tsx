@@ -4,6 +4,9 @@ import ExcelUpload from "./components/ExcelUpload";
 import ReferralsPanel from "./components/ReferralsPanel";
 import OperationsDashboard from "./components/OperationsDashboard";
 import RiddleTask from "./components/RiddleTask";
+import CoachingSessions from "./components/CoachingSessions";
+import StaffStore from "./components/StaffStore";
+import StaffPointsReport from "./components/StaffPointsReport";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2pqcHRqeWhpaXRlanVwdmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODgwMjEsImV4cCI6MjA5MjU2NDAyMX0.UgQDse6To0oe49llGDC7e9jYO1_bR6gxk-YcE6h7Bn8";
@@ -188,7 +191,7 @@ const rp=(u)=>((u.referrals||[]).reduce((s,r)=>s+(r.approved?5:1),0));
 const gs=(u)=>{const perf=(u.weekly_perf||[]).reduce((s,w)=>s+w.tot,0);const wks=Math.max((u.weekly_perf||[]).length,1);const rdl=u.riddle_completed===wks?10:0;const tp=(u.task_completed||0)/wks;const tsk=tp>=1?10:tp>=0.75?5:tp>=0.5?1:0;return{perf,rdl,tsk,kp:kp(u),rp:rp(u),total:perf+rdl+tsk+kp(u)+rp(u)};};
 
 function adaptProfile(p){return{id:p.id,name:p.full_name,username:p.username,password_hash:p.password_hash,role:p.role==="usuario"?"user":p.role,project:p.team||"Campaign K",active:p.is_active,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},level:p.level||1,puzzlePieces:(p.puzzle_pieces||[]).length,perfectMonths:p.perfect_months||0,kudos:p.kudos||0,goldKudos:p.gold_kudos||0,gold_kudos:p.gold_kudos||0,referrals:p.referrals||[],weekly_perf:p.weekly_perf||[],weeklyPerf:p.weekly_perf||[],riddle_completed:p.riddle_completed||0,riddleCompleted:p.riddle_completed||0,task_completed:p.task_completed||0,taskCompleted:p.task_completed||0,monthsHistory:p.months_history||[],ownedItems:p.owned_items||[],rewards:p.rewards||[],game_id:p.game_id||"",needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,kudosLog:p.kudos_log||[],points_total:p.points_total||0,coins:p.coins||0,monthly_level:p.monthly_level||1,coach_id:p.coach_id||"",qa_coach:p.qa_coach||"",appType:"agents"};}
-function adaptStaffProfile(p){return{id:p.id,gameId:p.game_id,username:p.username,name:p.full_name,password_hash:p.password_hash,role:p.role,project:p.project,managerId:p.manager_id,active:p.is_active,needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},ownedItems:p.owned_items||[],level:p.level||1,appType:"staff"};}
+function adaptStaffProfile(p){return{id:p.id,gameId:p.game_id||"",username:p.username,name:p.full_name||p.username||"",password_hash:p.password_hash,role:p.role,project:(p.project||"").trim(),managerId:p.manager_id,active:p.is_active,needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},ownedItems:p.owned_items||[],level:p.level||1,appType:"staff"};}
 
 // ─── UI ATOMS ─────────────────────────────────────────────────────────────────
 function Av({av,sz=80,shop}){const items=shop||DEFAULT_SHOP;const base=BASES.find(b=>b.id===(av?.base||"b1"));const hair=items.find(i=>i.id===av?.hair);const acc=items.find(i=>i.id===av?.accessory);const out=items.find(i=>i.id===av?.outfit);const bg=items.find(i=>i.id===av?.background);const bm={g1:"linear-gradient(135deg,#0a0a40,#1a1aff)",g2:"linear-gradient(135deg,#ff6b35,#f00)",g3:"linear-gradient(135deg,#00d4ff,#0057ff)",g4:"linear-gradient(135deg,#ff9ff3,#ffd700)",g5:"linear-gradient(135deg,#22c55e,#0ea5e9)",g6:"linear-gradient(135deg,#1e1b4b,#f59e0b)",g7:"linear-gradient(135deg,#0369a1,#06b6d4)",g8:"linear-gradient(135deg,#7f1d1d,#f97316)"};const bgs=bg?(bm[bg.id]||`linear-gradient(135deg,${C.bg},${C.bgDk})`):(`linear-gradient(135deg,${C.bg},${C.bgDk})`);return(<div style={{width:sz,height:sz,borderRadius:"50%",background:bgs,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",overflow:"hidden",flexShrink:0,position:"relative",border:`2.5px solid ${C.blue}`,boxShadow:`0 0 0 1px ${C.border}`}}>{out&&<div style={{position:"absolute",bottom:0,left:0,right:0,height:"40%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.22}}>{out.emoji}</div>}<div style={{fontSize:sz*0.42,lineHeight:1,zIndex:2}}>{base?.emoji||"😊"}</div>{hair&&<div style={{position:"absolute",top:-2,fontSize:sz*0.26,zIndex:3}}>{hair.emoji}</div>}{acc&&<div style={{position:"absolute",top:"28%",right:"5%",fontSize:sz*0.22,zIndex:4}}>{acc.emoji}</div>}</div>);}
@@ -560,91 +563,120 @@ function RiddleScreen(){const [sel,setSel]=useState(null);const [done,setDone]=u
 
 function TaskScreen(){const [desc,setDesc]=useState("");const [file,setFile]=useState(null);const [done,setDone]=useState(false);const ref=useRef();const TASK={title:"Plan de Mejora con IA",instructions:"Usa cualquier herramienta de IA para crear un plan de mejora sobre un problema real de tu operacion. Incluye:\n- Problema identificado\n- Propuesta de mejora\n- Como la IA te ayudo\n- Impacto esperado en KPIs",pts:2};return(<div style={{paddingBottom:100}}><Card style={{marginBottom:14,background:`${C.red}12`,border:`1.5px solid ${C.red}44`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:30}}>📋</div><div style={{color:C.red,fontWeight:800,fontSize:16,marginTop:3}}>{TASK.title}</div></div><div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:900,fontSize:20}}>+{TASK.pts}</div><div style={{color:C.muted,fontSize:11}}>puntos score</div></div></div></Card>{!done?(<><Card style={{marginBottom:12}}><div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:8}}>INSTRUCCIONES</div><div style={{color:C.text,fontSize:14,lineHeight:1.65,whiteSpace:"pre-line"}}>{TASK.instructions}</div></Card><Card style={{marginBottom:12}}><textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Describe brevemente que hiciste (min. 50 caracteres)..." rows={4} style={{width:"100%",border:`1.5px solid ${C.border}`,borderRadius:9,padding:"10px 13px",fontSize:14,outline:"none",color:C.text,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",background:C.bg,marginBottom:6}}/><div style={{color:C.muted,fontSize:11,marginBottom:12}}>{desc.length} caracteres</div><div onClick={()=>ref.current?.click()} style={{border:`2px dashed ${file?"#16a34a":C.border}`,borderRadius:11,padding:20,textAlign:"center",cursor:"pointer",background:file?C.greenBg:C.bg}}>{file?<><div style={{fontSize:26}}>✅</div><div style={{color:C.green,fontWeight:700,marginTop:4}}>{file.name}</div></>:<><div style={{fontSize:26}}>📄</div><div style={{color:C.muted,fontWeight:700,marginTop:4}}>Subir PDF o imagen</div></>}<input ref={ref} type="file" accept=".pdf,image/*" style={{display:"none"}} onChange={e=>setFile(e.target.files[0])}/></div></Card><Btn onClick={()=>setDone(true)} disabled={desc.length<50||!file} color={C.red} style={{width:"100%",padding:12}}>ENVIAR TAREA</Btn></>):(<Card style={{textAlign:"center"}}><div style={{fontSize:58,marginBottom:10}}>📬</div><div style={{color:C.red,fontWeight:800,fontSize:19,marginBottom:8}}>Tarea Enviada!</div><div style={{color:C.muted,fontSize:13}}>+2 pts al score cuando el admin apruebe</div></Card>)}</div>);}
 
+function PrizeCard({p,coins,onRedeem,locked=false}){
+  const cost=p.pts||p.points_cost||0;
+  const canBuy=!locked&&coins>=cost;
+  const stock=p.stock===undefined?(p.stock_remaining||0):(p.stock||0);
+  const noStock=stock<=0;
+  const minLv=p.minLevel||p.min_level||1;
+  const lvColors={1:C.muted,2:C.blue,3:C.purple,4:C.red};
+  const lvColor=lvColors[minLv]||C.muted;
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 13px",borderRadius:14,border:`1.5px solid ${locked?"#e8eaf6":canBuy?C.green:C.border}`,background:locked?"#f9fafb":canBuy?`${C.green}06`:C.bg,marginBottom:10,opacity:locked?0.65:1,transition:"all 0.2s"}}>
+      <div style={{width:50,height:50,borderRadius:12,background:locked?"#e8eaf6":`linear-gradient(135deg,${C.blue}18,${C.red}10)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0,border:`1.5px solid ${locked?C.border:C.blue}20`}}>
+        {locked?"🔒":p.emoji||"🎁"}
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{color:locked?C.muted:C.text,fontWeight:700,fontSize:14,marginBottom:3}}>{p.name}</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+          {minLv>1&&(<span style={{padding:"1px 7px",borderRadius:5,background:`${lvColor}18`,border:`1px solid ${lvColor}40`,color:lvColor,fontSize:10,fontWeight:800}}>LVL {minLv}+ requerido</span>)}
+          <span style={{color:noStock?C.red:C.muted,fontSize:11}}>{noStock?"Sin stock":`Stock: ${stock}`}</span>
+        </div>
+      </div>
+      <div style={{textAlign:"right",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end",marginBottom:5}}>
+          <span style={{fontSize:15}}>🪙</span>
+          <span style={{color:locked?C.muted:canBuy?C.gold:C.muted,fontWeight:900,fontSize:17}}>{cost}</span>
+        </div>
+        {locked
+          ?<span style={{color:C.muted,fontSize:11,fontWeight:600}}>Sube de nivel</span>
+          :<Btn onClick={()=>onRedeem(p)} disabled={!canBuy||noStock} color={canBuy&&!noStock?C.red:"#9ca3af"} sm>{noStock?"Agotado":canBuy?"Canjear":"Sin coins"}</Btn>
+        }
+      </div>
+    </div>
+  );
+}
+
 function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount}){
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals);
   const maxScore=calcMaxScore(sc.weekCount,riddleCount,taskCount);
   const level=calcLevel(sc.score,maxScore);
-  const lv=level;
   const coins=sc.coins;
-  const mine=prizes.filter(p=>p.active!==false&&(p.minLevel||p.min_level||1)<=lv);
-  const locked=prizes.filter(p=>p.active!==false&&(p.minLevel||p.min_level||1)>lv);
+  const activePrizes=prizes.filter(p=>p.active!==false);
+  const freeSection=activePrizes.filter(p=>(p.minLevel||p.min_level||1)===1);
+  const exclusiveSection=activePrizes.filter(p=>(p.minLevel||p.min_level||1)>1);
+  const exclusiveUnlocked=exclusiveSection.filter(p=>(p.minLevel||p.min_level||1)<=level);
+  const exclusiveLocked=exclusiveSection.filter(p=>(p.minLevel||p.min_level||1)>level);
   return(
     <div style={{paddingBottom:100}}>
-      <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.blue},${C.red})`,border:"none",textAlign:"center"}}>
-        <div style={{fontSize:36}}>🎁</div>
-        <div style={{color:"#fff",fontWeight:800,fontSize:20}}>TIENDA</div>
-        <div style={{marginTop:6}}><Bdg l={lv}/></div>
-        {/* Coins balance */}
-        <div style={{marginTop:10,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-          <span style={{fontSize:22}}>🪙</span>
-          <span style={{color:C.gold,fontWeight:900,fontSize:24}}>{coins}</span>
-          <span style={{color:"rgba(255,255,255,0.6)",fontSize:13}}>coins disponibles</span>
-        </div>
-        <div style={{color:"rgba(255,255,255,0.5)",fontSize:11,marginTop:2}}>
-          Score: {sc.score} pts · Nivel {lv} = llave de acceso
-        </div>
-        <div style={{marginTop:10}}><Pzl pieces={user.puzzlePieces||0}/></div>
-      </Card>
-
-      {/* Info box: coins vs score */}
-      <Card style={{marginBottom:14,background:`${C.gold}08`,border:`1.5px solid ${C.gold}30`}}>
-        <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-          <div style={{fontSize:22}}>💡</div>
+      {/* Header */}
+      <div style={{background:`linear-gradient(135deg,${C.blue} 0%,#3b0764 50%,${C.red} 100%)`,borderRadius:20,padding:"18px 16px",marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
           <div>
-            <div style={{color:C.text,fontWeight:700,fontSize:13,marginBottom:4}}>¿Cómo funciona la tienda?</div>
-            <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>
-              <strong style={{color:C.blue}}>Score</strong> determina tu nivel de acceso (llave 🔑).<br/>
-              <strong style={{color:C.gold}}>Coins 🪙</strong> son los que gastas para comprar premios.<br/>
-              Coins = Score + Kudos + Referidos.
+            <div style={{color:"#fff",fontWeight:900,fontSize:22,letterSpacing:1}}>🏪 TIENDA</div>
+            <div style={{marginTop:4}}><Bdg l={level}/></div>
+          </div>
+          <Pzl pieces={user.puzzlePieces||0}/>
+        </div>
+        <div style={{background:"rgba(255,255,255,0.12)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div>
+            <div style={{color:"rgba(255,255,255,0.6)",fontSize:10,letterSpacing:1,marginBottom:2}}>TUS COINS</div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:24}}>🪙</span>
+              <span style={{color:C.gold,fontWeight:900,fontSize:30,lineHeight:1}}>{coins}</span>
             </div>
           </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginBottom:2}}>SCORE DEL MES</div>
+            <div style={{color:"#fff",fontWeight:800,fontSize:16}}>{sc.score} <span style={{fontSize:11,opacity:0.6}}>/ {maxScore}</span></div>
+            <div style={{color:"rgba(255,255,255,0.5)",fontSize:10}}>Nivel {level} · llave de acceso 🔑</div>
+          </div>
         </div>
-      </Card>
+      </div>
 
-      {mine.length>0&&(
-        <Card style={{marginBottom:14}}>
-          <div style={{color:C.green,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:12}}>✅ DISPONIBLES PARA TU NIVEL</div>
-          {mine.map(p=>{
-            const cost=p.pts||p.points_cost||0;
-            const canBuy=coins>=cost;
-            return(
-              <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",borderRadius:12,border:`1.5px solid ${canBuy?C.green:C.border}`,background:canBuy?`${C.green}08`:C.bg,marginBottom:9}}>
-                <div style={{width:46,height:46,borderRadius:8,background:`${C.blue}12`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>{p.emoji||"🎁"}</div>
-                <div style={{flex:1}}>
-                  <div style={{color:C.text,fontWeight:700,fontSize:14}}>{p.name}</div>
-                  <div style={{color:C.muted,fontSize:12}}>Stock: {p.stock===undefined?p.stock_remaining:p.stock}</div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end",marginBottom:4}}>
-                    <span style={{fontSize:14}}>🪙</span>
-                    <span style={{color:C.gold,fontWeight:800,fontSize:15}}>{cost}</span>
-                  </div>
-                  <Btn onClick={()=>onRedeem(p)} disabled={!canBuy||(p.stock||p.stock_remaining||0)<=0} color={C.red} sm>
-                    {canBuy&&(p.stock||p.stock_remaining||0)>0?"Canjear":"Sin coins"}
-                  </Btn>
-                </div>
-              </div>
-            );
-          })}
-        </Card>
+      {/* SECCIÓN 1: COINS LIBRE */}
+      <div style={{marginBottom:6}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+          <div style={{width:4,height:20,borderRadius:2,background:C.gold}}/>
+          <div style={{color:C.text,fontWeight:800,fontSize:14}}>Disponibles para todos</div>
+          <div style={{flex:1,height:1,background:C.border}}/>
+          <span style={{color:C.muted,fontSize:11}}>{freeSection.length} premios</span>
+        </div>
+        {freeSection.length===0
+          ?<Card style={{textAlign:"center",padding:20,color:C.muted,fontSize:13}}>Sin premios en esta sección aún.</Card>
+          :freeSection.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={onRedeem}/>)
+        }
+      </div>
+
+      {/* SECCIÓN 2: EXCLUSIVOS POR NIVEL */}
+      {exclusiveSection.length>0&&(
+        <div style={{marginTop:18}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <div style={{width:4,height:20,borderRadius:2,background:C.purple}}/>
+            <div style={{color:C.text,fontWeight:800,fontSize:14}}>Exclusivos por Nivel 🔑</div>
+            <div style={{flex:1,height:1,background:C.border}}/>
+            <span style={{color:C.muted,fontSize:11}}>{exclusiveSection.length} premios</span>
+          </div>
+          {exclusiveUnlocked.length>0&&(
+            <div style={{marginBottom:8}}>
+              <div style={{color:C.green,fontSize:11,fontWeight:700,marginBottom:8}}>✅ Tu nivel {level} desbloquea estos:</div>
+              {exclusiveUnlocked.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={onRedeem}/>)}
+            </div>
+          )}
+          {exclusiveLocked.length>0&&(
+            <div>
+              <div style={{color:C.muted,fontSize:11,fontWeight:700,marginBottom:8}}>🔒 Sube de nivel para acceder:</div>
+              {exclusiveLocked.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={onRedeem} locked/>)}
+            </div>
+          )}
+        </div>
       )}
 
-      {locked.length>0&&(
-        <Card style={{opacity:0.6}}>
-          <div style={{color:C.muted,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:12}}>🔒 BLOQUEADOS — NECESITAS SUBIR DE NIVEL</div>
-          {locked.map(p=>(
-            <div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 13px",borderRadius:12,border:`1.5px solid ${C.border}`,background:C.bg,marginBottom:8}}>
-              <div style={{fontSize:24}}>🔒</div>
-              <div style={{flex:1}}>
-                <div style={{color:C.muted,fontWeight:700}}>{p.name}</div>
-                <div style={{color:C.muted,fontSize:12}}>Requiere Nivel {p.minLevel||p.min_level}</div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:3}}>
-                <span style={{fontSize:12}}>🪙</span>
-                <span style={{color:C.muted,fontWeight:800}}>{p.pts||p.points_cost}</span>
-              </div>
-            </div>
-          ))}
+      {activePrizes.length===0&&(
+        <Card style={{textAlign:"center",padding:40}}>
+          <div style={{fontSize:48,marginBottom:8}}>🏪</div>
+          <div style={{color:C.muted,fontSize:14}}>La tienda está vacía por ahora.</div>
+          <div style={{color:C.muted,fontSize:12,marginTop:4}}>El admin agregará premios pronto.</div>
         </Card>
       )}
     </div>
@@ -1227,8 +1259,17 @@ export default function App(){
   if(loggedIn?.appType==="staff"){
     const isManager=cu?.role==="manager"||cu?.role==="training_manager"||cu?.role==="superadmin";
     const isSAorManager=cu?.role==="superadmin"||cu?.role==="manager";
-    const staffNav=[{id:"dashboard",icon:"🏠",label:"Home"},{id:"leaderboard",icon:"🏆",label:"Rankings"},{id:"kudos",icon:"👏",label:"Kudos"},{id:"innovation",icon:"🚀",label:"Projects"},{id:"profile",icon:"🎨",label:"Profile"},...(cu?.role==="superadmin"?[{id:"admin",icon:"⚙️",label:"Admin"}]:[])];
-    const staffTitles={dashboard:"Dashboard",leaderboard:"Leaderboard",kudos:"Kudos",innovation:"Innovation & AI",profile:"Profile",admin:"Admin Panel"};
+    const staffNav=[
+      {id:"dashboard",icon:"🏠",label:"Home"},
+      {id:"leaderboard",icon:"🏆",label:"Rankings"},
+      {id:"kudos",icon:"👏",label:"Kudos"},
+      {id:"innovation",icon:"🚀",label:"Projects"},
+      ...(["team_coach","manager","superadmin"].includes(cu?.role)?[{id:"sessions",icon:"🎯",label:"Sessions"}]:[]),
+      {id:"store",icon:"🏪",label:"Tienda"},
+      {id:"profile",icon:"🎨",label:"Profile"},
+      ...(cu?.role==="superadmin"?[{id:"report",icon:"📊",label:"Reporte"},{id:"admin",icon:"⚙️",label:"Admin"}]:[]),
+    ];
+    const staffTitles={dashboard:"Dashboard",leaderboard:"Leaderboard",kudos:"Kudos",innovation:"Innovation & AI",sessions:"Coaching Sessions",store:"Staff Store",report:"Reporte de Puntos",profile:"Profile",admin:"Admin Panel"};
     return<>
       <style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif;background:${S.bg}}input,select,textarea{font-family:inherit}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
       {cu?.needsPwChange&&<TempPwModal user={cu} dark={true} onSave={async pw=>{await staffDb.update(cu.id,{password_hash:pw,needs_pw_change:false,temp_pw:null});setLoggedIn({...cu,needsPwChange:false,tempPw:null});toast("Password updated!");}}/>}
@@ -1251,7 +1292,10 @@ export default function App(){
           onSubmit={async d=>{try{await staffDb.createInnovation(d);const i=await staffDb.getInnovations(cu.id);setStaffInnovations(i||[]);toast("Submitted!");}catch(e){toast("Error");}}}
           onApprove={async(id,approved,notes)=>{try{await staffDb.updateInnovation(id,{status:approved?"approved":"rejected",reviewed_by:cu.id,review_notes:notes,reviewed_at:new Date().toISOString()});const i=await staffDb.getInnovations(cu.id);setStaffInnovations(i||[]);toast(approved?"Approved!":"Rejected");}catch(e){toast("Error");}}}
         />}
+        {screen==="sessions"&&<CoachingSessions user={cu} staffProfile={allStaff.find(s=>s.id===cu?.id)||cu}/>}
+        {screen==="store"&&<StaffStore user={cu} staffProfile={allStaff.find(s=>s.id===cu?.id)||cu} onCoinsUpdate={(coins)=>{setLoggedIn({...cu,coins});}}/>}
         {screen==="profile"&&<StaffProfile user={cu} onUpdate={u=>{setLoggedIn(u);}} toast={toast}/>}
+        {screen==="report"&&cu?.role==="superadmin"&&<StaffPointsReport user={cu}/>}
         {screen==="admin"&&cu?.role==="superadmin"&&<StaffAdminPanel cu={cu} allStaff={allStaff} toast={toast} reloadStaff={reloadStaff}/>}
       </div>
       <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:S.bgCard,borderTop:`1px solid ${S.border}`,display:"flex",padding:"6px 0 10px",overflowX:"auto"}}>
@@ -1284,47 +1328,3 @@ export default function App(){
               <div style={{background:`${lc(level)}15`,border:`1px solid ${lc(level)}40`,borderRadius:8,padding:"3px 8px",textAlign:"center"}}>
                 <div style={{color:lc(level),fontWeight:900,fontSize:12}}>L{level}</div>
               </div>
-              <div style={{background:`${C.gold}15`,border:`1px solid ${C.gold}40`,borderRadius:8,padding:"3px 8px",display:"flex",alignItems:"center",gap:3}}>
-                <span style={{fontSize:11}}>🪙</span>
-                <span style={{color:C.gold,fontWeight:900,fontSize:12}}>{sc.coins}</span>
-              </div>
-            </div>
-          );
-        })()}
-        <Av av={cu?.avatar} sz={34} shop={shop}/>
-        <button onClick={()=>{setLoggedIn(null);setScreen("dashboard");}} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,padding:"4px 10px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Salir</button>
-      </div>
-    </div>
-    <div style={{padding:"14px 14px 0",animation:"fadeIn 0.25s ease"}}>
-      {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps}/>}
-      {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle"/>}
-      {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task"/>}
-      {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop}/>}
-      {screen==="rewards"&&<Rewards user={cu} prizes={prizes} {...scoreProps} onRedeem={async p=>{
-        const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals);
-        const cost=p.points_cost||p.pts||0;
-        const stock=p.stock||p.stock_remaining||0;
-        if(stock<=0){toast("Sin stock");return;}
-        if(sc.coins<cost){toast(`Necesitas ${cost} 🪙 coins, tienes ${sc.coins}`);return;}
-        try{
-          await db.createRedemption({user_id:cu.id,reward_id:p.id,points_spent:cost,status:"pending"});
-          await db.updatePrize(p.id,{stock:stock-1});
-          // Deduct coins from profile
-          const newCoins=Math.max(0,(cu.coins||0)-cost);
-          await db.updateUser(cu.id,{coins:newCoins});
-          const updated=await db.getPrizes();setPrizes(updated||[]);
-          syncUser({...cu,coins:newCoins});
-          toast(`${p.name} canjeado! -${cost} 🪙`);
-        }catch(e){toast("Error al canjear");}
-      }}/>}
-      {screen==="referrals"&&<ReferralsPanel isAdmin={false}/>}
-      {screen==="info"&&<Info/>}
-      {screen==="notifs"&&<Notifs user={cu} notifs={notifs} onMarkRead={markNotifRead} onMarkAll={markAllRead}/>}
-      {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps}/>}
-      {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount}/>}
-    </div>
-    <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:C.card,borderTop:`1.5px solid ${C.border}`,display:"flex",padding:"6px 0 10px",boxShadow:`0 -2px 10px ${C.blue}10`,overflowX:"auto"}}>
-      {nav.map(item=>{const active=screen===item.id;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{item.badge>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{item.badge}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(55%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?C.blue:C.muted,transition:"color 0.18s",whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:C.blue}}/>}</button>);})}
-    </div>
-  </>;
-}
