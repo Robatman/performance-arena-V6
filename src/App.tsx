@@ -1168,6 +1168,24 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
 }
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
+function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,user}){
+  if(!user||!weeklyMetrics||weeklyMetrics.length===0)return null;
+  const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals);
+  const maxScore=calcMaxScore(sc.weekCount,riddleCount,taskCount);
+  const level=calcLevel(sc.score,maxScore);
+  return(
+    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+      <div style={{background:`${lc(level)}15`,border:`1px solid ${lc(level)}40`,borderRadius:8,padding:"3px 8px",textAlign:"center"}}>
+        <div style={{color:lc(level),fontWeight:900,fontSize:12}}>L{level}</div>
+      </div>
+      <div style={{background:`${C.gold}15`,border:`1px solid ${C.gold}40`,borderRadius:8,padding:"3px 8px",display:"flex",alignItems:"center",gap:3}}>
+        <span style={{fontSize:11}}>🪙</span>
+        <span style={{color:C.gold,fontWeight:900,fontSize:12}}>{sc.coins}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   const [users,setUsers]=useState([]);const [prizes,setPrizes]=useState([]);
   const [shop]=useState(DEFAULT_SHOP);const [notifs,setNotifs]=useState([]);
@@ -1310,21 +1328,3 @@ export default function App(){
   const saNav=[{id:"dashboard",icon:"📊",label:"Inicio"},{id:"admin",icon:"⚙️",label:"Admin"},{id:"riddle",icon:"🧠",label:"Riddle"},{id:"task",icon:"📋",label:"Task"},{id:"leaderboard",icon:"🏆",label:"Ranking"},{id:"rewards",icon:"🎁",label:"Tienda"},{id:"info",icon:"📖",label:"Como"},{id:"notifs",icon:"🔔",label:"Avisos",badge:unread},{id:"profile",icon:"🎨",label:"Perfil"}];
   const nav=isSA?saNav:isAdmin?adminNav:userNav;
   const titles={dashboard:"Dashboard",riddle:"Riddle",task:"Task",leaderboard:"Leaderboard",rewards:"Tienda",info:"Como Funciona",notifs:"Notificaciones",profile:"Perfil",admin:"Panel Admin",referrals:"Referidos"};
-
-  return<>
-    <style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif;background:${C.bg}}input,select,textarea{font-family:inherit}::-webkit-scrollbar{width:3px;height:3px}::-webkit-scrollbar-thumb{background:${C.border};border-radius:4px}@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
-    {cu?.needsPwChange&&<TempPwModal user={cu} onSave={async pw=>{await db.updateUser(cu.id,{password_hash:pw,needs_pw_change:false,temp_pw:null});syncUser({...cu,needsPwChange:false,tempPw:null});toast("Contrasena actualizada!");}}/>}
-    <Toast msg={toastMsg} onClose={()=>setToastMsg("")}/>
-    <div style={{position:"sticky",top:0,zIndex:100,background:C.card,borderBottom:`1.5px solid ${C.border}`,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:`0 2px 10px ${C.blue}12`}}>
-      <div style={{display:"flex",alignItems:"center",gap:10}}><Logo sz={34}/><div><div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:900,color:C.blue,letterSpacing:1.5,lineHeight:1}}>PERFORMANCE</div><div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:900,color:C.red,letterSpacing:1.5,lineHeight:1}}>ARENA</div></div></div>
-      <div style={{display:"flex",alignItems:"center",gap:8}}>
-        {/* Score + Coins mini display in header */}
-        {cu&&agentWeeklyMetrics.length>0&&(()=>{
-          const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals);
-          const maxScore=calcMaxScore(sc.weekCount,monthRiddleCount,monthTaskCount);
-          const level=calcLevel(sc.score,maxScore);
-          return(
-            <div style={{display:"flex",gap:6,alignItems:"center"}}>
-              <div style={{background:`${lc(level)}15`,border:`1px solid ${lc(level)}40`,borderRadius:8,padding:"3px 8px",textAlign:"center"}}>
-                <div style={{color:lc(level),fontWeight:900,fontSize:12}}>L{level}</div>
-              </div>
