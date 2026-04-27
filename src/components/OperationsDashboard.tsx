@@ -81,7 +81,12 @@ export default function OperationsDashboard({ user }: { user: any }) {
   const weekData = allMetrics.filter((m: any) => {
     if (m.week !== week) return false;
     if (isSA)      return true;
-    if (isManager) return norm(m.project) === norm(user.project);
+    if (isManager) {
+      // project "ALL" or empty = see all projects (like SA)
+      const proj = (user.project||"").trim().toUpperCase();
+      if (!proj || proj === "ALL") return true;
+      return norm(m.project) === norm(user.project);
+    }
     if (isCoach)   return norm(m.coach) === norm(user.gameId);
     return false;
   });
@@ -446,8 +451,3 @@ export default function OperationsDashboard({ user }: { user: any }) {
             })}
           </div>
         )}
-
-      </div>
-    </div>
-  );
-}
