@@ -51,8 +51,8 @@ const db = {
   getConfig: (key) => sbFetch(`app_config?key=eq.${key}&select=*`),
   setConfig: (key, val) => sbFetch(`app_config?key=eq.${key}`, { method: "PATCH", body: JSON.stringify({ value: val }), prefer: "return=representation" }),
   // Riddle/Task counts for max calculation
-  getRiddlesMonth: () => sbFetch(`riddles?select=id,created_at&order=created_at.desc`).catch(()=>[]),
-  getTasksMonth: () => sbFetch(`tasks?select=id,created_at&order=created_at.desc`).catch(()=>[]),
+  getRiddlesMonth: () => sbFetch(`riddles?select=id,created_at&order=created_at.desc`),
+  getTasksMonth: () => sbFetch(`tasks?select=id,created_at&order=created_at.desc`),
   // Agent riddle/task completions
   getAgentRiddleAnswers: (gameId) => sbFetch(`agent_riddle_answers?game_id=eq.${encodeURIComponent(gameId)}&select=*`),
   getAgentTaskSubmissions: (gameId) => sbFetch(`agent_task_submissions?game_id=eq.${encodeURIComponent(gameId)}&select=*`),
@@ -86,10 +86,7 @@ const staffDb = {
 export function calcScoreCoins(weeklyMetrics, riddleAnswers, taskSubmissions, kudos, goldKudos, referrals) {
   // Score from weekly metrics (QA + AHT + Attendance per week)
   const kpiScore = (weeklyMetrics || []).reduce((sum, w) => {
-    const qa = Number(w.qa_pts) || 0;
-    const aht = Number(w.aht_pts) || 0;
-    const att = Number(w.attendance_pts) || 0;
-    return sum + qa + aht + att;
+    return sum + (w.qa_pts || 0) + (w.aht_pts || 0) + (w.attendance_pts || 0);
   }, 0);
 
   // Weeks in current data
@@ -1213,24 +1210,24 @@ export default function App(){
 
   // Load agent-specific scoring data on login
   const loadAgentScoreData=async(agent)=>{
-    if(!agent?.game_id){console.warn("loadAgentScoreData: no game_id",agent);return;}
-    // Load each independently so one failure doesn't kill all
-    const safeGet=async(fn)=>{try{return await fn();}catch(e){console.warn("safeGet error:",e);return [];}};
-    const [wm,ra,ts,riddles,tasks]=await Promise.all([
-      safeGet(()=>db.getWeeklyMetrics(agent.game_id)),
-      safeGet(()=>db.getAgentRiddleAnswers(agent.game_id)),
-      safeGet(()=>db.getAgentTaskSubmissions(agent.game_id)),
-      safeGet(()=>db.getRiddlesMonth()),
-      safeGet(()=>db.getTasksMonth()),
-    ]);
-    console.log("Score data loaded for",agent.game_id,"— metrics:",wm?.length,"riddles:",riddles?.length,"tasks:",tasks?.length);
-    setAgentWeeklyMetrics(wm||[]);
-    setAgentRiddleAnswers(ra||[]);
-    setAgentTaskSubmissions(ts||[]);
-    const now=new Date();
-    const thisMonth=(d)=>{const dt=new Date(d);return dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear();};
-    setMonthRiddleCount((riddles||[]).filter(r=>r.created_at&&thisMonth(r.created_at)).length);
-    setMonthTaskCount((tasks||[]).filter(t=>t.created_at&&thisMonth(t.created_at)).length);
+    if(!agent?.game_id)return;
+    try{
+      const [wm,ra,ts,riddles,tasks]=await Promise.all([
+        db.getWeeklyMetrics(agent.game_id),
+        db.getAgentRiddleAnswers(agent.game_id),
+        db.getAgentTaskSubmissions(agent.game_id),
+        db.getRiddlesMonth(),
+        db.getTasksMonth(),
+      ]);
+      setAgentWeeklyMetrics(wm||[]);
+      setAgentRiddleAnswers(ra||[]);
+      setAgentTaskSubmissions(ts||[]);
+      // Count riddles/tasks active this month
+      const now=new Date();
+      const thisMonth=(d)=>{const dt=new Date(d);return dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear();};
+      setMonthRiddleCount((riddles||[]).filter(r=>thisMonth(r.created_at)).length);
+      setMonthTaskCount((tasks||[]).filter(t=>thisMonth(t.created_at)).length);
+    }catch(e){console.error("Score data load error:",e);}
   };
 
   const loadNotifs=async(uid)=>{try{const d=await db.getNotifs(uid);setNotifs(d||[]);}catch(e){}};
@@ -1261,10 +1258,7 @@ export default function App(){
   const reloadUsers=async()=>{const d=await db.getUsers();setUsers((d||[]).map(adaptProfile));};
   const reloadStaff=async()=>{const d=await staffDb.getAll();setAllStaff((d||[]).map(adaptStaffProfile));};
   const toast=msg=>setToastMsg(msg);
-  // For staff, find from allStaff; for agents, find from users
-  const cu=loggedIn?.appType==="staff"
-    ?(allStaff.find(s=>s.id===loggedIn?.id)||loggedIn)
-    :(users.find(u=>u.id===loggedIn?.id)||loggedIn);
+  const cu=users.find(u=>u.id===loggedIn?.id)||loggedIn;
   const syncUser=upd=>{setUsers(users.map(u=>u.id===upd.id?upd:u));setLoggedIn(upd);};
   const isAdmin=cu?.role==="admin"||cu?.role==="superadmin";
   const isSA=cu?.role==="superadmin";
@@ -1328,3 +1322,56 @@ export default function App(){
     </>;
   }
 
+  // ── AGENTS APP ──
+  const userNav=[{id:"dashboard",icon:"🏠",label:"Inicio"},{id:"riddle",icon:"🧠",label:"Riddle"},{id:"task",icon:"📋",label:"Task"},{id:"leaderboard",icon:"🏆",label:"Ranking"},{id:"rewards",icon:"🎁",label:"Tienda"},{id:"referrals",icon:"🤝",label:"Referidos"},{id:"info",icon:"📖",label:"Como"},{id:"notifs",icon:"🔔",label:"Avisos",badge:unread},{id:"profile",icon:"🎨",label:"Perfil"}];
+  const adminNav=[{id:"dashboard",icon:"📊",label:"Inicio"},{id:"admin",icon:"⚙️",label:"Admin"},{id:"leaderboard",icon:"🏆",label:"Ranking"},{id:"rewards",icon:"🎁",label:"Tienda"},{id:"info",icon:"📖",label:"Como"},{id:"notifs",icon:"🔔",label:"Avisos",badge:unread},{id:"profile",icon:"🎨",label:"Perfil"}];
+  const saNav=[{id:"dashboard",icon:"📊",label:"Inicio"},{id:"admin",icon:"⚙️",label:"Admin"},{id:"riddle",icon:"🧠",label:"Riddle"},{id:"task",icon:"📋",label:"Task"},{id:"leaderboard",icon:"🏆",label:"Ranking"},{id:"rewards",icon:"🎁",label:"Tienda"},{id:"info",icon:"📖",label:"Como"},{id:"notifs",icon:"🔔",label:"Avisos",badge:unread},{id:"profile",icon:"🎨",label:"Perfil"}];
+  const nav=isSA?saNav:isAdmin?adminNav:userNav;
+  const titles={dashboard:"Dashboard",riddle:"Riddle",task:"Task",leaderboard:"Leaderboard",rewards:"Tienda",info:"Como Funciona",notifs:"Notificaciones",profile:"Perfil",admin:"Panel Admin",referrals:"Referidos"};
+
+  return<>
+    <style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif;background:${C.bg}}input,select,textarea{font-family:inherit}::-webkit-scrollbar{width:3px;height:3px}::-webkit-scrollbar-thumb{background:${C.border};border-radius:4px}@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
+    {cu?.needsPwChange&&<TempPwModal user={cu} onSave={async pw=>{await db.updateUser(cu.id,{password_hash:pw,needs_pw_change:false,temp_pw:null});syncUser({...cu,needsPwChange:false,tempPw:null});toast("Contrasena actualizada!");}}/>}
+    <Toast msg={toastMsg} onClose={()=>setToastMsg("")}/>
+    <div style={{position:"sticky",top:0,zIndex:100,background:C.card,borderBottom:`1.5px solid ${C.border}`,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:`0 2px 10px ${C.blue}12`}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}><Logo sz={34}/><div><div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:900,color:C.blue,letterSpacing:1.5,lineHeight:1}}>PERFORMANCE</div><div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:900,color:C.red,letterSpacing:1.5,lineHeight:1}}>ARENA</div></div></div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        {/* Score + Coins mini display in header */}
+        <HeaderScorePills weeklyMetrics={agentWeeklyMetrics} riddleAnswers={agentRiddleAnswers} taskSubmissions={agentTaskSubmissions} riddleCount={monthRiddleCount} taskCount={monthTaskCount} user={cu}/>
+        <Av av={cu?.avatar} sz={34} shop={shop}/>
+        <button onClick={()=>{setLoggedIn(null);setScreen("dashboard");}} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,padding:"4px 10px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Salir</button>
+      </div>
+    </div>
+    <div style={{padding:"14px 14px 0",animation:"fadeIn 0.25s ease"}}>
+      {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps}/>}
+      {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle"/>}
+      {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task"/>}
+      {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop}/>}
+      {screen==="rewards"&&<Rewards user={cu} prizes={prizes} {...scoreProps} onRedeem={async p=>{
+        const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals);
+        const cost=p.points_cost||p.pts||0;
+        const stock=p.stock||p.stock_remaining||0;
+        if(stock<=0){toast("Sin stock");return;}
+        if(sc.coins<cost){toast(`Necesitas ${cost} 🪙 coins, tienes ${sc.coins}`);return;}
+        try{
+          await db.createRedemption({user_id:cu.id,reward_id:p.id,points_spent:cost,status:"pending"});
+          await db.updatePrize(p.id,{stock:stock-1});
+          // Deduct coins from profile
+          const newCoins=Math.max(0,(cu.coins||0)-cost);
+          await db.updateUser(cu.id,{coins:newCoins});
+          const updated=await db.getPrizes();setPrizes(updated||[]);
+          syncUser({...cu,coins:newCoins});
+          toast(`${p.name} canjeado! -${cost} 🪙`);
+        }catch(e){toast("Error al canjear");}
+      }}/>}
+      {screen==="referrals"&&<ReferralsPanel isAdmin={false}/>}
+      {screen==="info"&&<Info/>}
+      {screen==="notifs"&&<Notifs user={cu} notifs={notifs} onMarkRead={markNotifRead} onMarkAll={markAllRead}/>}
+      {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps}/>}
+      {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount}/>}
+    </div>
+    <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:C.card,borderTop:`1.5px solid ${C.border}`,display:"flex",padding:"6px 0 10px",boxShadow:`0 -2px 10px ${C.blue}10`,overflowX:"auto"}}>
+      {nav.map(item=>{const active=screen===item.id;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{item.badge>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{item.badge}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(55%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?C.blue:C.muted,transition:"color 0.18s",whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:C.blue}}/>}</button>);})}
+    </div>
+  </>;
+}
