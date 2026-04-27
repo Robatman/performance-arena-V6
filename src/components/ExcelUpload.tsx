@@ -251,12 +251,16 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     // Build coach->manager map from sheet 2
     const coachManagerMap: Record<string,string> = {};
     for (const c of coaches) {
-      if (c.game_id && c.manager) coachManagerMap[c.game_id.trim()] = c.manager.trim();
+      if (c.game_id && c.manager) {
+        coachManagerMap[c.game_id.trim().toUpperCase()] = c.manager.trim();
+      }
     }
+    console.log("coachManagerMap entries:", Object.keys(coachManagerMap).length, coachManagerMap);
 
     const metricsRows = agents.filter(a=>a.review_reason!=="termination").map(a=>{
       const skip = a.review_reason==="vacation"||a.review_reason==="sick_leave"||a.review_reason==="skip";
-      const managerGameId = coachManagerMap[a.coach_id?.trim()||""] || coachManagerMap[a.qcoach?.trim()||""] || null;
+      const coachKey = (a.coach_id||a.qcoach||"").trim().toUpperCase();
+      const managerGameId = coachManagerMap[coachKey] || null;
       return {
         game_id:a.game_id, week, project:a.project, coach:a.coach_id, qa_coach:a.qcoach,
         manager_game_id:managerGameId,
