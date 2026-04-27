@@ -80,14 +80,9 @@ export default function OperationsDashboard({ user }: { user: any }) {
   // Coach        → only their agents (coach field matches staff name)
   const weekData = allMetrics.filter((m: any) => {
     if (m.week !== week) return false;
-    if (isSA)      return true;
-    if (isManager) {
-      // project "ALL" or empty = see all projects (like SA)
-      const proj = (user.project||"").trim().toUpperCase();
-      if (!proj || proj === "ALL") return true;
-      return norm(m.project) === norm(user.project);
-    }
-    if (isCoach)   return norm(m.coach) === norm(user.gameId);
+    if (isSA) return true;
+    if (isManager) return (!user.project || user.project.trim().toUpperCase() === "ALL") ? true : norm(m.project) === norm(user.project);
+    if (isCoach) return norm(m.coach) === norm(user.gameId);
     return false;
   });
 
