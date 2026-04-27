@@ -1,3 +1,4 @@
+// v3
 import { useState, useEffect } from "react";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
@@ -446,3 +447,8 @@ export default function OperationsDashboard({ user }: { user: any }) {
             })}
           </div>
         )}
+
+      </div>
+    </div>
+  );
+}
