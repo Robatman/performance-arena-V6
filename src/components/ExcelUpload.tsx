@@ -226,7 +226,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     try { await dbDelete("weekly_metrics", `week=eq.${encodeURIComponent(week)}`); } catch {}
     setProgress(5);
 
-    if (importNew==="all") {
+    if (resolvedImport==="all") {
       setProgressMsg("Creando usuarios...");
       for (const a of agents.filter(x=>x.is_new)) {
         try {
@@ -299,7 +299,8 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
   const ok      = agents.filter(a=>a.flag==="ok");
   const newA    = agents.filter(a=>a.is_new);
   const reviewPending = flagged.some(a=>!a.review_reason);
-  const canUpload     = !reviewPending && importNew!=="pending";
+  const resolvedImport = newA.length === 0 ? "none" : importNew;
+  const canUpload     = !reviewPending && resolvedImport!=="pending";
   const SD = { border:"1px solid #1e3a5f", muted:"#64748b", text:"#f1f5f9", card:"#1e293b" };
 
   return (
