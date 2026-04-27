@@ -254,7 +254,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
       if (c.game_id && c.manager) coachManagerMap[c.game_id.trim()] = c.manager.trim();
     }
 
-    metricsRows = agents.filter(a=>a.review_reason!=="termination").map(a=>{
+    const metricsRows = agents.filter(a=>a.review_reason!=="termination").map(a=>{
       const skip = a.review_reason==="vacation"||a.review_reason==="sick_leave"||a.review_reason==="skip";
       const managerGameId = coachManagerMap[a.coach_id?.trim()||""] || coachManagerMap[a.qcoach?.trim()||""] || null;
       return {
