@@ -121,6 +121,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
   const [agents, setAgents] = useState<ProcessedAgent[]>([]);
   const [coaches, setCoaches] = useState<CoachRow[]>([]);
   const coachesRef = useRef<CoachRow[]>([]);
+  const fileRef = useRef<File|null>(null);
   const [weekLabel, setWeekLabel] = useState("");
   const [weekAlreadyLoaded, setWeekAlreadyLoaded] = useState(false);
   const [summary, setSummary] = useState<UploadSummary|null>(null);
@@ -134,6 +135,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
   const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => { const f=e.target.files?.[0]; if(f) processFile(f); };
 
   const processFile = async (f: File) => {
+    fileRef.current = f;
     setErrors([]);
     const week = getWeekLabel(f.name);
     setWeekLabel(week);
@@ -249,13 +251,23 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     }
 
     setProgressMsg("Guardando métricas...");
-    // Build coach->manager map from sheet 2
+    // Build coach->manager map by re-reading file directly
     const coachManagerMap: Record<string,string> = {};
-    for (const c of coachesRef.current) {
-      if (c.game_id && c.manager) {
-        coachManagerMap[c.game_id.trim().toUpperCase()] = c.manager.trim();
+    try {
+      if (fileRef.current) {
+        const buf = await fileRef.current.arrayBuffer();
+        const wb2 = (await import("xlsx")).read(new Uint8Array(buf), {type:"array"});
+        const csName2 = wb2.SheetNames.find((n:string) => /coach|attrition/i.test(n)) || "";
+        if (csName2 && wb2.Sheets[csName2]) {
+          const cr2: any[] = (await import("xlsx")).utils.sheet_to_json(wb2.Sheets[csName2], {defval:""});
+          for (const r of cr2) {
+            const gid = String(r["Game ID"]??r["game_id"]??"").trim().toUpperCase();
+            const mgr = String(r["Manager"]??r["manager"]??"").trim();
+            if (gid && mgr) coachManagerMap[gid] = mgr;
+          }
+        }
       }
-    }
+    } catch(e) { console.warn("coachManagerMap build error:", e); }
     console.log("coachManagerMap entries:", Object.keys(coachManagerMap).length, coachManagerMap);
 
     const metricsRows = agents.filter(a=>a.review_reason!=="termination").map(a=>{
