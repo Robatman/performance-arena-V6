@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import * as XLSX from "xlsx";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
@@ -43,7 +43,7 @@ type AgentFlag = "ok" | "msl" | "both_empty";
 type ReviewReason = "vacation" | "sick_leave" | "termination" | "skip" | "";
 
 interface ProcessedAgent {
-  game_id: string; project: string; coach_id: string; qcoach: string;
+  game_id: string; project: string; coach_id: string; qcoach: string; manager_game_id: string;
   aht_seconds: number | null; aht_goal_seconds: number | null; aht_type: AhtType;
   qa_score: number | null; qa_goal: number;
   absences: number; tardies: number; flag: AgentFlag;
@@ -120,8 +120,6 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
   const [stage, setStage] = useState<"idle"|"preview"|"uploading"|"done"|"error">("idle");
   const [agents, setAgents] = useState<ProcessedAgent[]>([]);
   const [coaches, setCoaches] = useState<CoachRow[]>([]);
-  const coachesRef = useRef<CoachRow[]>([]);
-  const fileRef = useRef<File|null>(null);
   const [weekLabel, setWeekLabel] = useState("");
   const [weekAlreadyLoaded, setWeekAlreadyLoaded] = useState(false);
   const [summary, setSummary] = useState<UploadSummary|null>(null);
@@ -135,7 +133,6 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
   const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => { const f=e.target.files?.[0]; if(f) processFile(f); };
 
   const processFile = async (f: File) => {
-    fileRef.current = f;
     setErrors([]);
     const week = getWeekLabel(f.name);
     setWeekLabel(week);
@@ -189,7 +186,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
             const attPts  = flag==="msl" ? 0 : att.pts;
             return {
               game_id: gid, project: String(r[cProject]??"").trim(),
-              coach_id: String(r[cCoach]??"").trim(), qcoach: String(r[cQcoach]??"").trim(),
+              coach_id: String(r[cCoach]??"").trim(), qcoach: String(r[cQcoach]??"").trim(), manager_game_id: cManager ? String(r[cManager]??"").trim() : "",
               aht_seconds: ahtSec, aht_goal_seconds: ahtGoal, aht_type: ahtType,
               qa_score: qaN, qa_goal: qaGoal, absences: abs, tardies: tard, flag,
               attendance_status: att.status, attendance_pts: attPts, aht_pts: ahtPts, qa_pts: qaPts,
@@ -208,7 +205,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
         }
 
         if (!processed.length) { setErrors(["No agentes válidos."]); setStage("error"); return; }
-        setAgents(processed); setCoaches(parsedCoaches); coachesRef.current=parsedCoaches; setStage("preview");
+        setAgents(processed); setCoaches(parsedCoaches); setStage("preview");
       } catch(err) { setErrors([`Error: ${err}`]); setStage("error"); }
     };
     reader.readAsArrayBuffer(f);
@@ -229,7 +226,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     try { await dbDelete("weekly_metrics", `week=eq.${encodeURIComponent(week)}`); } catch {}
     setProgress(5);
 
-    if (resolvedImport==="all") {
+    if (importNew==="all") {
       setProgressMsg("Creando usuarios...");
       for (const a of agents.filter(x=>x.is_new)) {
         try {
@@ -251,32 +248,11 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     }
 
     setProgressMsg("Guardando métricas...");
-    // Build coach->manager map by re-reading file directly
-    const coachManagerMap: Record<string,string> = {};
-    try {
-      if (fileRef.current) {
-        const buf = await fileRef.current.arrayBuffer();
-        const wb2 = (await import("xlsx")).read(new Uint8Array(buf), {type:"array"});
-        const csName2 = wb2.SheetNames.find((n:string) => /coach|attrition/i.test(n)) || "";
-        if (csName2 && wb2.Sheets[csName2]) {
-          const cr2: any[] = (await import("xlsx")).utils.sheet_to_json(wb2.Sheets[csName2], {defval:""});
-          for (const r of cr2) {
-            const gid = String(r["Game ID"]??r["game_id"]??"").trim().toUpperCase();
-            const mgr = String(r["Manager"]??r["manager"]??"").trim();
-            if (gid && mgr) coachManagerMap[gid] = mgr;
-          }
-        }
-      }
-    } catch(e) { console.warn("coachManagerMap build error:", e); }
-    console.log("coachManagerMap entries:", Object.keys(coachManagerMap).length, coachManagerMap);
-
     const metricsRows = agents.filter(a=>a.review_reason!=="termination").map(a=>{
       const skip = a.review_reason==="vacation"||a.review_reason==="sick_leave"||a.review_reason==="skip";
-      const coachKey = (a.coach_id||a.qcoach||"").trim().toUpperCase();
-      const managerGameId = coachManagerMap[coachKey] || null;
       return {
         game_id:a.game_id, week, project:a.project, coach:a.coach_id, qa_coach:a.qcoach,
-        manager_game_id:managerGameId,
+        manager_game_id:a.manager_game_id||null,
         aht:a.aht_seconds, aht_goal:a.aht_goal_seconds, aht_type:a.aht_type,
         qa_pct:a.qa_score, qa_goal:a.qa_goal,
         absences:skip?0:a.absences, tardies:skip?0:a.tardies,
@@ -316,8 +292,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
   const ok      = agents.filter(a=>a.flag==="ok");
   const newA    = agents.filter(a=>a.is_new);
   const reviewPending = flagged.some(a=>!a.review_reason);
-  const resolvedImport = newA.length === 0 ? "none" : importNew;
-  const canUpload     = !reviewPending && resolvedImport!=="pending";
+  const canUpload     = !reviewPending && importNew!=="pending";
   const SD = { border:"1px solid #1e3a5f", muted:"#64748b", text:"#f1f5f9", card:"#1e293b" };
 
   return (
