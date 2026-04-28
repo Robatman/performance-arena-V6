@@ -124,7 +124,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
   const [weekAlreadyLoaded, setWeekAlreadyLoaded] = useState(false);
   const [summary, setSummary] = useState<UploadSummary|null>(null);
   const [errors, setErrors] = useState<string[]>([]);
-  const [importNew, setImportNew] = useState<"all"|"none"|"pending">("pending");
+  const [importNew, setImportNew] = useState<"all"|"none"|"pending">("none");
   const [progress, setProgress] = useState(0);
   const [progressMsg, setProgressMsg] = useState("");
 
@@ -293,7 +293,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
   const ok      = agents.filter(a=>a.flag==="ok");
   const newA    = agents.filter(a=>a.is_new);
   const reviewPending = flagged.some(a=>!a.review_reason);
-  const resolvedImport = newA.length === 0 ? "none" : importNew;
+  const resolvedImport = importNew === "pending" ? "none" : importNew;
   const canUpload     = !reviewPending && resolvedImport!=="pending";
   const SD = { border:"1px solid #1e3a5f", muted:"#64748b", text:"#f1f5f9", card:"#1e293b" };
 
