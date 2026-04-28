@@ -1197,33 +1197,30 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
 function YuritoKudos({cu, allUsers, allStaff, toast, reloadUsers}){
-  const [tab, setTab] = useState<"agents"|"staff">("agents");
-  const [kf, setKf] = useState({toId:"", gold:false, reason:"", target:"agent"});
-  const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" as any,background:S.bg,color:S.text};
+  const [tab, setTab] = useState("agents");
+  const [toId, setToId] = useState("");
+  const [gold, setGold] = useState(false);
+  const [reason, setReason] = useState("");
+  const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};
 
-  const sendToAgent = async () => {
-    if(!kf.toId||!kf.reason.trim()){toast("Complete all fields");return;}
-    const target = allUsers.find(u=>u.id===kf.toId);
-    if(!target)return;
+  const send = async () => {
+    if(!toId||!reason.trim()){toast("Complete all fields");return;}
     try{
-      const pts=kf.gold?5:1;
-      await sbFetch("kudos_log",{method:"POST",body:JSON.stringify({from_user_id:cu.id,to_user_id:target.id,reason:kf.reason,category:"general",points_given:pts})});
-      await sbFetch(`profiles?id=eq.${target.id}`,{method:"PATCH",body:JSON.stringify({kudos:(target.kudos||0)+(kf.gold?0:1),gold_kudos:(target.gold_kudos||0)+(kf.gold?1:0)}),prefer:"return=representation"});
-      await sbFetch("notifications",{method:"POST",body:JSON.stringify({recipient_id:target.id,title:kf.gold?"You got a Gold Kudo! 🌟":"You got a Kudo! 👏",message:`${cu.gameId} recognized you: "${kf.reason}"`,type:"kudos",emoji:kf.gold?"🌟":"👏"})});
-      await reloadUsers();
-      setKf({toId:"",gold:false,reason:"",target:"agent"});
-      toast(`Kudo sent to ${target.name}!`);
-    }catch(e){toast("Error sending kudo");}
-  };
-
-  const sendToStaff = async () => {
-    if(!kf.toId||!kf.reason.trim()){toast("Complete all fields");return;}
-    const target = allStaff.find(u=>u.id===kf.toId);
-    if(!target)return;
-    try{
-      await sbFetch("staff_kudos",{method:"POST",body:JSON.stringify({recipient_id:target.id,given_by:cu.id,kudo_type:kf.gold?"gold":"regular",reason:kf.reason,points_awarded:kf.gold?5:1,status:"approved"})});
-      setKf({toId:"",gold:false,reason:"",target:"staff"});
-      toast(`Kudo sent to ${target.name}!`);
+      if(tab==="agents"){
+        const target=allUsers.find(u=>u.id===toId);
+        if(!target)return;
+        const pts=gold?5:1;
+        await db.createKudo({from_user_id:cu.id,to_user_id:target.id,reason,category:"general",points_given:pts});
+        await db.updateUser(target.id,{kudos:(target.kudos||0)+(gold?0:1),gold_kudos:(target.gold_kudos||0)+(gold?1:0)});
+        await db.createNotif({recipient_id:target.id,title:gold?"Gold Kudo! 🌟":"Kudo! 👏",message:`${cu.gameId} recognized you: "${reason}"`,type:"kudos",emoji:gold?"🌟":"👏"});
+        await reloadUsers();
+      } else {
+        const target=allStaff.find(u=>u.id===toId);
+        if(!target)return;
+        await staffDb.createKudo({recipient_id:target.id,given_by:cu.id,kudo_type:gold?"gold":"regular",reason,points_awarded:gold?5:1,status:"approved"});
+      }
+      setToId(""); setReason(""); setGold(false);
+      toast("Kudo sent!");
     }catch(e){toast("Error sending kudo");}
   };
 
@@ -1236,14 +1233,14 @@ function YuritoKudos({cu, allUsers, allStaff, toast, reloadUsers}){
       </SCard>
       <div style={{display:"flex",gap:6,marginBottom:14}}>
         {[{id:"agents",label:"🏆 Agents"},{id:"staff",label:"⚡ Staff"}].map(t=>(
-          <button key={t.id} onClick={()=>{setTab(t.id as any);setKf(p=>({...p,toId:""}));}} style={{padding:"8px 16px",borderRadius:9,border:`1px solid ${tab===t.id?S.accent:S.border}`,background:tab===t.id?`${S.accent}22`:S.card,color:tab===t.id?"#a5b4fc":S.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{t.label}</button>
+          <button key={t.id} onClick={()=>{setTab(t.id);setToId("");}} style={{padding:"8px 16px",borderRadius:9,border:`1px solid ${tab===t.id?S.accent:S.border}`,background:tab===t.id?`${S.accent}22`:S.card,color:tab===t.id?"#a5b4fc":S.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{t.label}</button>
         ))}
       </div>
       <SCard>
         <div style={{color:S.accent,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:14}}>SEND KUDO TO {tab==="agents"?"AGENT":"STAFF"}</div>
         <div style={{marginBottom:10}}>
           <div style={{color:S.muted,fontSize:11,marginBottom:4}}>SELECT</div>
-          <select value={kf.toId} onChange={e=>setKf(p=>({...p,toId:e.target.value}))} style={inp}>
+          <select value={toId} onChange={e=>setToId(e.target.value)} style={inp}>
             <option value="">Choose...</option>
             {tab==="agents"
               ? allUsers.filter(u=>u.active&&u.role==="user").map(u=><option key={u.id} value={u.id}>{u.name} · {u.project}</option>)
@@ -1252,18 +1249,19 @@ function YuritoKudos({cu, allUsers, allStaff, toast, reloadUsers}){
           </select>
         </div>
         <div style={{display:"flex",gap:8,marginBottom:12}}>
-          <div onClick={()=>setKf(p=>({...p,gold:false}))} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${!kf.gold?S.accent:S.border}`,background:!kf.gold?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>👏</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Kudo (+1)</div></div>
-          <div onClick={()=>setKf(p=>({...p,gold:true}))} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${kf.gold?S.yellow:S.border}`,background:kf.gold?`${S.yellow}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>🌟</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Gold (+5)</div></div>
+          <div onClick={()=>setGold(false)} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${!gold?S.accent:S.border}`,background:!gold?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>👏</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Kudo (+1)</div></div>
+          <div onClick={()=>setGold(true)} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${gold?S.yellow:S.border}`,background:gold?`${S.yellow}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>🌟</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Gold (+5)</div></div>
         </div>
         <div style={{marginBottom:14}}>
           <div style={{color:S.muted,fontSize:11,marginBottom:4}}>REASON</div>
-          <textarea value={kf.reason} onChange={e=>setKf(p=>({...p,reason:e.target.value}))} rows={3} style={{...inp,resize:"vertical" as any}} placeholder="Why do they deserve this?"/>
+          <textarea value={reason} onChange={e=>setReason(e.target.value)} rows={3} style={{...inp,resize:"vertical"}} placeholder="Why do they deserve this?"/>
         </div>
-        <SBtn onClick={tab==="agents"?sendToAgent:sendToStaff} disabled={!kf.toId||!kf.reason.trim()} style={{width:"100%",padding:12}}>SEND KUDO</SBtn>
+        <SBtn onClick={send} disabled={!toId||!reason.trim()} style={{width:"100%",padding:12}}>SEND KUDO</SBtn>
       </SCard>
     </div>
   );
 }
+
 
 function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,user}){
   if(!user||!weeklyMetrics||weeklyMetrics.length===0)return null;
