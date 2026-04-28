@@ -158,6 +158,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
         const cProject = findCol(keys, "Project", "campaign");
         const cCoach   = findCol(keys, "Coach ID", "CoachID", "coach_id");
         const cQcoach  = findCol(keys, "Qcoach", "QA Coach", "QACoach");
+        const cManager = findCol(keys, "Manager", "manager", "manager_game_id");
         const cAht     = findCol(keys, "AHT");
         const cAhtGoal = findCol(keys, "AHT Goal", "AHTGoal", "aht_goal");
         const cAhtType = findCol(keys, "AHT type", "AHTtype", "aht_type", "AHT Type");
@@ -252,7 +253,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
       const skip = a.review_reason==="vacation"||a.review_reason==="sick_leave"||a.review_reason==="skip";
       return {
         game_id:a.game_id, week, project:a.project, coach:a.coach_id, qa_coach:a.qcoach,
-        manager_game_id:a.manager_game_id||null,
+        manager_game_id:(a.manager_game_id&&a.manager_game_id.trim())||null,
         aht:a.aht_seconds, aht_goal:a.aht_goal_seconds, aht_type:a.aht_type,
         qa_pct:a.qa_score, qa_goal:a.qa_goal,
         absences:skip?0:a.absences, tardies:skip?0:a.tardies,
