@@ -47,6 +47,8 @@ const db = {
   // Weekly metrics
   getWeeklyMetrics: (gameId) => sbFetch(`weekly_metrics?game_id=eq.${encodeURIComponent(gameId)}&select=*&order=week.asc`),
   getAllWeeklyMetrics: () => sbFetch(`weekly_metrics?select=*&order=game_id.asc`),
+  getLastEvaluatedWeek: () => sbFetch(`weekly_metrics?select=week&order=week.desc&limit=1`),
+  getAllWeeks: () => sbFetch(`weekly_metrics?select=week&order=week.desc`),
   // App config (for trimester reset)
   getConfig: (key) => sbFetch(`app_config?key=eq.${key}&select=*`),
   setConfig: (key, val) => sbFetch(`app_config?key=eq.${key}`, { method: "PATCH", body: JSON.stringify({ value: val }), prefer: "return=representation" }),
@@ -407,7 +409,7 @@ function UnifiedLogin({onLoginAgent,onLoginStaff}){
 }
 
 // ─── DASHBOARD (Agent) ────────────────────────────────────────────────────────
-function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount}){
+function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange}){
   const sc = calcScoreCoins(
     weeklyMetrics,
     riddleAnswers,
@@ -424,6 +426,28 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
       {/* Level + Score card */}
       <LevelProgressCard score={sc.score} maxScore={maxScore} level={level} coinsTotal={sc.coins}/>
 
+      {/* Week selector — SA sees all weeks, agents see last evaluated */}
+      {isSA && availableWeeks.length > 0 && (
+        <Card style={{marginBottom:12,padding:"12px 14px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+            <div>
+              <div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:2}}>SEMANA VISUALIZADA</div>
+              <div style={{color:C.blue,fontWeight:700,fontSize:13}}>Última evaluada: {availableWeeks[0]}</div>
+            </div>
+            <select value={selectedWeek} onChange={e=>onWeekChange(e.target.value)} style={{border:`1.5px solid ${C.border}`,borderRadius:8,padding:"7px 11px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,cursor:"pointer"}}>
+              {availableWeeks.map(w=><option key={w} value={w}>{w}</option>)}
+            </select>
+          </div>
+        </Card>
+      )}
+      {!isSA && lastEvaluatedWeek && (
+        <Card style={{marginBottom:12,padding:"10px 14px",background:`${C.blue}06`,border:`1.5px solid ${C.blue}20`}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:16}}>📅</span>
+            <div style={{color:C.muted,fontSize:12}}>Última semana evaluada: <strong style={{color:C.blue}}>{lastEvaluatedWeek}</strong></div>
+          </div>
+        </Card>
+      )}
       {/* Avatar + identity card */}
       <Card style={{marginBottom:12,display:"flex",alignItems:"center",gap:14}}>
         <Av av={user.avatar} sz={64}/>
@@ -1268,6 +1292,10 @@ export default function App(){
   const [staffPoints,setStaffPoints]=useState(null);const [staffBadges,setStaffBadges]=useState([]);
   const [staffKudos,setStaffKudos]=useState([]);const [staffInnovations,setStaffInnovations]=useState([]);
 
+  // Week selector
+  const [availableWeeks,setAvailableWeeks]=useState<string[]>([]);
+  const [selectedWeek,setSelectedWeek]=useState<string>("");
+  const [lastEvaluatedWeek,setLastEvaluatedWeek]=useState<string>("");
   // Score/Coins data for current agent
   const [agentWeeklyMetrics,setAgentWeeklyMetrics]=useState([]);
   const [agentRiddleAnswers,setAgentRiddleAnswers]=useState([]);
@@ -1284,16 +1312,21 @@ export default function App(){
   // Load agent-specific scoring data on login
   const loadAgentScoreData=async(agent)=>{
     if(!agent?.game_id){console.warn("loadAgentScoreData: no game_id",agent);return;}
-    // Load each independently so one failure doesn't kill all
     const safeGet=async(fn)=>{try{return await fn();}catch(e){console.warn("safeGet error:",e);return [];}};
-    const [wm,ra,ts,riddles,tasks]=await Promise.all([
+    const [wm,ra,ts,riddles,tasks,allWeeksData]=await Promise.all([
       safeGet(()=>db.getWeeklyMetrics(agent.game_id)),
       safeGet(()=>db.getAgentRiddleAnswers(agent.game_id)),
       safeGet(()=>db.getAgentTaskSubmissions(agent.game_id)),
       safeGet(()=>db.getRiddlesMonth()),
       safeGet(()=>db.getTasksMonth()),
+      safeGet(()=>db.getAllWeeks()),
     ]);
-    console.log("Score data loaded for",agent.game_id,"— metrics:",wm?.length,"riddles:",riddles?.length,"tasks:",tasks?.length);
+    // Get unique weeks sorted descending
+    const uniqueWeeks=[...new Set((allWeeksData||[]).map((r:any)=>r.week).filter(Boolean))].sort().reverse() as string[];
+    const lastWeek=uniqueWeeks[0]||"";
+    setAvailableWeeks(uniqueWeeks);
+    setLastEvaluatedWeek(lastWeek);
+    setSelectedWeek(lastWeek);
     setAgentWeeklyMetrics(wm||[]);
     setAgentRiddleAnswers(ra||[]);
     setAgentTaskSubmissions(ts||[]);
@@ -1340,7 +1373,11 @@ export default function App(){
   const markAllRead=async()=>{try{await db.markAllNotifsRead(cu.id);setNotifs(notifs.map(n=>n.recipient_id===cu.id?{...n,is_read:true}:n));}catch(e){}};
 
   // Score props bundle for passing to screens
-  const scoreProps={weeklyMetrics:agentWeeklyMetrics,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount};
+  // Agents see only last evaluated week; SA sees selected week or all
+  const agentMetricsFiltered = isSA
+    ? (selectedWeek ? agentWeeklyMetrics.filter((w:any)=>w.week===selectedWeek) : agentWeeklyMetrics)
+    : agentWeeklyMetrics.filter((w:any)=>w.week===lastEvaluatedWeek);
+  const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount};
 
   if(appLoading){return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><Logo sz={64}/><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,letterSpacing:2}}>PERFORMANCE ARENA</div><div style={{color:C.muted,fontSize:14,marginTop:8}}>Loading...</div></div>);}
 
@@ -1415,40 +1452,3 @@ export default function App(){
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         {/* Score + Coins mini display in header */}
         <HeaderScorePills weeklyMetrics={agentWeeklyMetrics} riddleAnswers={agentRiddleAnswers} taskSubmissions={agentTaskSubmissions} riddleCount={monthRiddleCount} taskCount={monthTaskCount} user={cu}/>
-        <Av av={cu?.avatar} sz={34} shop={shop}/>
-        <button onClick={()=>{setLoggedIn(null);setScreen("dashboard");}} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,padding:"4px 10px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Salir</button>
-      </div>
-    </div>
-    <div style={{padding:"14px 14px 0",animation:"fadeIn 0.25s ease"}}>
-      {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps}/>}
-      {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle"/>}
-      {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task"/>}
-      {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop}/>}
-      {screen==="rewards"&&<Rewards user={cu} prizes={prizes} {...scoreProps} onRedeem={async p=>{
-        const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals);
-        const cost=p.points_cost||p.pts||0;
-        const stock=p.stock||p.stock_remaining||0;
-        if(stock<=0){toast("Sin stock");return;}
-        if(sc.coins<cost){toast(`Necesitas ${cost} 🪙 coins, tienes ${sc.coins}`);return;}
-        try{
-          await db.createRedemption({user_id:cu.id,reward_id:p.id,points_spent:cost,status:"pending"});
-          await db.updatePrize(p.id,{stock:stock-1});
-          // Deduct coins from profile
-          const newCoins=Math.max(0,(cu.coins||0)-cost);
-          await db.updateUser(cu.id,{coins:newCoins});
-          const updated=await db.getPrizes();setPrizes(updated||[]);
-          syncUser({...cu,coins:newCoins});
-          toast(`${p.name} canjeado! -${cost} 🪙`);
-        }catch(e){toast("Error al canjear");}
-      }}/>}
-      {screen==="referrals"&&<ReferralsPanel isAdmin={false}/>}
-      {screen==="info"&&<Info/>}
-      {screen==="notifs"&&<Notifs user={cu} notifs={notifs} onMarkRead={markNotifRead} onMarkAll={markAllRead}/>}
-      {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps}/>}
-      {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount}/>}
-    </div>
-    <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:C.card,borderTop:`1.5px solid ${C.border}`,display:"flex",padding:"6px 0 10px",boxShadow:`0 -2px 10px ${C.blue}10`,overflowX:"auto"}}>
-      {nav.map(item=>{const active=screen===item.id;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{item.badge>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{item.badge}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(55%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?C.blue:C.muted,transition:"color 0.18s",whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:C.blue}}/>}</button>);})}
-    </div>
-  </>;
-}
