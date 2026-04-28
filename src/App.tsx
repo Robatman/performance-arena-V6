@@ -41,6 +41,8 @@ const db = {
   updatePrize: (id, d) => sbFetch(`reward_catalog?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(d) }),
   createPrize: (d) => sbFetch("reward_catalog", { method: "POST", body: JSON.stringify(d) }),
   createRedemption: (d) => sbFetch("reward_redemptions", { method: "POST", body: JSON.stringify(d) }),
+  getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&order=created_at.desc`),
+  getAllRedemptions: () => sbFetch(`reward_redemptions?order=created_at.desc&limit=500`),
   // Coins history
   addCoinsTransaction: (d) => sbFetch("coins_transactions", { method: "POST", body: JSON.stringify(d) }),
   getCoinsHistory: (uid) => sbFetch(`coins_transactions?agent_id=eq.${uid}&order=created_at.desc&limit=50`),
@@ -601,6 +603,11 @@ function PrizeCard({p,coins,onRedeem,locked=false}){
 }
 
 function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount}){
+  const [tab,setTab]=useState("store");
+  const [myRedemptions,setMyRedemptions]=useState([]);
+  useEffect(()=>{
+    db.getMyRedemptions(user.id).then(d=>setMyRedemptions(d||[])).catch(()=>{});
+  },[user.id]);
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals);
   const maxScore=calcMaxScore(sc.weekCount,riddleCount,taskCount);
   const level=calcLevel(sc.score,maxScore);
@@ -612,6 +619,46 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
   const exclusiveLocked=exclusiveSection.filter(p=>(p.minLevel||p.min_level||1)>level);
   return(
     <div style={{paddingBottom:100}}>
+      {/* Tabs */}
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {[{id:"store",label:"🏪 Tienda"},{id:"history",label:`📦 Mis Canjes (${myRedemptions.length})`}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 16px",borderRadius:9,border:`1.5px solid ${tab===t.id?C.blue:C.border}`,background:tab===t.id?`${C.blue}12`:"#fff",color:tab===t.id?C.blue:C.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* History tab */}
+      {tab==="history"&&(
+        <div>
+          {myRedemptions.length===0?(
+            <Card style={{textAlign:"center",padding:40}}>
+              <div style={{fontSize:48,marginBottom:8}}>📦</div>
+              <div style={{color:C.muted}}>No has canjeado nada aún.</div>
+            </Card>
+          ):myRedemptions.map((r,i)=>{
+            const statusColor={pending:C.yellow,approved:C.green,delivered:C.blue,cancelled:C.red};
+            const statusLabel={pending:"Pendiente",approved:"Aprobado",delivered:"Entregado",cancelled:"Cancelado"};
+            return(
+              <Card key={r.id||i} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div style={{flex:1}}>
+                    <div style={{color:C.text,fontWeight:700,fontSize:14,marginBottom:4}}>{r.reward_name||"Premio"}</div>
+                    <div style={{color:C.muted,fontSize:12}}>{new Date(r.created_at).toLocaleDateString("es-MX")}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end",marginBottom:4}}>
+                      <span>🪙</span>
+                      <span style={{color:C.red,fontWeight:700}}>-{r.points_spent||r.coins_spent||0}</span>
+                    </div>
+                    <span style={{padding:"2px 8px",borderRadius:6,background:`${statusColor[r.status]||C.muted}18`,color:statusColor[r.status]||C.muted,fontSize:11,fontWeight:700}}>{statusLabel[r.status]||r.status}</span>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {tab==="store"&&<div>
       {/* Header */}
       <div style={{background:`linear-gradient(135deg,${C.blue} 0%,#3b0764 50%,${C.red} 100%)`,borderRadius:20,padding:"18px 16px",marginBottom:14}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
@@ -682,6 +729,7 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
           <div style={{color:C.muted,fontSize:12,marginTop:4}}>El admin agregará premios pronto.</div>
         </Card>
       )}
+    </div>}
     </div>
   );
 }
@@ -872,6 +920,14 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const sendNotif=async()=>{if(!nf.title.trim()||!nf.body.trim()){toast("Completa titulo y mensaje");return;}const targets=nf.toId==="all"?allUsers.filter(u=>u.active&&u.role==="user"):allUsers.filter(u=>u.id===nf.toId);try{for(const u of targets){await db.createNotif({recipient_id:u.id,sender_id:cu.id,title:nf.title,message:nf.body,type:"info"});}setNf({toId:"all",title:"",body:""});toast(`Notificacion enviada a ${targets.length} usuario(s)`);}catch(e){toast("Error");}};
 
   const [pf,setPf]=useState({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1});
+  const [allRedemptions,setAllRedemptions]=useState([]);
+  const [allStaffRed,setAllStaffRed]=useState([]);
+  useEffect(()=>{
+    if(isSA){
+      db.getAllRedemptions().then(d=>setAllRedemptions(d||[])).catch(()=>{});
+      sbFetch("staff_redemptions?order=created_at.desc&limit=200").then(d=>setAllStaffRed(d||[])).catch(()=>{});
+    }
+  },[isSA]);
   const addPrize=async()=>{if(!pf.name.trim()){toast("Escribe el nombre");return;}try{await db.createPrize({name:pf.name,points_cost:pf.pts,stock:pf.stock,category:"general",is_active:true,min_level:pf.minLevel});const updated=await db.getPrizes();setPrizes(updated||[]);setPf({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1});toast("Premio anadido");}catch(e){toast("Error al crear premio");}};
   const updPz=async(id,field,val)=>{const dbField=field==="pts"?"points_cost":field==="stock"?"stock":field==="minLevel"?"min_level":field;try{await db.updatePrize(id,{[dbField]:val});const updated=await db.getPrizes();setPrizes(updated||[]);}catch(e){toast("Error");}};
 
@@ -887,7 +943,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   };
 
   const filtered=allUsers.filter(u=>filter==="active"?u.active:!u.active);
-  const tabs=[{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"referrals",label:"🤝 Referidos"}];
+  const tabs=[{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"}];
 
   return(
     <div style={{paddingBottom:100}}>
@@ -1045,6 +1101,61 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
         </Card>
       </div>)}
 
+      {tab==="canjes"&&(
+        <div>
+          <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
+            <div style={{color:C.blue,fontWeight:800,fontSize:14,marginBottom:4}}>📦 Historial de Canjes</div>
+            <div style={{color:C.muted,fontSize:12}}>Todos los canjes de agentes y staff</div>
+          </Card>
+          {/* Agentes */}
+          <div style={{color:C.text,fontWeight:700,fontSize:13,marginBottom:8}}>🏆 Agentes ({allRedemptions.length})</div>
+          {allRedemptions.length===0?<Card style={{marginBottom:14,textAlign:"center",color:C.muted,padding:20}}>Sin canjes de agentes aún.</Card>:allRedemptions.map((r,i)=>{
+            const u=allUsers.find(x=>x.id===r.user_id);
+            const statusColor={pending:C.yellow,approved:C.green,delivered:C.blue,cancelled:C.red};
+            const statusLabel={pending:"Pendiente",approved:"Aprobado",delivered:"Entregado",cancelled:"Cancelado"};
+            return(
+              <Card key={r.id||i} style={{marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{color:C.text,fontWeight:700,fontSize:13}}>{u?.name||r.user_id}</div>
+                    <div style={{color:C.muted,fontSize:12,marginTop:2}}>{r.reward_name||"Premio"} · {new Date(r.created_at).toLocaleDateString("es-MX")}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
+                      <span>🪙</span>
+                      <span style={{color:C.red,fontWeight:700}}>{r.points_spent||0}</span>
+                    </div>
+                    <span style={{padding:"2px 8px",borderRadius:6,background:`${statusColor[r.status]||C.muted}18`,color:statusColor[r.status]||C.muted,fontSize:11,fontWeight:700}}>{statusLabel[r.status]||r.status}</span>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+          {/* Staff */}
+          <div style={{color:C.text,fontWeight:700,fontSize:13,marginBottom:8,marginTop:16}}>⚡ Staff ({allStaffRed.length})</div>
+          {allStaffRed.length===0?<Card style={{textAlign:"center",color:C.muted,padding:20}}>Sin canjes de staff aún.</Card>:allStaffRed.map((r,i)=>{
+            const statusColor={pending:C.yellow,approved:C.green,delivered:C.blue,cancelled:C.red};
+            const statusLabel={pending:"Pendiente",approved:"Aprobado",delivered:"Entregado",cancelled:"Cancelado"};
+            return(
+              <Card key={r.id||i} style={{marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{color:C.text,fontWeight:700,fontSize:13}}>{r.staff_game_id}</div>
+                    <div style={{color:C.muted,fontSize:12,marginTop:2}}>{r.reward_name||"Premio"} · {new Date(r.created_at).toLocaleDateString("es-MX")}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
+                      <span>🪙</span>
+                      <span style={{color:C.red,fontWeight:700}}>{r.coins_spent||0}</span>
+                    </div>
+                    <span style={{padding:"2px 8px",borderRadius:6,background:`${statusColor[r.status]||C.muted}18`,color:statusColor[r.status]||C.muted,fontSize:11,fontWeight:700}}>{statusLabel[r.status]||r.status}</span>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
       {tab==="referrals"&&<ReferralsPanel isAdmin={true}/>}
     </div>
   );
