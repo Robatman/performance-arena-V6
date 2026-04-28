@@ -1291,9 +1291,9 @@ export default function App(){
   const [staffKudos,setStaffKudos]=useState([]);const [staffInnovations,setStaffInnovations]=useState([]);
 
   // Week selector
-  const [availableWeeks,setAvailableWeeks]=useState<string[]>([]);
-  const [selectedWeek,setSelectedWeek]=useState<string>("");
-  const [lastEvaluatedWeek,setLastEvaluatedWeek]=useState<string>("");
+  const [availableWeeks,setAvailableWeeks]=useState([]);
+  const [selectedWeek,setSelectedWeek]=useState("");
+  const [lastEvaluatedWeek,setLastEvaluatedWeek]=useState("");
   // Score/Coins data for current agent
   const [agentWeeklyMetrics,setAgentWeeklyMetrics]=useState([]);
   const [agentRiddleAnswers,setAgentRiddleAnswers]=useState([]);
