@@ -1262,7 +1262,6 @@ function YuritoKudos({cu, allUsers, allStaff, toast, reloadUsers}){
   );
 }
 
-
 function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,user}){
   if(!user||!weeklyMetrics||weeklyMetrics.length===0)return null;
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals);
