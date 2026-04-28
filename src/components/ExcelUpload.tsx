@@ -276,6 +276,18 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
       setProgressMsg(`Guardando... ${Math.min(i+BATCH,metricsRows.length)}/${metricsRows.length}`);
     }
 
+    // Update coach_id and qa_coach in agent profiles
+    setProgressMsg("Actualizando perfiles...");
+    for (const a of agents.filter(x=>x.review_reason!=="termination")) {
+      try {
+        await dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, {
+          team: a.project,
+          coach_id: a.coach_id||null,
+          qa_coach: a.qcoach||null,
+        });
+      } catch(e:any) { /* ignore */ }
+    }
+
     setProgressMsg("Actualizando coaches...");
     for (const c of coaches) {
       try { await dbInsert("staff_attrition_monthly",{coach_name:c.game_id,week,voluntary_exits:c.attrition,position:c.position,manager_id:c.manager||null}); }
