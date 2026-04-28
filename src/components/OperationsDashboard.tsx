@@ -175,8 +175,8 @@ export default function OperationsDashboard({ user }: { user: any }) {
           ? `No se encontraron agentes con coach game_id "${user.gameId}" en la semana ${week}.`
           : "No hay datos disponibles."}
       </p>
-      <p style={{color:Sty.muted,fontSize:11,margin:0,opacity:0.6}}>
-        Verifica que el nombre en tu perfil coincida exactamente con el campo coach/proyecto en el Excel.
+      <p style={{color:Sty.muted,fontSize:11,margin:0,opacity:0.8}}>
+        Debug: gameId={user.gameId} | project={user.project} | role={user.role}
       </p>
     </div>
   );
