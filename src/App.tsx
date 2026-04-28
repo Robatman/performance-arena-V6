@@ -59,7 +59,7 @@ const db = {
 };
 
 const staffDb = {
-  login: (u) => sbFetch(`staff_profiles?username=eq.${encodeURIComponent(u)}&select=*`),
+  login: (u) => sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(u)}&select=*`),
   getAll: () => sbFetch("staff_profiles?select=*&order=full_name.asc"),
   create: (d) => sbFetch("staff_profiles", { method: "POST", body: JSON.stringify(d) }),
   update: (id, d) => sbFetch(`staff_profiles?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(d), prefer: "return=representation" }),
@@ -1102,12 +1102,13 @@ function StaffProfile({user,onUpdate,toast}){const [av,setAv]=useState(user.avat
 function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
   const [showExcel,setShowExcel]=useState(false);
   const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};
-  const blank={gameId:"",username:"",fullName:"",password:"",role:"team_coach",project:""};
+  const blank={gameId:"",password:"",role:"team_coach",project:""};
   const [form,setForm]=useState(blank);const [filter,setFilter]=useState("active");
   const [resetId,setResetId]=useState(null);const [newPw,setNewPw]=useState("");const [loading,setLoading]=useState(false);
   const roleColor={team_coach:S.accent,quality_coach:S.green,training_coach:S.purple,manager:S.yellow,training_manager:"#f97316",superadmin:S.red};
-  const createStaff=async()=>{if(!form.username.trim()||!form.fullName.trim()||!form.password.trim()||!form.project.trim()){toast("Complete all fields");return;}setLoading(true);try{await staffDb.create({game_id:form.gameId||`${form.role.substring(0,2).toUpperCase()}-${Date.now()}`,username:form.username.trim(),full_name:form.fullName.trim(),password_hash:form.password,role:form.role,project:form.project,is_active:true,level:1});await reloadStaff();setForm(blank);toast(`${form.fullName} created`);}catch(e){toast("Error: "+e.message);}setLoading(false);};
+  const createStaff=async()=>{if(!form.gameId.trim()||!form.password.trim()||!form.project.trim()){toast("Complete Game ID, password and project");return;}if(allStaff.find(s=>s.gameId===form.gameId.trim())){toast("Error: Game ID already exists");return;}setLoading(true);try{await staffDb.create({game_id:form.gameId.trim(),username:form.gameId.trim(),full_name:form.gameId.trim(),password_hash:form.password,role:form.role,project:form.project,is_active:true,level:1,coins:0});await reloadStaff();setForm(blank);toast(`${form.gameId} created`);}catch(e){toast("Error: "+e.message);}setLoading(false);};
   const toggleActive=async(u)=>{try{await staffDb.update(u.id,{is_active:!u.active});await reloadStaff();toast(u.active?"Deactivated":"Activated");}catch(e){toast("Error");}};
+  const deleteStaff=async(u)=>{if(!window.confirm(`Delete ${u.gameId}? This cannot be undone.`))return;try{await sbFetch(`staff_profiles?id=eq.${u.id}`,{method:"DELETE",prefer:"return=representation"});await reloadStaff();toast(`${u.gameId} deleted`);}catch(e){toast("Error deleting: "+e.message);}};
   const savePw=async(u)=>{if(!newPw.trim()||newPw.length<4){toast("Minimum 4 characters");return;}try{await staffDb.update(u.id,{password_hash:newPw.trim(),needs_pw_change:true,temp_pw:newPw.trim()});await reloadStaff();setResetId(null);setNewPw("");toast("Password set");}catch(e){toast("Error");}};
   const filtered=allStaff.filter(u=>filter==="active"?u.active:!u.active);
   return(
@@ -1122,9 +1123,7 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
       <SCard style={{marginBottom:14,border:`1px solid ${S.accent}44`}}>
         <div style={{color:S.accent,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:12}}>CREATE STAFF USER</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-          <div><div style={{color:S.muted,fontSize:10,marginBottom:3}}>GAME ID</div><input value={form.gameId} onChange={e=>setForm(p=>({...p,gameId:e.target.value}))} style={inp} placeholder="TC-001"/></div>
-          <div><div style={{color:S.muted,fontSize:10,marginBottom:3}}>USERNAME</div><input value={form.username} onChange={e=>setForm(p=>({...p,username:e.target.value}))} style={inp} placeholder="Login username"/></div>
-          <div><div style={{color:S.muted,fontSize:10,marginBottom:3}}>FULL NAME</div><input value={form.fullName} onChange={e=>setForm(p=>({...p,fullName:e.target.value}))} style={inp} placeholder="Full name"/></div>
+          <div><div style={{color:S.muted,fontSize:10,marginBottom:3}}>GAME ID</div><input value={form.gameId} onChange={e=>setForm(p=>({...p,gameId:e.target.value}))} style={inp} placeholder="ej. TC-001 o CM.SANCHEZ"/></div>
           <div><div style={{color:S.muted,fontSize:10,marginBottom:3}}>PASSWORD</div><input value={form.password} onChange={e=>setForm(p=>({...p,password:e.target.value}))} style={inp} placeholder="Initial password"/></div>
           <div><div style={{color:S.muted,fontSize:10,marginBottom:3}}>ROLE</div><select value={form.role} onChange={e=>setForm(p=>({...p,role:e.target.value}))} style={inp}>{Object.entries(STAFF_ROLES).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
           <div><div style={{color:S.muted,fontSize:10,marginBottom:3}}>PROJECT</div><input value={form.project} onChange={e=>setForm(p=>({...p,project:e.target.value}))} style={inp} placeholder="Project name"/></div>
@@ -1155,6 +1154,7 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
               <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
                 <SBtn onClick={()=>toggleActive(u)} color={u.active?S.red:S.green} sm>{u.active?"Deactivate":"Activate"}</SBtn>
                 <SBtn onClick={()=>{setResetId(resetId===u.id?null:u.id);setNewPw("");}} color={S.yellow} sm>Password</SBtn>
+                <SBtn onClick={()=>deleteStaff(u)} color={S.red} sm>Delete</SBtn>
               </div>
             )}
           </div>
@@ -1377,7 +1377,7 @@ export default function App(){
         </div>
       </div>
       <div style={{padding:"14px 14px 0"}}>
-        {screen==="dashboard"&&(isYurito||isSAorManager?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos}/>)}
+        {screen==="dashboard"&&((isYurito||isSAorManager)?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos}/>)}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
         {screen==="kudos"&&(isYurito?<YuritoKudos cu={cu} allUsers={users} allStaff={allStaff} toast={toast} reloadUsers={reloadUsers}/>:<StaffKudos user={cu} allStaff={allStaff} kudos={staffKudos} isManager={isManager}
           onSendKudo={async d=>{try{await staffDb.createKudo(d);const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast("Kudo sent!");}catch(e){toast("Error");}}}
