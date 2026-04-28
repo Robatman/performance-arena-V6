@@ -1448,11 +1448,4 @@ export default function App(){
       <div style={{display:"flex",alignItems:"center",gap:10}}><Logo sz={34}/><div><div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:900,color:C.blue,letterSpacing:1.5,lineHeight:1}}>PERFORMANCE</div><div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:900,color:C.red,letterSpacing:1.5,lineHeight:1}}>ARENA</div></div></div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         {/* Score + Coins mini display in header */}
-        <HeaderScorePills
-          weeklyMetrics={agentWeeklyMetrics}
-          riddleAnswers={agentRiddleAnswers}
-          taskSubmissions={agentTaskSubmissions}
-          riddleCount={monthRiddleCount}
-          taskCount={monthTaskCount}
-          user={cu}
-        />
+
