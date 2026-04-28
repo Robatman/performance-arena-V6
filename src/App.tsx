@@ -1408,4 +1408,4 @@ export default function App(){
     <div style={{position:"sticky",top:0,zIndex:100,background:C.card,borderBottom:`1.5px solid ${C.border}`,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:`0 2px 10px ${C.blue}12`}}>
       <div style={{display:"flex",alignItems:"center",gap:10}}><Logo sz={34}/><div><div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:900,color:C.blue,letterSpacing:1.5,lineHeight:1}}>PERFORMANCE</div><div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:900,color:C.red,letterSpacing:1.5,lineHeight:1}}>ARENA</div></div></div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <Av av={cu?.avatar} sz={34} shop={shop}/>
+        <Av av={cu?.avatar} sz={34} shop={shop}/>
