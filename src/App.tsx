@@ -51,8 +51,8 @@ const db = {
   getConfig: (key) => sbFetch(`app_config?key=eq.${key}&select=*`),
   setConfig: (key, val) => sbFetch(`app_config?key=eq.${key}`, { method: "PATCH", body: JSON.stringify({ value: val }), prefer: "return=representation" }),
   // Riddle/Task counts for max calculation
-  getRiddlesMonth: () => sbFetch(`riddles?select=id,created_at&order=created_at.desc`),
-  getTasksMonth: () => sbFetch(`tasks?select=id,created_at&order=created_at.desc`),
+  getRiddlesMonth: () => sbFetch(`riddles?select=id,created_at&order=created_at.desc`).catch(()=>[]),
+  getTasksMonth: () => sbFetch(`tasks?select=id,created_at&order=created_at.desc`).catch(()=>[]),
   // Agent riddle/task completions
   getAgentRiddleAnswers: (gameId) => sbFetch(`agent_riddle_answers?game_id=eq.${encodeURIComponent(gameId)}&select=*`),
   getAgentTaskSubmissions: (gameId) => sbFetch(`agent_task_submissions?game_id=eq.${encodeURIComponent(gameId)}&select=*`),
@@ -86,7 +86,10 @@ const staffDb = {
 export function calcScoreCoins(weeklyMetrics, riddleAnswers, taskSubmissions, kudos, goldKudos, referrals) {
   // Score from weekly metrics (QA + AHT + Attendance per week)
   const kpiScore = (weeklyMetrics || []).reduce((sum, w) => {
-    return sum + (w.qa_pts || 0) + (w.aht_pts || 0) + (w.attendance_pts || 0);
+    const qa = Number(w.qa_pts) || 0;
+    const aht = Number(w.aht_pts) || 0;
+    const att = Number(w.attendance_pts) || 0;
+    return sum + qa + aht + att;
   }, 0);
 
   // Weeks in current data
@@ -1168,6 +1171,76 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
 }
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
+
+function YuritoKudos({cu, allUsers, allStaff, toast, reloadUsers}){
+  const [tab, setTab] = useState<"agents"|"staff">("agents");
+  const [kf, setKf] = useState({toId:"", gold:false, reason:"", target:"agent"});
+  const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" as any,background:S.bg,color:S.text};
+
+  const sendToAgent = async () => {
+    if(!kf.toId||!kf.reason.trim()){toast("Complete all fields");return;}
+    const target = allUsers.find(u=>u.id===kf.toId);
+    if(!target)return;
+    try{
+      const pts=kf.gold?5:1;
+      await sbFetch("kudos_log",{method:"POST",body:JSON.stringify({from_user_id:cu.id,to_user_id:target.id,reason:kf.reason,category:"general",points_given:pts})});
+      await sbFetch(`profiles?id=eq.${target.id}`,{method:"PATCH",body:JSON.stringify({kudos:(target.kudos||0)+(kf.gold?0:1),gold_kudos:(target.gold_kudos||0)+(kf.gold?1:0)}),prefer:"return=representation"});
+      await sbFetch("notifications",{method:"POST",body:JSON.stringify({recipient_id:target.id,title:kf.gold?"You got a Gold Kudo! 🌟":"You got a Kudo! 👏",message:`${cu.gameId} recognized you: "${kf.reason}"`,type:"kudos",emoji:kf.gold?"🌟":"👏"})});
+      await reloadUsers();
+      setKf({toId:"",gold:false,reason:"",target:"agent"});
+      toast(`Kudo sent to ${target.name}!`);
+    }catch(e){toast("Error sending kudo");}
+  };
+
+  const sendToStaff = async () => {
+    if(!kf.toId||!kf.reason.trim()){toast("Complete all fields");return;}
+    const target = allStaff.find(u=>u.id===kf.toId);
+    if(!target)return;
+    try{
+      await sbFetch("staff_kudos",{method:"POST",body:JSON.stringify({recipient_id:target.id,given_by:cu.id,kudo_type:kf.gold?"gold":"regular",reason:kf.reason,points_awarded:kf.gold?5:1,status:"approved"})});
+      setKf({toId:"",gold:false,reason:"",target:"staff"});
+      toast(`Kudo sent to ${target.name}!`);
+    }catch(e){toast("Error sending kudo");}
+  };
+
+  return(
+    <div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}>
+      <SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}>
+        <div style={{fontSize:28,marginBottom:4}}>👏</div>
+        <div style={{color:S.text,fontWeight:800,fontSize:18}}>Send Kudos</div>
+        <div style={{color:"#a5b4fc",fontSize:12,marginTop:2}}>Recognize agents and staff</div>
+      </SCard>
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {[{id:"agents",label:"🏆 Agents"},{id:"staff",label:"⚡ Staff"}].map(t=>(
+          <button key={t.id} onClick={()=>{setTab(t.id as any);setKf(p=>({...p,toId:""}));}} style={{padding:"8px 16px",borderRadius:9,border:`1px solid ${tab===t.id?S.accent:S.border}`,background:tab===t.id?`${S.accent}22`:S.card,color:tab===t.id?"#a5b4fc":S.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{t.label}</button>
+        ))}
+      </div>
+      <SCard>
+        <div style={{color:S.accent,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:14}}>SEND KUDO TO {tab==="agents"?"AGENT":"STAFF"}</div>
+        <div style={{marginBottom:10}}>
+          <div style={{color:S.muted,fontSize:11,marginBottom:4}}>SELECT</div>
+          <select value={kf.toId} onChange={e=>setKf(p=>({...p,toId:e.target.value}))} style={inp}>
+            <option value="">Choose...</option>
+            {tab==="agents"
+              ? allUsers.filter(u=>u.active&&u.role==="user").map(u=><option key={u.id} value={u.id}>{u.name} · {u.project}</option>)
+              : allStaff.filter(u=>u.active&&u.gameId!=="YURITO").map(u=><option key={u.id} value={u.id}>{u.gameId} · {u.role}</option>)
+            }
+          </select>
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <div onClick={()=>setKf(p=>({...p,gold:false}))} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${!kf.gold?S.accent:S.border}`,background:!kf.gold?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>👏</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Kudo (+1)</div></div>
+          <div onClick={()=>setKf(p=>({...p,gold:true}))} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${kf.gold?S.yellow:S.border}`,background:kf.gold?`${S.yellow}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>🌟</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Gold (+5)</div></div>
+        </div>
+        <div style={{marginBottom:14}}>
+          <div style={{color:S.muted,fontSize:11,marginBottom:4}}>REASON</div>
+          <textarea value={kf.reason} onChange={e=>setKf(p=>({...p,reason:e.target.value}))} rows={3} style={{...inp,resize:"vertical" as any}} placeholder="Why do they deserve this?"/>
+        </div>
+        <SBtn onClick={tab==="agents"?sendToAgent:sendToStaff} disabled={!kf.toId||!kf.reason.trim()} style={{width:"100%",padding:12}}>SEND KUDO</SBtn>
+      </SCard>
+    </div>
+  );
+}
+
 function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,user}){
   if(!user||!weeklyMetrics||weeklyMetrics.length===0)return null;
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals);
@@ -1210,24 +1283,24 @@ export default function App(){
 
   // Load agent-specific scoring data on login
   const loadAgentScoreData=async(agent)=>{
-    if(!agent?.game_id)return;
-    try{
-      const [wm,ra,ts,riddles,tasks]=await Promise.all([
-        db.getWeeklyMetrics(agent.game_id),
-        db.getAgentRiddleAnswers(agent.game_id),
-        db.getAgentTaskSubmissions(agent.game_id),
-        db.getRiddlesMonth(),
-        db.getTasksMonth(),
-      ]);
-      setAgentWeeklyMetrics(wm||[]);
-      setAgentRiddleAnswers(ra||[]);
-      setAgentTaskSubmissions(ts||[]);
-      // Count riddles/tasks active this month
-      const now=new Date();
-      const thisMonth=(d)=>{const dt=new Date(d);return dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear();};
-      setMonthRiddleCount((riddles||[]).filter(r=>thisMonth(r.created_at)).length);
-      setMonthTaskCount((tasks||[]).filter(t=>thisMonth(t.created_at)).length);
-    }catch(e){console.error("Score data load error:",e);}
+    if(!agent?.game_id){console.warn("loadAgentScoreData: no game_id",agent);return;}
+    // Load each independently so one failure doesn't kill all
+    const safeGet=async(fn)=>{try{return await fn();}catch(e){console.warn("safeGet error:",e);return [];}};
+    const [wm,ra,ts,riddles,tasks]=await Promise.all([
+      safeGet(()=>db.getWeeklyMetrics(agent.game_id)),
+      safeGet(()=>db.getAgentRiddleAnswers(agent.game_id)),
+      safeGet(()=>db.getAgentTaskSubmissions(agent.game_id)),
+      safeGet(()=>db.getRiddlesMonth()),
+      safeGet(()=>db.getTasksMonth()),
+    ]);
+    console.log("Score data loaded for",agent.game_id,"— metrics:",wm?.length,"riddles:",riddles?.length,"tasks:",tasks?.length);
+    setAgentWeeklyMetrics(wm||[]);
+    setAgentRiddleAnswers(ra||[]);
+    setAgentTaskSubmissions(ts||[]);
+    const now=new Date();
+    const thisMonth=(d)=>{const dt=new Date(d);return dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear();};
+    setMonthRiddleCount((riddles||[]).filter(r=>r.created_at&&thisMonth(r.created_at)).length);
+    setMonthTaskCount((tasks||[]).filter(t=>t.created_at&&thisMonth(t.created_at)).length);
   };
 
   const loadNotifs=async(uid)=>{try{const d=await db.getNotifs(uid);setNotifs(d||[]);}catch(e){}};
@@ -1277,7 +1350,11 @@ export default function App(){
   if(loggedIn?.appType==="staff"){
     const isManager=cu?.role==="manager"||cu?.role==="training_manager"||cu?.role==="superadmin";
     const isSAorManager=cu?.role==="superadmin"||cu?.role==="manager";
-    const staffNav=[
+    const isYurito=cu?.gameId==="YURITO";
+    const staffNav= isYurito ? [
+      {id:"dashboard",icon:"🏠",label:"Home"},
+      {id:"kudos",icon:"👏",label:"Kudos"},
+    ] : [
       {id:"dashboard",icon:"🏠",label:"Home"},
       {id:"leaderboard",icon:"🏆",label:"Rankings"},
       {id:"kudos",icon:"👏",label:"Kudos"},
@@ -1300,12 +1377,12 @@ export default function App(){
         </div>
       </div>
       <div style={{padding:"14px 14px 0"}}>
-        {screen==="dashboard"&&(isSAorManager?<OperationsDashboard user={cu}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos}/>)}
+        {screen==="dashboard"&&(isYurito||isSAorManager?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos}/>)}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
-        {screen==="kudos"&&<StaffKudos user={cu} allStaff={allStaff} kudos={staffKudos} isManager={isManager}
+        {screen==="kudos"&&(isYurito?<YuritoKudos cu={cu} allUsers={users} allStaff={allStaff} toast={toast} reloadUsers={reloadUsers}/>:<StaffKudos user={cu} allStaff={allStaff} kudos={staffKudos} isManager={isManager}
           onSendKudo={async d=>{try{await staffDb.createKudo(d);const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast("Kudo sent!");}catch(e){toast("Error");}}}
           onApproveKudo={async(id,approved)=>{try{await staffDb.updateKudo(id,{status:approved?"approved":"rejected",approved_by:cu.id,approved_at:new Date().toISOString()});const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast(approved?"Approved!":"Rejected");}catch(e){toast("Error");}}}
-        />}
+        />)}
         {screen==="innovation"&&<StaffInnovation user={cu} innovations={staffInnovations} isSuperAdmin={cu?.role==="superadmin"}
           onSubmit={async d=>{try{await staffDb.createInnovation(d);const i=await staffDb.getInnovations(cu.id);setStaffInnovations(i||[]);toast("Submitted!");}catch(e){toast("Error");}}}
           onApprove={async(id,approved,notes)=>{try{await staffDb.updateInnovation(id,{status:approved?"approved":"rejected",reviewed_by:cu.id,review_notes:notes,reviewed_at:new Date().toISOString()});const i=await staffDb.getInnovations(cu.id);setStaffInnovations(i||[]);toast(approved?"Approved!":"Rejected");}catch(e){toast("Error");}}}
