@@ -82,7 +82,11 @@ export default function OperationsDashboard({ user }: { user: any }) {
   const weekData = allMetrics.filter((m: any) => {
     if (m.week !== week) return false;
     if (isSA) return true;
-    if (isManager) return m.manager_game_id === user.gameId;
+    if (isManager) {
+      const proj = (user.project||"").trim().toUpperCase();
+      if (!proj || proj === "ALL") return m.manager_game_id === user.gameId;
+      return norm(m.project) === norm(user.project);
+    }
     if (isCoach) return norm(m.coach) === norm(user.gameId);
     return false;
   });
