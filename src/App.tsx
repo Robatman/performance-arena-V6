@@ -1372,7 +1372,7 @@ export default function App(){
         </div>
       </div>
       <div style={{padding:"14px 14px 0"}}>
-        {screen==="dashboard"&&((isYurito||isSAorManager)?<OperationsDashboard user={cu}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos}/>)}
+        {screen==="dashboard"&&((isYurito||isSAorManager)?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos}/>)}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
         {screen==="kudos"&&(isYurito?<YuritoKudos cu={cu} allUsers={users} allStaff={allStaff} toast={toast} reloadUsers={reloadUsers}/>:<StaffKudos user={cu} allStaff={allStaff} kudos={staffKudos} isManager={isManager}
           onSendKudo={async d=>{try{await staffDb.createKudo(d);const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast("Kudo sent!");}catch(e){toast("Error");}}}
