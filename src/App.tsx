@@ -8,6 +8,7 @@ import CoachingSessions from "./components/CoachingSessions";
 import StaffStore from "./components/StaffStore";
 import StaffPointsReport from "./components/StaffPointsReport";
 import GeneralReport from "./components/GeneralReport";
+import StaffActivitiesPanel from "./components/StaffActivitiesPanel";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2pqcHRqeWhpaXRlanVwdmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODgwMjEsImV4cCI6MjA5MjU2NDAyMX0.UgQDse6To0oe49llGDC7e9jYO1_bR6gxk-YcE6h7Bn8";
@@ -1468,10 +1469,11 @@ export default function App(){
       {id:"kudos",icon:"👏",label:"Kudos"},
       {id:"innovation",icon:"🚀",label:"Projects"},
       ...(["team_coach","manager","superadmin"].includes(cu?.role)?[{id:"sessions",icon:"🎯",label:"Sessions"}]:[]),
+      ...(["team_coach","quality_coach","training_coach","manager","training_manager","superadmin"].includes(cu?.role)?[{id:"activities",icon:"⭐",label:"Actividades"}]:[]),
       {id:"store",icon:"🏪",label:"Tienda"},
       {id:"profile",icon:"🎨",label:"Profile"},
       ...(cu?.role==="superadmin"?[{id:"report",icon:"📊",label:"Reporte"},{id:"admin",icon:"⚙️",label:"Admin"}]:[])];
-    const staffTitles={dashboard:"Dashboard",leaderboard:"Leaderboard",kudos:"Kudos",innovation:"Innovation & AI",sessions:"Coaching Sessions",store:"Staff Store",report:"Reporte de Puntos",profile:"Profile",admin:"Admin Panel"};
+    const staffTitles={dashboard:"Dashboard",leaderboard:"Leaderboard",kudos:"Kudos",innovation:"Innovation & AI",sessions:"Coaching Sessions",activities:"Actividades & Puntos",store:"Staff Store",report:"Reporte de Puntos",profile:"Profile",admin:"Admin Panel"};
     return<>
       <style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif;background:${S.bg}}input,select,textarea{font-family:inherit}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
       {cu?.needsPwChange&&<TempPwModal user={cu} dark={true} onSave={async pw=>{await staffDb.update(cu.id,{password_hash:pw,needs_pw_change:false,temp_pw:null});setLoggedIn({...cu,needsPwChange:false,tempPw:null});toast("Password updated!");}}/>}
@@ -1495,6 +1497,7 @@ export default function App(){
           onApprove={async(id,approved,notes)=>{try{await staffDb.updateInnovation(id,{status:approved?"approved":"rejected",reviewed_by:cu.id,review_notes:notes,reviewed_at:new Date().toISOString()});const i=await staffDb.getInnovations(cu.id);setStaffInnovations(i||[]);toast(approved?"Approved!":"Rejected");}catch(e){toast("Error");}}}
         />}
         {screen==="sessions"&&<CoachingSessions user={cu} staffProfile={allStaff.find(s=>s.id===cu?.id)||cu}/>}
+        {screen==="activities"&&<StaffActivitiesPanel user={cu}/>}
         {screen==="store"&&<StaffStore user={cu} staffProfile={allStaff.find(s=>s.id===cu?.id)||cu} onCoinsUpdate={(coins)=>{setLoggedIn({...cu,coins});}}/>}
         {screen==="profile"&&<StaffProfile user={cu} onUpdate={u=>{setLoggedIn(u);}} toast={toast}/>}
         {screen==="report"&&cu?.role==="superadmin"&&<StaffPointsReport user={cu}/>}
