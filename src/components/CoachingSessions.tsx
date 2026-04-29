@@ -592,13 +592,330 @@ export function AgentCoachingCard({ session, agentId, onRespond }) {
   );
 }
 
+// ─── HIGH EVALUATION — monthly coaching evaluation by manager ────────────────
+
+const MONTHS = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
+];
+
+function HighEvaluationView({ user }: { user: any }) {
+  const [coaches, setCoaches]   = useState<any[]>([]);
+  const [evals, setEvals]       = useState<any[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState<string|null>(null);
+  const [toast, setToast]       = useState("");
+  const [form, setForm]         = useState({
+    coachGameId: "", month: "", year: String(new Date().getFullYear()), passed: true,
+  });
+  const [showForm, setShowForm] = useState(false);
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3500); };
+
+  useEffect(() => { load(); }, []);
+
+  const load = async () => {
+    setLoading(true);
+    const [coachList, evalList] = await Promise.all([
+      sbFetch(`staff_profiles?role=eq.team_coach&select=game_id,full_name,project,coins&order=full_name.asc`).catch(() => []),
+      sbFetch(`coaching_high_evaluations?order=created_at.desc&limit=100`).catch(() => []),
+    ]);
+    setCoaches(coachList || []);
+    setEvals(evalList || []);
+    setLoading(false);
+  };
+
+  const handleSubmit = async () => {
+    if (!form.coachGameId || !form.month || !form.year) {
+      showToast("Selecciona coach, mes y año"); return;
+    }
+    const period = `${form.month}_${form.year}`;
+    // Duplicate check
+    const dupe = evals.find(e => e.coach_game_id === form.coachGameId && e.period === period);
+    if (dupe) { showToast("Ya existe una evaluación para este coach en ese mes"); return; }
+
+    setSaving("new");
+    try {
+      const pts = form.passed ? 25 : 0;
+
+      // Insert evaluation record
+      await sbFetch("coaching_high_evaluations", {
+        method: "POST", prefer: "return=minimal",
+        body: JSON.stringify({
+          coach_game_id: form.coachGameId,
+          period,
+          month: form.month,
+          year: Number(form.year),
+          passed: form.passed,
+          points_awarded: pts,
+          evaluated_by: user.gameId || user.game_id,
+          created_at: new Date().toISOString(),
+        }),
+      });
+
+      // Award points if passed
+      if (form.passed) {
+        // Log entry
+        await sbFetch("staff_points_log", {
+          method: "POST", prefer: "return=minimal",
+          body: JSON.stringify({
+            staff_game_id: form.coachGameId,
+            points: pts,
+            source: "coaching_high_eval",
+            description: `⭐ Coaching High Evaluation aprobada — ${form.month} ${form.year}`,
+            week: period,
+            status: "approved",
+            granted_by: user.gameId || user.game_id,
+            created_at: new Date().toISOString(),
+          }),
+        });
+        // Update coins
+        const prof = await sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(form.coachGameId)}&select=coins`);
+        if (prof && prof.length > 0) {
+          await sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(form.coachGameId)}`, {
+            method: "PATCH", prefer: "return=minimal",
+            body: JSON.stringify({ coins: Math.max(0, (prof[0].coins || 0) + pts) }),
+          });
+        }
+        // Notify coach
+        await sbFetch("notifications", {
+          method: "POST", prefer: "return=minimal",
+          body: JSON.stringify({
+            game_id: form.coachGameId,
+            message: `⭐ ¡Aprobaste tu Coaching High Evaluation de ${form.month} ${form.year}! +25 pts acreditados.`,
+            read: false,
+            created_at: new Date().toISOString(),
+          }),
+        }).catch(() => {});
+      }
+
+      showToast(form.passed
+        ? `✅ Evaluación aprobada — +25 pts para ${form.coachGameId}`
+        : `Evaluación registrada — ${form.coachGameId} no aprobó`
+      );
+      setForm({ coachGameId: "", month: "", year: String(new Date().getFullYear()), passed: true });
+      setShowForm(false);
+      load();
+    } catch (e: any) {
+      showToast(`Error: ${e.message}`);
+    }
+    setSaving(null);
+  };
+
+  const inp: any = {
+    width: "100%", background: S.bg, border: `1px solid ${S.border}`,
+    borderRadius: 8, padding: "9px 12px", color: S.text,
+    fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box",
+  };
+
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear - 1, currentYear, currentYear + 1].map(String);
+
+  return (
+    <div style={{ paddingBottom: 80 }}>
+      {toast && (
+        <div style={{
+          position: "fixed", top: 20, right: 20, zIndex: 9999,
+          padding: "12px 20px", borderRadius: 8, fontWeight: 700, fontSize: 13,
+          background: toast.startsWith("✅") ? "#052e16" : toast.startsWith("Error") ? "#2d1515" : "#1a1d27",
+          border: `1px solid ${toast.startsWith("✅") ? "#14532d" : toast.startsWith("Error") ? "#7f1d1d" : S.border}`,
+          color: toast.startsWith("✅") ? S.green : toast.startsWith("Error") ? S.red : S.text,
+        }}>{toast}</div>
+      )}
+
+      {/* Header */}
+      <SCard style={{ marginBottom: 14, background: "linear-gradient(135deg,#1e3a1e,#14532d)", border: "none" }}>
+        <div style={{ fontSize: 24, marginBottom: 4 }}>⭐</div>
+        <div style={{ color: S.text, fontWeight: 800, fontSize: 16 }}>Coaching High Evaluation</div>
+        <div style={{ color: "#86efac", fontSize: 12, marginTop: 2 }}>
+          Evaluación mensual de coaching — 25 pts si aprueba
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+          <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, padding: "8px 16px", textAlign: "center" }}>
+            <div style={{ color: S.green, fontWeight: 900, fontSize: 20 }}>{evals.filter(e => e.passed).length}</div>
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 10 }}>Aprobadas</div>
+          </div>
+          <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, padding: "8px 16px", textAlign: "center" }}>
+            <div style={{ color: S.red, fontWeight: 900, fontSize: 20 }}>{evals.filter(e => !e.passed).length}</div>
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 10 }}>No aprobadas</div>
+          </div>
+          <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, padding: "8px 16px", textAlign: "center" }}>
+            <div style={{ color: S.yellow, fontWeight: 900, fontSize: 20 }}>
+              {evals.filter(e => e.passed).reduce((a, e) => a + (e.points_awarded || 0), 0)}
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 10 }}>Pts entregados</div>
+          </div>
+        </div>
+      </SCard>
+
+      {/* New evaluation button */}
+      <div style={{ marginBottom: 14 }}>
+        <button onClick={() => setShowForm(!showForm)} style={{
+          background: showForm ? `${S.border}` : `${S.green}22`,
+          color: showForm ? S.muted : S.green,
+          border: `1px solid ${showForm ? S.border : S.green + "44"}`,
+          borderRadius: 9, padding: "10px 20px", cursor: "pointer",
+          fontWeight: 700, fontSize: 13, fontFamily: "inherit",
+        }}>
+          {showForm ? "Cancelar" : "+ Nueva evaluación"}
+        </button>
+      </div>
+
+      {/* New evaluation form */}
+      {showForm && (
+        <SCard style={{ marginBottom: 16, border: `1px solid ${S.green}44` }}>
+          <div style={{ color: S.green, fontSize: 11, fontWeight: 700, letterSpacing: 1, marginBottom: 14 }}>
+            REGISTRAR EVALUACIÓN MENSUAL
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
+            <div>
+              <div style={{ color: S.muted, fontSize: 11, marginBottom: 4 }}>COACH</div>
+              <select value={form.coachGameId} onChange={e => setForm(p => ({ ...p, coachGameId: e.target.value }))} style={inp}>
+                <option value="">Selecciona coach</option>
+                {coaches.map(c => (
+                  <option key={c.game_id} value={c.game_id}>
+                    {c.game_id}{c.project ? ` — ${c.project}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={{ color: S.muted, fontSize: 11, marginBottom: 4 }}>MES</div>
+              <select value={form.month} onChange={e => setForm(p => ({ ...p, month: e.target.value }))} style={inp}>
+                <option value="">Selecciona mes</option>
+                {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{ color: S.muted, fontSize: 11, marginBottom: 4 }}>AÑO</div>
+              <select value={form.year} onChange={e => setForm(p => ({ ...p, year: e.target.value }))} style={inp}>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Pass / Fail toggle */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ color: S.muted, fontSize: 11, marginBottom: 8 }}>RESULTADO DE LA EVALUACIÓN</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <div onClick={() => setForm(p => ({ ...p, passed: true }))} style={{
+                flex: 1, padding: "16px 12px", borderRadius: 12, cursor: "pointer",
+                border: `2px solid ${form.passed ? S.green : S.border}`,
+                background: form.passed ? `${S.green}18` : "#0a1020",
+                textAlign: "center", transition: "all 0.15s",
+              }}>
+                <div style={{ fontSize: 28, marginBottom: 4 }}>✅</div>
+                <div style={{ color: form.passed ? S.green : S.muted, fontWeight: 700, fontSize: 14 }}>Aprobó</div>
+                <div style={{ color: form.passed ? S.green : S.muted, fontSize: 11, marginTop: 2 }}>+25 pts</div>
+              </div>
+              <div onClick={() => setForm(p => ({ ...p, passed: false }))} style={{
+                flex: 1, padding: "16px 12px", borderRadius: 12, cursor: "pointer",
+                border: `2px solid ${!form.passed ? S.red : S.border}`,
+                background: !form.passed ? `${S.red}18` : "#0a1020",
+                textAlign: "center", transition: "all 0.15s",
+              }}>
+                <div style={{ fontSize: 28, marginBottom: 4 }}>❌</div>
+                <div style={{ color: !form.passed ? S.red : S.muted, fontWeight: 700, fontSize: 14 }}>No aprobó</div>
+                <div style={{ color: !form.passed ? S.red : S.muted, fontSize: 11, marginTop: 2 }}>0 pts</div>
+              </div>
+            </div>
+          </div>
+
+          <button onClick={handleSubmit} disabled={saving === "new" || !form.coachGameId || !form.month} style={{
+            width: "100%", padding: 12,
+            background: !form.coachGameId || !form.month ? S.border : form.passed ? S.green : S.red,
+            color: "#fff", border: "none", borderRadius: 9,
+            fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+            opacity: saving === "new" ? 0.6 : 1,
+          }}>
+            {saving === "new" ? "Guardando..." : `Registrar evaluación — ${form.passed ? "Aprobó (+25 pts)" : "No aprobó"}`}
+          </button>
+        </SCard>
+      )}
+
+      {/* Evaluations list */}
+      {loading ? (
+        <div style={{ color: S.muted, textAlign: "center", padding: 40 }}>Cargando...</div>
+      ) : evals.length === 0 ? (
+        <SCard style={{ textAlign: "center", padding: 40 }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>⭐</div>
+          <div style={{ color: S.muted, fontSize: 13 }}>No hay evaluaciones registradas aún.</div>
+        </SCard>
+      ) : (
+        <div>
+          <div style={{ color: S.muted, fontSize: 11, fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>
+            HISTORIAL DE EVALUACIONES
+          </div>
+          {evals.map((ev, i) => (
+            <SCard key={ev.id || i} style={{
+              marginBottom: 8,
+              borderLeft: `3px solid ${ev.passed ? S.green : S.red}`,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                    <span style={{ fontSize: 18 }}>{ev.passed ? "✅" : "❌"}</span>
+                    <span style={{ color: S.text, fontWeight: 700, fontSize: 14 }}>{ev.coach_game_id}</span>
+                    <span style={{
+                      padding: "1px 7px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+                      background: `${ev.passed ? S.green : S.red}22`,
+                      color: ev.passed ? S.green : S.red,
+                    }}>{ev.passed ? "Aprobó" : "No aprobó"}</span>
+                  </div>
+                  <div style={{ color: S.muted, fontSize: 11 }}>
+                    {ev.month} {ev.year}
+                    {ev.evaluated_by && <span> · Evaluado por: {ev.evaluated_by}</span>}
+                  </div>
+                  <div style={{ color: S.muted, fontSize: 10, marginTop: 2 }}>
+                    {new Date(ev.created_at).toLocaleDateString("es-MX")}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  {ev.passed && (
+                    <div style={{ color: S.green, fontWeight: 900, fontSize: 18 }}>+{ev.points_awarded}</div>
+                  )}
+                  <div style={{ color: S.muted, fontSize: 10 }}>pts</div>
+                </div>
+              </div>
+            </SCard>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── MAIN EXPORT ──────────────────────────────────────────────────────────────
 export default function CoachingSessions({ user, staffProfile }) {
   const isCoach   = user?.role === "team_coach";
   const isManager = user?.role === "manager" || user?.role === "training_manager" || user?.role === "superadmin";
+  const [mainTab, setMainTab] = useState<"sessions"|"high_eval">("sessions");
 
-  if (isCoach)   return <CoachView user={user} staffProfile={staffProfile}/>;
-  if (isManager) return <ManagerVerifyView user={user} staffProfile={staffProfile}/>;
+  if (isCoach) return <CoachView user={user} staffProfile={staffProfile}/>;
+
+  if (isManager) return (
+    <div style={{ paddingBottom: 100, background: S.bg, minHeight: "100vh" }}>
+      {/* Tab switcher */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[
+          { id: "sessions",  label: "🎯 Coaching Sessions" },
+          { id: "high_eval", label: "⭐ High Evaluation" },
+        ].map(t => (
+          <button key={t.id} onClick={() => setMainTab(t.id as any)} style={{
+            padding: "10px 18px", borderRadius: 9, fontWeight: 700, fontSize: 13,
+            border: `1px solid ${mainTab === t.id ? S.accent : S.border}`,
+            background: mainTab === t.id ? `${S.accent}22` : S.card,
+            color: mainTab === t.id ? "#a5b4fc" : S.muted,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {mainTab === "sessions"  && <ManagerVerifyView user={user} staffProfile={staffProfile}/>}
+      {mainTab === "high_eval" && <HighEvaluationView user={user}/>}
+    </div>
+  );
 
   return (
     <div style={{padding:32,textAlign:"center",background:S.bg,minHeight:"80vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
