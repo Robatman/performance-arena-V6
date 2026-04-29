@@ -294,6 +294,145 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
       catch { try { await dbPatch("staff_attrition_monthly",`coach_name=eq.${encodeURIComponent(c.game_id)}&week=eq.${encodeURIComponent(week)}`,{voluntary_exits:c.attrition}); } catch {} }
     }
 
+    // ── AUTO KPI POINTS — attrition scoring per coach ─────────────────────
+    setProgressMsg("Calculando puntos automáticos...");
+    for (const c of coaches) {
+      try {
+        // Attrition points: 0 bajas = +5, 1 baja = +2, 2 bajas = 0, 3+ = -3 por baja
+        let attrPts = 0;
+        if (c.attrition === 0) attrPts = 5;
+        else if (c.attrition === 1) attrPts = 2;
+        else if (c.attrition === 2) attrPts = 0;
+        else attrPts = -(c.attrition - 2) * 3; // -3 per baja above 2
+
+        const attrDesc = c.attrition === 0
+          ? `Sin attrition esta semana — equipo completo`
+          : `Attrition: ${c.attrition} baja(s) esta semana`;
+
+        // Insert to staff_points_log
+        await dbInsert("staff_points_log", {
+          staff_game_id: c.game_id,
+          points: attrPts,
+          source: "auto_kpi",
+          description: `📊 Attrition ${week}: ${attrDesc}`,
+          week,
+          status: "approved",
+          granted_by: "system",
+          created_at: new Date().toISOString(),
+        });
+
+        // Update coins in staff_profiles
+        const profRes = await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles?game_id=eq.${encodeURIComponent(c.game_id)}&select=coins`, { headers: HDRS });
+        const profText = await profRes.text();
+        const profData = profText ? JSON.parse(profText) : [];
+        if (profData.length > 0) {
+          const currentCoins = profData[0].coins ?? 0;
+          await dbPatch("staff_profiles", `game_id=eq.${encodeURIComponent(c.game_id)}`, {
+            coins: Math.max(0, currentCoins + attrPts),
+          });
+        }
+      } catch (e: any) { errs.push(`Auto KPI ${c.game_id}: ${e.message}`); }
+    }
+
+    // ── AUTO KPI POINTS — QA and AHT performance per coach ───────────────
+    // Group agents by coach and qa_coach to calculate team KPIs
+    const okAgents = agents.filter(a => a.flag === "ok" && a.review_reason !== "termination" && a.review_reason !== "vacation" && a.review_reason !== "skip");
+
+    // Team Coach KPI: % agents with QA >= goal AND % agents with AHT meeting goal
+    const coachGroups = new Map<string, typeof okAgents>();
+    okAgents.forEach(a => {
+      if (!a.coach_id) return;
+      if (!coachGroups.has(a.coach_id)) coachGroups.set(a.coach_id, []);
+      coachGroups.get(a.coach_id)!.push(a);
+    });
+
+    for (const [coachId, agentList] of coachGroups.entries()) {
+      try {
+        const total = agentList.length;
+        if (total === 0) continue;
+
+        // QA performance of team
+        const qaAgents = agentList.filter(a => a.qa_score !== null && a.qa_goal > 0);
+        const qaMetPct = qaAgents.length > 0
+          ? (qaAgents.filter(a => a.qa_score! >= a.qa_goal).length / qaAgents.length) * 100
+          : 0;
+
+        // AHT performance of team
+        const ahtAgents = agentList.filter(a => a.aht_seconds !== null && a.aht_seconds > 0 && a.aht_goal_seconds !== null);
+        const ahtMetPct = ahtAgents.length > 0
+          ? (ahtAgents.filter(a => {
+              if (a.aht_type === "Productivity") return a.aht_seconds! >= a.aht_goal_seconds!;
+              return a.aht_seconds! <= a.aht_goal_seconds!;
+            }).length / ahtAgents.length) * 100
+          : 0;
+
+        // QA pts: >=80% team = +5, >=60% = +3, <60% = 0
+        const qaPts = qaMetPct >= 80 ? 5 : qaMetPct >= 60 ? 3 : 0;
+        // AHT pts: >=80% team = +5, >=60% = +3, <60% = 0
+        const ahtPts = ahtMetPct >= 80 ? 5 : ahtMetPct >= 60 ? 3 : 0;
+        const totalKpiPts = qaPts + ahtPts;
+
+        if (totalKpiPts > 0) {
+          await dbInsert("staff_points_log", {
+            staff_game_id: coachId,
+            points: totalKpiPts,
+            source: "auto_kpi",
+            description: `📊 KPI Equipo ${week}: QA ${qaMetPct.toFixed(0)}% (${qaPts}pts) + AHT ${ahtMetPct.toFixed(0)}% (${ahtPts}pts)`,
+            week,
+            status: "approved",
+            granted_by: "system",
+            created_at: new Date().toISOString(),
+          });
+          // Update coins
+          const profRes = await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles?game_id=eq.${encodeURIComponent(coachId)}&select=coins`, { headers: HDRS });
+          const profText = await profRes.text();
+          const profData = profText ? JSON.parse(profText) : [];
+          if (profData.length > 0) {
+            await dbPatch("staff_profiles", `game_id=eq.${encodeURIComponent(coachId)}`, {
+              coins: Math.max(0, (profData[0].coins ?? 0) + totalKpiPts),
+            });
+          }
+        }
+      } catch (e: any) { errs.push(`KPI Coach ${coachId}: ${e.message}`); }
+    }
+
+    // QA Coach KPI: % agents with QA >= goal in their assigned group
+    const qaCoachGroups = new Map<string, typeof okAgents>();
+    okAgents.forEach(a => {
+      if (!a.qcoach) return;
+      if (!qaCoachGroups.has(a.qcoach)) qaCoachGroups.set(a.qcoach, []);
+      qaCoachGroups.get(a.qcoach)!.push(a);
+    });
+
+    for (const [qaCoachId, agentList] of qaCoachGroups.entries()) {
+      try {
+        const qaAgents = agentList.filter(a => a.qa_score !== null && a.qa_goal > 0);
+        if (qaAgents.length === 0) continue;
+        const qaMetPct = (qaAgents.filter(a => a.qa_score! >= a.qa_goal).length / qaAgents.length) * 100;
+        const qaPts = qaMetPct >= 80 ? 5 : qaMetPct >= 60 ? 3 : 0;
+        if (qaPts > 0) {
+          await dbInsert("staff_points_log", {
+            staff_game_id: qaCoachId,
+            points: qaPts,
+            source: "auto_kpi",
+            description: `📊 KPI QA Coach ${week}: ${qaMetPct.toFixed(0)}% agentes ≥ meta QA (+${qaPts}pts)`,
+            week,
+            status: "approved",
+            granted_by: "system",
+            created_at: new Date().toISOString(),
+          });
+          const profRes = await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles?game_id=eq.${encodeURIComponent(qaCoachId)}&select=coins`, { headers: HDRS });
+          const profText = await profRes.text();
+          const profData = profText ? JSON.parse(profText) : [];
+          if (profData.length > 0) {
+            await dbPatch("staff_profiles", `game_id=eq.${encodeURIComponent(qaCoachId)}`, {
+              coins: Math.max(0, (profData[0].coins ?? 0) + qaPts),
+            });
+          }
+        }
+      } catch (e: any) { errs.push(`KPI QA Coach ${qaCoachId}: ${e.message}`); }
+    }
+
     setProgress(100); setProgressMsg("¡Completado!");
     setSummary({week, agents_processed:agents.length, agents_created:created, agents_updated:updated, coaches_processed:coaches.length, errors:errs});
     setStage("done");
