@@ -1,8 +1,14 @@
 // @ts-nocheck
+// CoachingSessions.tsx — v2
+// Puntos: SOLO cuando agente Y manager confirman (sin doble pago)
+// Semana: dropdown con fechas reales de weekly_metrics
+// 10 pts fijos por sesión completada
 import { useState, useEffect } from "react";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2pqcHRqeWhpaXRlanVwdmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODgwMjEsImV4cCI6MjA5MjU2NDAyMX0.UgQDse6To0oe49llGDC7e9jYO1_bR6gxk-YcE6h7Bn8";
+
+const POINTS_PER_SESSION = 10;
 
 async function sbFetch(path, opts: any = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -21,28 +27,59 @@ async function sbFetch(path, opts: any = {}) {
 }
 
 const db = {
-  // Coaching sessions
   getSessions: (coachId) => sbFetch(`coaching_sessions?coach_game_id=eq.${encodeURIComponent(coachId)}&order=created_at.desc`),
   getSessionsForManager: (managerGameId) => sbFetch(`coaching_sessions?manager_game_id=eq.${encodeURIComponent(managerGameId)}&order=created_at.desc`),
   getSessionsForAgent: (agentGameId) => sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(agentGameId)}&status=eq.pending&order=created_at.desc`),
   getAllSessions: () => sbFetch(`coaching_sessions?order=created_at.desc&limit=500`),
   createSession: (d) => sbFetch("coaching_sessions", { method: "POST", body: JSON.stringify(d) }),
   updateSession: (id, d) => sbFetch(`coaching_sessions?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(d) }),
-  // Agents in coach's team (from weekly_metrics)
+  // Agents in coach's team from weekly_metrics
   getCoachAgents: (coachGameId) => sbFetch(`weekly_metrics?coach=eq.${encodeURIComponent(coachGameId)}&select=game_id,week&order=week.desc`),
-  // Manager for this coach's project
+  // Real weeks from weekly_metrics
+  getWeeks: () => sbFetch(`weekly_metrics?select=week&order=week.desc&limit=200`),
   getManagerForProject: (project) => sbFetch(`staff_profiles?project=eq.${encodeURIComponent(project)}&role=in.(manager,training_manager)&select=game_id,full_name&limit=1`),
-  // Staff points log
-  addPoints: (d) => sbFetch("staff_points_log", { method: "POST", body: JSON.stringify(d) }),
+  // Points — guard: only insert if not already paid
+  addPoints: async (d) => {
+    // Check for duplicate before inserting
+    const existing = await sbFetch(`staff_points_log?staff_game_id=eq.${encodeURIComponent(d.staff_game_id)}&reference_id=eq.${encodeURIComponent(d.reference_id)}&source=eq.coaching_session`).catch(() => null);
+    if (existing && existing.length > 0) return; // already paid, skip
+    return sbFetch("staff_points_log", { method: "POST", body: JSON.stringify(d) });
+  },
   getPointsLog: (gameId) => sbFetch(`staff_points_log?staff_game_id=eq.${encodeURIComponent(gameId)}&order=created_at.desc`),
-  // Update staff coins
-  updateStaffCoins: (id, coins) => sbFetch(`staff_profiles?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ coins }) }),
+  updateStaffCoins: (gameId, coins) => sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(gameId)}`, { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ coins }) }),
   getStaffByGameId: (gameId) => sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(gameId)}&select=*`),
-  // Notifications
   createNotif: (d) => sbFetch("notifications", { method: "POST", body: JSON.stringify(d) }),
-  // Agent profile
   getAgentByGameId: (gameId) => sbFetch(`profiles?game_id=eq.${encodeURIComponent(gameId)}&select=id,full_name,game_id`),
 };
+
+// ─── Core: award points only once when BOTH agent + manager confirm ───────
+async function tryAwardPoints(session: any, grantedBy: string) {
+  // Both must have confirmed
+  const agentOk = session.agent_q1 === true && session.agent_q2 === true;
+  const managerOk = session.manager_confirmed === true;
+  if (!agentOk || !managerOk) return false;
+  // Guard: mark points_paid first to prevent race condition
+  await db.updateSession(session.id, { points_paid: true, status: "completed" });
+  // Insert log (has internal duplicate guard)
+  await db.addPoints({
+    staff_game_id: session.coach_game_id,
+    points: POINTS_PER_SESSION,
+    source: "coaching_session",
+    description: `Coaching session — agente ${session.agent_game_id} (${session.week})`,
+    week: session.week,
+    status: "approved",
+    granted_by: grantedBy,
+    reference_id: session.id,
+    created_at: new Date().toISOString(),
+  });
+  // Update coins
+  const coachStaff = await db.getStaffByGameId(session.coach_game_id);
+  if (coachStaff && coachStaff[0]) {
+    const cur = coachStaff[0].coins || 0;
+    await db.updateStaffCoins(session.coach_game_id, cur + POINTS_PER_SESSION);
+  }
+  return true;
+}
 
 const S = {
   bg:"#0f1117", card:"#1a1d27", border:"#2a2d3e", text:"#e8eaf6",
@@ -69,6 +106,7 @@ const STATUS_META: Record<string, {label:string,color:string,emoji:string}> = {
 function CoachView({ user, staffProfile }) {
   const [sessions, setSessions]   = useState<any[]>([]);
   const [agents, setAgents]       = useState<string[]>([]);
+  const [weeks, setWeeks]         = useState<string[]>([]);
   const [tab, setTab]             = useState<"list"|"new">("list");
   const [form, setForm]           = useState({ agentGameId: "", week: "", notes: "" });
   const [loading, setLoading]     = useState(true);
@@ -83,16 +121,20 @@ function CoachView({ user, staffProfile }) {
   const load = async () => {
     setLoading(true);
     try {
-      const [sess, metrics, log] = await Promise.all([
+      const [sess, metrics, log, weekData] = await Promise.all([
         db.getSessions(user.gameId),
         db.getCoachAgents(user.gameId),
         db.getPointsLog(user.gameId),
+        db.getWeeks(),
       ]);
       setSessions(sess || []);
       setPointsLog(log || []);
       // Unique agent game_ids from weekly_metrics
       const uniqueAgents = [...new Set((metrics||[]).map((m:any) => m.game_id))] as string[];
       setAgents(uniqueAgents);
+      // Unique weeks — real dates from DB
+      const uniqueWeeks = [...new Set((weekData||[]).map((w:any) => w.week))] as string[];
+      setWeeks(uniqueWeeks);
     } catch(e) { console.error(e); }
     setLoading(false);
   };
@@ -171,19 +213,8 @@ function CoachView({ user, staffProfile }) {
 
   const inp = { width:"100%", border:`1px solid ${S.border}`, borderRadius:8, padding:"9px 11px", fontSize:13, outline:"none", fontFamily:"inherit", boxSizing:"border-box" as any, background:S.bg, color:S.text };
 
-  // Current month week options
-  const weekOptions = (() => {
-    const now = new Date();
-    const weeks = [];
-    for (let i = 0; i < 6; i++) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i * 7);
-      const y = d.getFullYear();
-      const w = Math.ceil(((d.getTime() - new Date(y, 0, 1).getTime()) / 86400000 + new Date(y, 0, 1).getDay() + 1) / 7);
-      weeks.push(`Week_${w}_${y}`);
-    }
-    return [...new Set(weeks)];
-  })();
+
+
 
   return (
     <div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}>
@@ -232,8 +263,9 @@ function CoachView({ user, staffProfile }) {
             <div style={{color:S.muted,fontSize:11,marginBottom:4}}>SEMANA</div>
             <select value={form.week} onChange={e=>setForm(p=>({...p,week:e.target.value}))} style={inp}>
               <option value="">Selecciona la semana</option>
-              {weekOptions.map(w=><option key={w} value={w}>{w}</option>)}
+              {weeks.map(w=><option key={w} value={w}>{w}</option>)}
             </select>
+            {weeks.length===0&&<div style={{color:S.muted,fontSize:11,marginTop:4}}>No hay semanas cargadas aún.</div>}
           </div>
           <div style={{marginBottom:16}}>
             <div style={{color:S.muted,fontSize:11,marginBottom:4}}>NOTAS (opcional)</div>
@@ -242,10 +274,11 @@ function CoachView({ user, staffProfile }) {
           <div style={{background:`${S.accent}10`,border:`1px solid ${S.accent}30`,borderRadius:10,padding:"10px 12px",marginBottom:14}}>
             <div style={{color:S.accent,fontWeight:700,fontSize:12,marginBottom:4}}>📋 Flujo de la sesión</div>
             <div style={{color:S.muted,fontSize:11,lineHeight:1.7}}>
-              1. Registras la sesión → +0 pts aún<br/>
-              2. El agente recibe notificación y responde 2 preguntas<br/>
-              3. El manager de tu proyecto verifica la sesión<br/>
-              4. Ambas confirmaciones → <strong style={{color:S.green}}>+10 pts automáticos</strong>
+              1. Registras la sesión → notificación al agente y manager<br/>
+              2. El agente responde 2 preguntas de confirmación<br/>
+              3. El manager verifica que la sesión se realizó<br/>
+              4. <strong style={{color:S.green}}>Ambos confirman → +{POINTS_PER_SESSION} pts automáticos</strong><br/>
+              <span style={{color:S.yellow}}>⚠️ Si solo uno confirma, los puntos quedan en espera</span>
             </div>
           </div>
           <SBtn onClick={submitSession} disabled={submitting||!form.agentGameId||!form.week} style={{width:"100%",padding:12}}>
@@ -325,38 +358,42 @@ function ManagerVerifyView({ user, staffProfile }) {
 
   const verify = async (session:any, confirmed:boolean) => {
     try {
-      let newStatus = confirmed ? "completed" : "cancelled";
-      // If agent hasn't responded yet, stay in a partial state
-      if (confirmed && session.status === "pending") newStatus = "manager_responded";
-
-      await db.updateSession(session.id, {
-        manager_confirmed: confirmed,
-        manager_responded_at: new Date().toISOString(),
-        status: newStatus,
-        points_paid: confirmed && newStatus === "completed",
-      });
-
-      // Award points if completed
-      if (confirmed && newStatus === "completed") {
-        await db.addPoints({
-          staff_game_id: session.coach_game_id,
-          points: session.points_awarded || 10,
-          source: "coaching_session",
-          description: `Coaching session con agente ${session.agent_game_id} (${session.week})`,
-          week: session.week,
-          status: "approved",
-          granted_by: user.gameId,
-          reference_id: session.id,
+      if (!confirmed) {
+        // Rejected — cancel session
+        await db.updateSession(session.id, {
+          manager_confirmed: false,
+          manager_responded_at: new Date().toISOString(),
+          status: "cancelled",
         });
-        // Update coach coins
-        const coachStaff = await db.getStaffByGameId(session.coach_game_id);
-        if (coachStaff && coachStaff[0]) {
-          const newCoins = (coachStaff[0].coins||0) + (session.points_awarded||10);
-          await db.updateStaffCoins(coachStaff[0].id, newCoins);
-        }
+        showToast("Sesión rechazada.");
+        await load();
+        return;
       }
 
-      showToast(confirmed?"Sesión verificada. Puntos otorgados.":"Sesión rechazada.");
+      // Manager confirms — update session
+      const agentAlsoConfirmed = session.agent_q1 === true && session.agent_q2 === true;
+      const newStatus = agentAlsoConfirmed ? "completed" : "manager_responded";
+
+      await db.updateSession(session.id, {
+        manager_confirmed: true,
+        manager_responded_at: new Date().toISOString(),
+        status: newStatus,
+        // Don't set points_paid here — tryAwardPoints handles it
+      });
+
+      // Try to award points — only if agent also confirmed AND not already paid
+      if (agentAlsoConfirmed && !session.points_paid) {
+        const awarded = await tryAwardPoints(
+          { ...session, manager_confirmed: true },
+          user.gameId
+        );
+        showToast(awarded ? `✅ Sesión verificada — +${POINTS_PER_SESSION} pts para ${session.coach_game_id}` : "Sesión verificada.");
+      } else if (!agentAlsoConfirmed) {
+        showToast("Verificado. Esperando respuesta del agente para liberar puntos.");
+      } else {
+        showToast("Sesión ya tenía puntos acreditados.");
+      }
+
       await load();
     } catch(e){ showToast("Error al verificar"); }
   };
@@ -411,10 +448,13 @@ function ManagerVerifyView({ user, staffProfile }) {
                       <STag color={s.agent_q2?S.green:S.red}>{s.agent_q2?"✓":"✗"} ¿Recibió retroalimentación?</STag>
                     </div>
                   ):(
-                    <div style={{color:S.muted,fontSize:11}}>Esperando respuesta del agente...</div>
+                    <div style={{color:S.yellow,fontSize:11}}>⏳ Agente aún no responde — los puntos se liberan cuando ambos confirmen</div>
                   )}
                 </div>
-                <div style={{color:S.text,fontWeight:600,fontSize:12,marginBottom:8}}>👔 ¿Confirmas que esta sesión se realizó?</div>
+                <div style={{color:S.text,fontWeight:600,fontSize:12,marginBottom:8}}>
+                  👔 ¿Confirmas que esta sesión se realizó?
+                  {!agentOk&&<span style={{color:S.muted,fontWeight:400}}> (puedes confirmar ahora — puntos se liberan cuando el agente también responda)</span>}
+                </div>
                 <div style={{display:"flex",gap:8}}>
                   <SBtn onClick={()=>verify(s,true)} color={S.green} style={{flex:1}}>✓ Sí, se realizó</SBtn>
                   <SBtn onClick={()=>verify(s,false)} color={S.red} style={{flex:1}}>✗ No se realizó</SBtn>
@@ -473,32 +513,34 @@ export function AgentCoachingCard({ session, agentId, onRespond }) {
     if (q1===null||q2===null) return;
     setSubmitting(true);
     try {
-      // Determine new status
-      const newStatus = session.manager_confirmed !== null ? "completed" : "agent_responded";
+      // Update agent responses
+      const updatedSession = {
+        ...session,
+        agent_q1: q1,
+        agent_q2: q2,
+        agent_responded_at: new Date().toISOString(),
+        status: session.manager_confirmed !== null ? "agent_responded" : "agent_responded",
+      };
+
       await sbFetch(`coaching_sessions?id=eq.${session.id}`, {
         method:"PATCH",
         body:JSON.stringify({
-          agent_q1:q1, agent_q2:q2,
-          agent_responded_at:new Date().toISOString(),
-          status:newStatus,
+          agent_q1: q1,
+          agent_q2: q2,
+          agent_responded_at: new Date().toISOString(),
+          status: "agent_responded",
         })
       });
-      // If both responded, award points
-      if (newStatus==="completed"&&session.manager_confirmed===true) {
-        await db.addPoints({
-          staff_game_id:session.coach_game_id,
-          points:session.points_awarded||10,
-          source:"coaching_session",
-          description:`Sesión confirmada por agente ${session.agent_game_id} y manager`,
-          week:session.week,
-          status:"approved",
-          reference_id:session.id,
-        });
-        const coachStaff = await db.getStaffByGameId(session.coach_game_id);
-        if (coachStaff&&coachStaff[0]) {
-          await db.updateStaffCoins(coachStaff[0].id,(coachStaff[0].coins||0)+(session.points_awarded||10));
-        }
+
+      // Try to award points — only succeeds if BOTH agent AND manager have confirmed
+      // and points_paid is not already true
+      if (!session.points_paid && session.manager_confirmed === true && q1 === true && q2 === true) {
+        await tryAwardPoints(
+          { ...session, agent_q1: q1, agent_q2: q2, manager_confirmed: true },
+          "system"
+        );
       }
+
       setDone(true);
       if (onRespond) onRespond();
     } catch(e){}
