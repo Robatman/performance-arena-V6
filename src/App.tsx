@@ -570,7 +570,7 @@ function RiddleScreen(){const [sel,setSel]=useState(null);const [done,setDone]=u
 
 function TaskScreen(){const [desc,setDesc]=useState("");const [file,setFile]=useState(null);const [done,setDone]=useState(false);const ref=useRef();const TASK={title:"Plan de Mejora con IA",instructions:"Usa cualquier herramienta de IA para crear un plan de mejora sobre un problema real de tu operacion. Incluye:\n- Problema identificado\n- Propuesta de mejora\n- Como la IA te ayudo\n- Impacto esperado en KPIs",pts:2};return(<div style={{paddingBottom:100}}><Card style={{marginBottom:14,background:`${C.red}12`,border:`1.5px solid ${C.red}44`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:30}}>📋</div><div style={{color:C.red,fontWeight:800,fontSize:16,marginTop:3}}>{TASK.title}</div></div><div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:900,fontSize:20}}>+{TASK.pts}</div><div style={{color:C.muted,fontSize:11}}>puntos score</div></div></div></Card>{!done?(<><Card style={{marginBottom:12}}><div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:8}}>INSTRUCCIONES</div><div style={{color:C.text,fontSize:14,lineHeight:1.65,whiteSpace:"pre-line"}}>{TASK.instructions}</div></Card><Card style={{marginBottom:12}}><textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Describe brevemente que hiciste (min. 50 caracteres)..." rows={4} style={{width:"100%",border:`1.5px solid ${C.border}`,borderRadius:9,padding:"10px 13px",fontSize:14,outline:"none",color:C.text,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",background:C.bg,marginBottom:6}}/><div style={{color:C.muted,fontSize:11,marginBottom:12}}>{desc.length} caracteres</div><div onClick={()=>ref.current?.click()} style={{border:`2px dashed ${file?"#16a34a":C.border}`,borderRadius:11,padding:20,textAlign:"center",cursor:"pointer",background:file?C.greenBg:C.bg}}>{file?<><div style={{fontSize:26}}>✅</div><div style={{color:C.green,fontWeight:700,marginTop:4}}>{file.name}</div></>:<><div style={{fontSize:26}}>📄</div><div style={{color:C.muted,fontWeight:700,marginTop:4}}>Subir PDF o imagen</div></>}<input ref={ref} type="file" accept=".pdf,image/*" style={{display:"none"}} onChange={e=>setFile(e.target.files[0])}/></div></Card><Btn onClick={()=>setDone(true)} disabled={desc.length<50||!file} color={C.red} style={{width:"100%",padding:12}}>ENVIAR TAREA</Btn></>):(<Card style={{textAlign:"center"}}><div style={{fontSize:58,marginBottom:10}}>📬</div><div style={{color:C.red,fontWeight:800,fontSize:19,marginBottom:8}}>Tarea Enviada!</div><div style={{color:C.muted,fontSize:13}}>+2 pts al score cuando el admin apruebe</div></Card>)}</div>);}
 
-function PrizeCard({p,coins,onRedeem,locked=false}){
+function PrizeCard({p,coins,onRedeem,locked=false,userLevel=1}){
   const cost=p.pts||p.points_cost||0;
   const canBuy=!locked&&coins>=cost;
   const stock=p.stock===undefined?(p.stock_remaining||0):(p.stock||0);
@@ -578,6 +578,9 @@ function PrizeCard({p,coins,onRedeem,locked=false}){
   const minLv=p.minLevel||p.min_level||1;
   const lvColors={1:C.muted,2:C.blue,3:C.purple,4:C.red};
   const lvColor=lvColors[minLv]||C.muted;
+  const LV_NAMES={1:"Bronze",2:"Silver",3:"Gold",4:"Platinum"};
+  const reqName=LV_NAMES[minLv]||"Nivel "+minLv;
+  const myName=LV_NAMES[userLevel]||"Nivel "+userLevel;
   return(
     <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 13px",borderRadius:14,border:`1.5px solid ${locked?"#e8eaf6":canBuy?C.green:C.border}`,background:locked?"#f9fafb":canBuy?`${C.green}06`:C.bg,marginBottom:10,opacity:locked?0.65:1,transition:"all 0.2s"}}>
       <div style={{width:50,height:50,borderRadius:12,background:locked?"#e8eaf6":`linear-gradient(135deg,${C.blue}18,${C.red}10)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0,border:`1.5px solid ${locked?C.border:C.blue}20`}}>
@@ -596,7 +599,7 @@ function PrizeCard({p,coins,onRedeem,locked=false}){
           <span style={{color:locked?C.muted:canBuy?C.gold:C.muted,fontWeight:900,fontSize:17}}>{cost}</span>
         </div>
         {locked
-          ?<span style={{color:C.muted,fontSize:11,fontWeight:600}}>Sube de nivel</span>
+          ?<span style={{color:C.muted,fontSize:11,fontWeight:600}}>Requiere {reqName} — tú eres {myName}</span>
           :<Btn onClick={()=>onRedeem(p)} disabled={!canBuy||noStock} color={canBuy&&!noStock?C.red:"#9ca3af"} sm>{noStock?"Agotado":canBuy?"Canjear":"Sin coins"}</Btn>
         }
       </div>
@@ -718,7 +721,7 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
           {exclusiveLocked.length>0&&(
             <div>
               <div style={{color:C.muted,fontSize:11,fontWeight:700,marginBottom:8}}>🔒 Sube de nivel para acceder:</div>
-              {exclusiveLocked.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={onRedeem} locked/>)}
+              {exclusiveLocked.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={onRedeem} locked userLevel={level}/>)}
             </div>
           )}
         </div>
