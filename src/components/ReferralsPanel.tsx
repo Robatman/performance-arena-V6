@@ -151,6 +151,26 @@ export default function ReferralsPanel({
     }
     setActionLoading("new");
     try {
+      // Check daily limit (max 3 per day)
+      const today = new Date().toISOString().split("T")[0];
+      const todayRefs = referrals.filter(r => {
+        const refDate = (r.submitted_at||r.created_at||"").split("T")[0];
+        return refDate === today;
+      });
+      if (todayRefs.length >= 3) {
+        showToast("Límite de 3 referidos por día alcanzado.", "error");
+        setActionLoading(null);
+        return;
+      }
+      // Check duplicate name (same agent, same name)
+      const dupName = referrals.find(r =>
+        r.referred_name.trim().toLowerCase() === newRef.referred_name.trim().toLowerCase()
+      );
+      if (dupName) {
+        showToast(`Ya enviaste un referido con ese nombre (${dupName.status}).`, "error");
+        setActionLoading(null);
+        return;
+      }
       // 1. Crear el referido en la tabla
       await sbFetch("referrals", {
         method: "POST",
