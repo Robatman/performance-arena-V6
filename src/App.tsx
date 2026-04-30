@@ -962,6 +962,12 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const [bulletinWeek,setBulletinWeek]=useState("");
   const [bulletinItems,setBulletinItems]=useState(["","","",""]);
   const [allRedemptions,setAllRedemptions]=useState([]);
+  const [kudosHistory,setKudosHistory]=useState([]);
+  useEffect(()=>{
+    if(isSA){
+      sbFetch("kudos_log?select=*&order=created_at.desc&limit=500").then(d=>setKudosHistory(d||[])).catch(()=>{});
+    }
+  },[isSA]);
   const [allStaffRed,setAllStaffRed]=useState([]);
   useEffect(()=>{
     if(isSA){
@@ -984,7 +990,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   };
 
   const filtered=allUsers.filter(u=>filter==="active"?u.active:!u.active);
-  const tabs=[{id:"bulletin",label:"📋 Boletín"},{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"}];
+  const tabs=[{id:"bulletin",label:"📋 Boletín"},{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"kudosHistory",label:"👏 Historial Kudos"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"}];
 
   return(
     <div style={{paddingBottom:100}}>
@@ -1182,6 +1188,36 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
         </Card>
       </div>)}
 
+      {tab==="kudosHistory"&&(
+        <div>
+          <Card style={{marginBottom:12,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
+            <div style={{color:C.blue,fontWeight:800,fontSize:14,marginBottom:2}}>👏 Historial de Kudos</div>
+            <div style={{color:C.muted,fontSize:12}}>Todos los kudos enviados a agentes — {kudosHistory.length} total</div>
+          </Card>
+          {kudosHistory.length===0?<Card style={{textAlign:"center",padding:30,color:C.muted}}>Sin kudos aún.</Card>:kudosHistory.map((k,i)=>{
+            const sender=allUsers.find(u=>u.id===k.from_user_id);
+            const receiver=allUsers.find(u=>u.id===k.to_user_id);
+            const isGold=(k.points_given||0)>=5;
+            return(
+              <Card key={k.id||i} style={{marginBottom:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{fontSize:22,flexShrink:0}}>{isGold?"🌟":"👏"}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{color:C.text,fontWeight:700,fontSize:13}}>
+                      {sender?.name||k.from_user_id||"Staff"} → {receiver?.name||k.to_user_id}
+                    </div>
+                    <div style={{color:C.muted,fontSize:11,marginTop:2,fontStyle:"italic"}}>"{k.reason}"</div>
+                    <div style={{color:C.muted,fontSize:10,marginTop:2}}>{k.created_at?new Date(k.created_at).toLocaleString("es-MX"):""}</div>
+                  </div>
+                  <div style={{flexShrink:0}}>
+                    <Tag color={isGold?"#f59e0b":C.blue}>{isGold?"Gold +5":"Kudo +1"}</Tag>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
       {tab==="canjes"&&(
         <div>
           <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
