@@ -43,6 +43,14 @@ const db = {
   updatePrize: (id, d) => sbFetch(`reward_catalog?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(d) }),
   createPrize: (d) => sbFetch("reward_catalog", { method: "POST", body: JSON.stringify(d) }),
   createRedemption: (d) => sbFetch("reward_redemptions", { method: "POST", body: JSON.stringify(d) }),
+  getBulletin: () => sbFetch("weekly_bulletin?order=created_at.desc&limit=1"),
+  upsertBulletin: (week, activities, publishedBy) => sbFetch("weekly_bulletin", {
+    method:"POST",
+    prefer:"resolution=merge-duplicates,return=representation",
+    headers:{"on-conflict":"week"},
+    body:JSON.stringify({week, activities, published_by:publishedBy, updated_at:new Date().toISOString()})
+  }),
+  clearBulletin: (id) => sbFetch(`weekly_bulletin?id=eq.${id}`, {method:"PATCH", body:JSON.stringify({activities:[]})}),
   getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&order=created_at.desc`),
   getAllRedemptions: () => sbFetch(`reward_redemptions?order=created_at.desc&limit=500`),
   // Coins history
@@ -409,7 +417,32 @@ function UnifiedLogin({onLoginAgent,onLoginStaff}){
 }
 
 // ─── DASHBOARD (Agent) ────────────────────────────────────────────────────────
-function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange}){
+
+function BulletinCard({bulletin}){
+  if(!bulletin||!(bulletin.activities||[]).length)return null;
+  const acts=bulletin.activities||[];
+  return(
+    <div style={{background:"linear-gradient(135deg,#1e3a5f,#1e1b4b)",border:"1.5px solid #3b82f6",borderRadius:16,padding:16,marginBottom:12,boxShadow:"0 4px 20px rgba(59,130,246,0.15)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+        <div style={{fontSize:22}}>📋</div>
+        <div>
+          <div style={{color:"#fff",fontWeight:800,fontSize:15}}>Actividades de la Semana</div>
+          {bulletin.week&&<div style={{color:"#93c5fd",fontSize:11,marginTop:1}}>{bulletin.week}</div>}
+        </div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {acts.map((act,i)=>(
+          <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",background:"rgba(255,255,255,0.07)",borderRadius:10,padding:"8px 12px"}}>
+            <div style={{width:22,height:22,borderRadius:"50%",background:"#3b82f6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#fff",flexShrink:0,marginTop:1}}>{i+1}</div>
+            <div style={{color:"#e2e8f0",fontSize:13,lineHeight:1.5}}>{act}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin}){
   const sc = calcScoreCoins(
     weeklyMetrics,
     riddleAnswers,
@@ -428,6 +461,7 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
 
       {isSA&&availableWeeks.length>0&&(<Card style={{marginBottom:12,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:2}}>SEMANA VISUALIZADA</div><div style={{color:C.blue,fontWeight:700,fontSize:13}}>Última evaluada: {availableWeeks[0]}</div></div><select value={selectedWeek} onChange={e=>onWeekChange(e.target.value)} style={{border:`1.5px solid ${C.border}`,borderRadius:8,padding:"7px 11px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,cursor:"pointer"}}>{availableWeeks.map(w=><option key={w} value={w}>{w}</option>)}</select></div></Card>)}
       {!isSA&&lastEvaluatedWeek&&(<Card style={{marginBottom:12,padding:"10px 14px",background:`${C.blue}06`,border:`1.5px solid ${C.blue}20`}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>📅</span><div style={{color:C.muted,fontSize:12}}>Última semana evaluada: <strong style={{color:C.blue}}>{lastEvaluatedWeek}</strong></div></div></Card>)}
+      <BulletinCard bulletin={bulletin}/>
       {/* Avatar + identity card */}
       <Card style={{marginBottom:12,display:"flex",alignItems:"center",gap:14}}>
         <Av av={user.avatar} sz={64}/>
@@ -885,7 +919,7 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
   );
 }
 
-function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNotifs,toast,reloadUsers,riddleCount,taskCount}){
+function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNotifs,toast,reloadUsers,riddleCount,taskCount,bulletin,setBulletin}){
   const [tab,setTab]=useState("users");const isSA=cu.role==="superadmin";
   const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:C.bg,color:C.text};
   const blank={name:"",password:"",role:"user",project:"Campaign K",gameId:""};
@@ -925,6 +959,8 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const sendNotif=async()=>{if(!nf.title.trim()||!nf.body.trim()){toast("Completa titulo y mensaje");return;}const targets=nf.toId==="all"?allUsers.filter(u=>u.active&&u.role==="user"):allUsers.filter(u=>u.id===nf.toId);try{for(const u of targets){await db.createNotif({recipient_id:u.id,sender_id:cu.id,title:nf.title,message:nf.body,type:"info"});}setNf({toId:"all",title:"",body:""});toast(`Notificacion enviada a ${targets.length} usuario(s)`);}catch(e){toast("Error");}};
 
   const [pf,setPf]=useState({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1});
+  const [bulletinWeek,setBulletinWeek]=useState("");
+  const [bulletinItems,setBulletinItems]=useState(["","","",""]);
   const [allRedemptions,setAllRedemptions]=useState([]);
   const [allStaffRed,setAllStaffRed]=useState([]);
   useEffect(()=>{
@@ -948,7 +984,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   };
 
   const filtered=allUsers.filter(u=>filter==="active"?u.active:!u.active);
-  const tabs=[{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"}];
+  const tabs=[{id:"bulletin",label:"📋 Boletín"},{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"}];
 
   return(
     <div style={{paddingBottom:100}}>
@@ -968,6 +1004,46 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
         {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 13px",borderRadius:9,border:`1.5px solid ${tab===t.id?C.blue:C.border}`,background:tab===t.id?`${C.blue}12`:"#fff",color:tab===t.id?C.blue:C.muted,fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{t.label}</button>)}
       </div>
 
+      {tab==="bulletin"&&(
+        <div>
+          <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
+            <div style={{color:C.blue,fontWeight:800,fontSize:15,marginBottom:4}}>📋 Boletín Semanal</div>
+            <div style={{color:C.muted,fontSize:12}}>Aparece en el dashboard de todos los agentes</div>
+          </Card>
+          <Card style={{marginBottom:14}}>
+            <div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:12}}>SEMANA</div>
+            <input value={bulletinWeek} onChange={e=>setBulletinWeek(e.target.value)} style={{width:"100%",border:`1.5px solid ${C.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:C.bg,color:C.text,marginBottom:16}} placeholder="ej. Arpil_12-April_18"/>
+            <div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:10}}>ACTIVIDADES (deja vacío para no mostrar)</div>
+            {bulletinItems.map((item,i)=>(
+              <div key={i} style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
+                <div style={{width:24,height:24,borderRadius:"50%",background:`${C.blue}18`,border:`1px solid ${C.blue}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:C.blue,flexShrink:0}}>{i+1}</div>
+                <input value={item} onChange={e=>setBulletinItems(prev=>prev.map((v,j)=>j===i?e.target.value:v))} style={{flex:1,border:`1.5px solid ${C.border}`,borderRadius:8,padding:"8px 11px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text}} placeholder={`Actividad ${i+1}...`}/>
+              </div>
+            ))}
+            <div style={{display:"flex",gap:8,marginTop:14}}>
+              <Btn onClick={async()=>{
+                const acts=bulletinItems.filter(a=>a.trim());
+                if(!bulletinWeek.trim()){toast("Escribe la semana");return;}
+                try{
+                  await sbFetch("weekly_bulletin",{method:"POST",prefer:"return=representation",body:JSON.stringify({week:bulletinWeek.trim(),activities:acts,published_by:cu.game_id||cu.username,updated_at:new Date().toISOString()})});
+                  const b=await db.getBulletin();
+                  if(b&&b[0])setBulletin(b[0]);
+                  toast("Boletín publicado!");
+                }catch(e){toast("Error al publicar");}
+              }} color={C.blue} style={{flex:1,padding:11}}>📢 PUBLICAR</Btn>
+              <Btn onClick={async()=>{
+                setBulletinItems(["","","",""]);setBulletinWeek("");
+                try{
+                  const b=await db.getBulletin();
+                  if(b&&b[0]){await sbFetch(`weekly_bulletin?id=eq.${b[0].id}`,{method:"PATCH",body:JSON.stringify({activities:[]}),prefer:"return=representation"});}
+                  setBulletin(null);
+                  toast("Boletín limpiado");
+                }catch(e){toast("Error");}
+              }} color={C.red} style={{padding:11}}>🗑️ Limpiar</Btn>
+            </div>
+          </Card>
+        </div>
+      )}
       {tab==="users"&&(<div>
         {isSA&&(<Card style={{marginBottom:14,border:`1.5px solid ${C.blue}33`}}>
           <div style={{color:C.blue,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:12}}>CREAR NUEVO USUARIO</div>
@@ -1167,7 +1243,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
 }
 
 // ─── STAFF COMPONENTS (unchanged) ─────────────────────────────────────────────
-function StaffDashboard({user,allStaff,metrics,points,badges,kudos}){
+function StaffDashboard({user,allStaff,metrics,points,badges,kudos,bulletin}){
   const totalPts=(points?.points_month)||0;const totalPtsAll=(points?.points_total)||0;
   const roleEmoji=ROLE_EMOJI[user.role]||"👤";
   const levelNames=["","Rookie","Rising Star","Performer","Elite Coach","Legend"];
@@ -1197,6 +1273,7 @@ function StaffDashboard({user,allStaff,metrics,points,badges,kudos}){
           ))}
         </div>
       </SCard>
+      <BulletinCard bulletin={bulletin}/>
       <SCard style={{marginBottom:12}}>
         <div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:12}}>RECENT WEEKLY PERFORMANCE</div>
         {(metrics||[]).length===0?(<div style={{textAlign:"center",color:S.muted,fontSize:13,padding:20}}>No metrics uploaded yet.</div>):(<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>{(metrics||[]).slice(0,4).map((w,i)=>{const pts=w.pts_week_total||0;const pct=Math.min((pts/20)*100,100);return(<div key={i} style={{background:pct>=80?`${S.green}22`:pct>=50?`${S.yellow}22`:`${S.red}22`,border:`1px solid ${pct>=80?S.green:pct>=50?S.yellow:S.red}44`,borderRadius:10,padding:"9px 5px",textAlign:"center"}}><div style={{color:S.muted,fontSize:9}}>W{i+1}</div><div style={{color:S.text,fontWeight:900,fontSize:18}}>{pts}</div><div style={{color:S.muted,fontSize:9}}>pts</div></div>);})}</div>)}
@@ -1403,13 +1480,14 @@ export default function App(){
   const [selectedWeek,setSelectedWeek]=useState("");
   const [lastEvaluatedWeek,setLastEvaluatedWeek]=useState("");
   const [agentWeeklyMetrics,setAgentWeeklyMetrics]=useState([]);
+  const [bulletin,setBulletin]=useState(null);
   const [agentRiddleAnswers,setAgentRiddleAnswers]=useState([]);
   const [agentTaskSubmissions,setAgentTaskSubmissions]=useState([]);
   const [monthRiddleCount,setMonthRiddleCount]=useState(0);
   const [monthTaskCount,setMonthTaskCount]=useState(0);
 
   const loadInitialData=async()=>{
-    try{const [usersData,prizesData]=await Promise.all([db.getUsers(),db.getPrizes()]);setUsers((usersData||[]).map(adaptProfile));setPrizes(prizesData||[]);}catch(e){console.error(e);}
+    try{const [usersData,prizesData,bulletinData]=await Promise.all([db.getUsers(),db.getPrizes(),db.getBulletin()]);setUsers((usersData||[]).map(adaptProfile));setPrizes(prizesData||[]);if(bulletinData&&bulletinData[0])setBulletin(bulletinData[0]);}catch(e){console.error(e);}
     setAppLoading(false);
   };
   useEffect(()=>{loadInitialData();},[]);
@@ -1512,7 +1590,7 @@ export default function App(){
         </div>
       </div>
       <div style={{padding:"14px 14px 0"}}>
-        {screen==="dashboard"&&((isYurito||isSAorManager)?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos}/>)}
+        {screen==="dashboard"&&((isYurito||isSAorManager)?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos} bulletin={bulletin}/>)}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
         {screen==="kudos"&&(isYurito?<YuritoKudos cu={cu} allUsers={users} allStaff={allStaff} toast={toast} reloadUsers={reloadUsers}/>:<StaffKudos user={cu} allStaff={allStaff} kudos={staffKudos} isManager={isManager} allAgents={users}
           onSendKudo={async d=>{try{await staffDb.createKudo(d);const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast("Kudo sent!");}catch(e){toast("Error");}}}
@@ -1554,7 +1632,7 @@ export default function App(){
       </div>
     </div>
     <div style={{padding:"14px 14px 0",animation:"fadeIn 0.25s ease"}}>
-      {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps} isSA={isSA} availableWeeks={availableWeeks} selectedWeek={selectedWeek} lastEvaluatedWeek={lastEvaluatedWeek} onWeekChange={setSelectedWeek}/>}
+      {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps} isSA={isSA} availableWeeks={availableWeeks} selectedWeek={selectedWeek} lastEvaluatedWeek={lastEvaluatedWeek} onWeekChange={setSelectedWeek} bulletin={bulletin}/>}
       {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle"/>}
       {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task"/>}
       {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop}/>}
@@ -1580,7 +1658,7 @@ export default function App(){
       {screen==="info"&&<Info/>}
       {screen==="notifs"&&<Notifs user={cu} notifs={notifs} onMarkRead={markNotifRead} onMarkAll={markAllRead}/>}
       {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps}/>}
-      {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount}/>}
+      {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount} bulletin={bulletin} setBulletin={setBulletin}/>}
     </div>
     <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:C.card,borderTop:`1.5px solid ${C.border}`,display:"flex",padding:"6px 0 10px",boxShadow:`0 -2px 10px ${C.blue}10`,overflowX:"auto"}}>
       {nav.map(item=>{const active=screen===item.id;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{item.badge>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{item.badge}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(55%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?C.blue:C.muted,transition:"color 0.18s",whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:C.blue}}/>}</button>);})}
