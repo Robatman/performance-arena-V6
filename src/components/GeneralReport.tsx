@@ -327,6 +327,8 @@ function AIInsightsPanel({
 
 export default function GeneralReport() {
   const [metrics, setMetrics] = useState<WeeklyMetric[]>([]);
+  const [kudosData, setKudosData] = useState<any[]>([]);
+  const [referralsData, setReferralsData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState<"excel" | "pdf" | null>(null);
   const [weeks, setWeeks] = useState<string[]>([]);
@@ -344,12 +346,16 @@ export default function GeneralReport() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const data: any[] = await sbFetch(
-        "weekly_metrics?select=*,profiles!weekly_metrics_game_id_fkey(username)&order=week.desc,total_pts.desc"
-      );
-      const enriched = data.map((m) => ({ ...m, username: m.profiles?.username || m.game_id }));
+      const [data, kudos, refs]: any[] = await Promise.all([
+        sbFetch("weekly_metrics?select=*,profiles!weekly_metrics_game_id_fkey(username)&order=week.desc,total_pts.desc"),
+        sbFetch("kudos_log?select=*&order=created_at.desc&limit=500").catch(()=>[]),
+        sbFetch("referrals?select=*&order=submitted_at.desc&limit=500").catch(()=>[]),
+      ]);
+      const enriched = data.map((m: any) => ({ ...m, username: m.profiles?.username || m.game_id }));
       setMetrics(enriched);
-      setWeeks([...new Set(enriched.map((m) => m.week))].sort().reverse() as string[]);
+      setWeeks([...new Set(enriched.map((m: any) => m.week))].sort().reverse() as string[]);
+      setKudosData(kudos||[]);
+      setReferralsData(refs||[]);
     } catch { setMetrics([]); }
     setLoading(false);
   };
@@ -488,6 +494,28 @@ export default function GeneralReport() {
       ]);
       ws6["!cols"] = [{ wch:20 },{ wch:25 },{ wch:20 },{ wch:10 },{ wch:14 }];
       XLSX.utils.book_append_sheet(wb, ws6, "Insights");
+
+      // Sheet 7: Kudos
+      const kudosH = ["De (Game ID)","Para (User ID)","Tipo","Motivo","Puntos","Fecha"];
+      const ws7 = XLSX.utils.aoa_to_sheet([kudosH, ...(kudosData||[]).map((k:any) => [
+        k.from_user_id||"",k.to_user_id||"",
+        (k.points_given||0)>=5?"Gold Kudo":"Kudo Regular",
+        k.reason||"",k.points_given||0,
+        k.created_at?new Date(k.created_at).toLocaleDateString("es-MX"):"",
+      ])]);
+      ws7["!cols"] = kudosH.map(h=>({wch:Math.max(h.length+2,18)}));
+      XLSX.utils.book_append_sheet(wb, ws7, "Kudos");
+
+      // Sheet 8: Referrals
+      const refH = ["Enviado por","Nombre Referido","Teléfono","Email","Estado","Puntos","Notas","Fecha"];
+      const ws8 = XLSX.utils.aoa_to_sheet([refH, ...(referralsData||[]).map((r:any) => [
+        r.referred_by_game_id||"",r.referred_name||"",
+        r.referred_phone||"",r.referred_email||"",
+        r.status||"",r.pts_awarded||0,r.notes||"",
+        r.submitted_at?new Date(r.submitted_at).toLocaleDateString("es-MX"):"",
+      ])]);
+      ws8["!cols"] = refH.map(h=>({wch:Math.max(h.length+2,16)}));
+      XLSX.utils.book_append_sheet(wb, ws8, "Referidos");
 
       XLSX.writeFile(wb, `Performance_Arena_${selectedWeek === "all" ? "General" : selectedWeek}.xlsx`);
       showToast("Excel generado correctamente", "success");
