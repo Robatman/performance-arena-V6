@@ -77,6 +77,7 @@ const staffDb = {
   create: (d) => sbFetch("staff_profiles", { method: "POST", body: JSON.stringify(d) }),
   update: (id, d) => sbFetch(`staff_profiles?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(d), prefer: "return=representation" }),
   getKudos: (id) => sbFetch(`staff_kudos?recipient_id=eq.${id}&order=created_at.desc`),
+  getAllPendingKudos: () => sbFetch(`staff_kudos?status=eq.pending&order=created_at.desc`),
   createKudo: (d) => sbFetch("staff_kudos", { method: "POST", body: JSON.stringify(d) }),
   updateKudo: (id, d) => sbFetch(`staff_kudos?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(d) }),
   getInnovations: (id) => sbFetch(`staff_innovation_submissions?staff_id=eq.${id}&order=created_at.desc`),
@@ -1521,7 +1522,8 @@ export default function App(){
   const [toastMsg,setToastMsg]=useState("");const [appLoading,setAppLoading]=useState(true);
   const [allStaff,setAllStaff]=useState([]);const [staffMetrics,setStaffMetrics]=useState([]);
   const [staffPoints,setStaffPoints]=useState(null);const [staffBadges,setStaffBadges]=useState([]);
-  const [staffKudos,setStaffKudos]=useState([]);const [staffInnovations,setStaffInnovations]=useState([]);
+  const [staffKudos,setStaffKudos]=useState([]);
+  const [pendingKudos,setPendingKudos]=useState([]);const [staffInnovations,setStaffInnovations]=useState([]);
 
   // Score/Coins data for current agent
   const [availableWeeks,setAvailableWeeks]=useState([]);
@@ -1586,6 +1588,10 @@ export default function App(){
       setStaffMetrics(metrics||[]);setStaffPoints((pts||[])[0]||null);
       setStaffBadges(badges||[]);setStaffKudos(kudos||[]);
       setStaffInnovations(innovations||[]);
+      if(su.role==="manager"||su.role==="superadmin"||su.role==="training_manager"){
+        const pk=await staffDb.getAllPendingKudos().catch(()=>[]);
+        setPendingKudos(pk||[]);
+      };
       setAllStaff((allS||[]).map(adaptStaffProfile));
     }catch(e){console.error(e);}
   };
@@ -1640,7 +1646,7 @@ export default function App(){
       <div style={{padding:"14px 14px 0"}}>
         {screen==="dashboard"&&((isYurito||isSAorManager)?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos} bulletin={bulletin}/>)}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
-        {screen==="kudos"&&(isYurito?<YuritoKudos cu={cu} allUsers={users} allStaff={allStaff} toast={toast} reloadUsers={reloadUsers}/>:<StaffKudos user={cu} allStaff={allStaff} kudos={staffKudos} isManager={isManager} allAgents={users}
+        {screen==="kudos"&&(isYurito?<YuritoKudos cu={cu} allUsers={users} allStaff={allStaff} toast={toast} reloadUsers={reloadUsers}/>:<StaffKudos user={cu} allStaff={allStaff} kudos={[...staffKudos,...pendingKudos.filter(pk=>!staffKudos.find(sk=>sk.id===pk.id))]} isManager={isManager} allAgents={users}
           onSendKudo={async d=>{try{const kudo={...d,status:isSA?"approved":"pending"};await staffDb.createKudo(kudo);if(isSA&&d.kudo_type==="gold"){await sbFetch(`staff_profiles?id=eq.${d.recipient_id}`,{method:"PATCH",prefer:"return=representation",body:JSON.stringify({coins:(allStaff.find(s=>s.id===d.recipient_id)?.coins||0)+5})});}else if(isSA){await sbFetch(`staff_profiles?id=eq.${d.recipient_id}`,{method:"PATCH",prefer:"return=representation",body:JSON.stringify({coins:(allStaff.find(s=>s.id===d.recipient_id)?.coins||0)+1})});}const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast("Kudo sent!");}catch(e){toast("Error: "+e.message);}}}
           onApproveKudo={async(id,approved)=>{try{await staffDb.updateKudo(id,{status:approved?"approved":"rejected",approved_by:cu.id,approved_at:new Date().toISOString()});const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast(approved?"Approved!":"Rejected");}catch(e){toast("Error");}}}
         />)}
@@ -1650,7 +1656,7 @@ export default function App(){
         />}
         {screen==="sessions"&&<CoachingSessions user={cu} staffProfile={allStaff.find(s=>s.id===cu?.id)||cu}/>}
         {screen==="activities"&&<StaffActivitiesPanel user={cu}/>}
-        {screen==="store"&&<StaffStore user={cu} staffProfile={allStaff.find(s=>s.id===cu?.id)||cu} onCoinsUpdate={(coins)=>{setLoggedIn({...cu,coins});}}/>}
+        {screen==="store"&&<StaffStore user={cu} staffProfile={allStaff.find(s=>s.id===cu?.id)||{...cu,gameId:cu?.gameId||cu?.game_id||cu?.username}} onCoinsUpdate={(coins)=>{setLoggedIn({...cu,coins});}}/>}
         {screen==="profile"&&<StaffProfile user={cu} onUpdate={u=>{setLoggedIn(u);}} toast={toast}/>}
         {screen==="report"&&cu?.role==="superadmin"&&<StaffPointsReport user={cu}/>}
         {screen==="admin"&&cu?.role==="superadmin"&&<StaffAdminPanel cu={cu} allStaff={allStaff} toast={toast} reloadStaff={reloadStaff}/>}
