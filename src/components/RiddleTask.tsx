@@ -106,7 +106,7 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
       await sbFetch("riddles", { method:"POST", body: JSON.stringify({
         week: form.week, question: form.question,
         option_a: form.a, option_b: form.b, option_c: form.c, option_d: form.d,
-        correct_answer: form.correct, points: 10, active: false
+        correct_answer: form.correct, points: 2, active: false
       })})
       setForm({ week:'', question:'', a:'', b:'', c:'', d:'', correct:'A' })
       showToast('✅ Riddle creado! Actívalo desde Gestionar.')
@@ -205,7 +205,7 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
                       </div>
                     </div>
                     <div style={{display:"flex", gap:8}}>
-                      <button onClick={() => approveAnswer(ans, true)} style={{flex:1, padding:"9px 0", borderRadius:9, border:"none", background:C.green, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>✅ Correcto (+{activeRiddle?.points||10}pts)</button>
+                      <button onClick={() => approveAnswer(ans, true)} style={{flex:1, padding:"9px 0", borderRadius:9, border:"none", background:C.green, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>✅ Correcto (+{activeRiddle?.points||2}pts)</button>
                       <button onClick={() => approveAnswer(ans, false)} style={{flex:1, padding:"9px 0", borderRadius:9, border:"none", background:C.red, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>❌ Incorrecto (0pts)</button>
                     </div>
                   </div>
@@ -287,7 +287,7 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
                   <span style={{color:C.muted, fontSize:12}}>{activeRiddle.week}</span>
                   <span style={{color:C.purple, fontWeight:800, fontSize:14}}>+{activeRiddle.points} pts</span>
                 </div>
-                <div style={{color:C.purple, fontWeight:800, fontSize:16, lineHeight:1.5}}>{activeRiddle.question}</div>
+                <div style={{color:C.purple, fontWeight:800, fontSize:16, lineHeight:1.5}}>{isSA ? activeRiddle.question : activeRiddle.question.substring(0,60)+(activeRiddle.question.length>60?"...":"")}</div>
               </div>
 
               {myAnswer ? (
