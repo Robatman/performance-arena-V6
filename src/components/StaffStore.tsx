@@ -106,16 +106,17 @@ function StoreView({ user, staffProfile, onCoinsUpdate }) {
   const load = async () => {
     setLoading(true);
     const gid = user?.gameId || user?.game_id || user?.username || "";
-    if (!gid) { setLoading(false); return; }
     try {
-      const [r, red, log] = await Promise.all([
-        db.getRewards(),
-        db.getMyRedemptions(gid),
-        db.getPointsLog(gid),
-      ]);
+      const r = await db.getRewards().catch(()=>[]);
       setRewards(r||[]);
-      setMyR(red||[]);
-      setLog(log||[]);
+      if(gid){
+        const [red, log] = await Promise.all([
+          db.getMyRedemptions(gid).catch(()=>[]),
+          db.getPointsLog(gid).catch(()=>[]),
+        ]);
+        setMyR(red||[]);
+        setLog(log||[]);
+      }
     } catch(e){}
     setLoading(false);
   };
