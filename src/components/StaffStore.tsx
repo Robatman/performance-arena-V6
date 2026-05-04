@@ -102,14 +102,16 @@ function StoreView({ user, staffProfile, onCoinsUpdate }) {
 
   const showToast = (msg:string) => { setToast(msg); setTimeout(()=>setToast(""),3000); };
 
-  useEffect(()=>{ load(); },[]);
+  useEffect(()=>{ load(); },[user?.gameId]);
   const load = async () => {
     setLoading(true);
+    const gid = user?.gameId || user?.game_id || user?.username || "";
+    if (!gid) { setLoading(false); return; }
     try {
       const [r, red, log] = await Promise.all([
         db.getRewards(),
-        db.getMyRedemptions(user.gameId),
-        db.getPointsLog(user.gameId),
+        db.getMyRedemptions(gid),
+        db.getPointsLog(gid),
       ]);
       setRewards(r||[]);
       setMyR(red||[]);
