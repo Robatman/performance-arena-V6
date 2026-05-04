@@ -541,6 +541,7 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
 }
 
 function Leaderboard({user,allUsers,shop,weeklyMetricsAll}){
+  const [lbSearch,setLbSearch]=useState("");
   const [rankings,setRankings]=useState([]);
   const [loading,setLoading]=useState(true);
   const medals=["🥇","🥈","🥉"];
@@ -576,8 +577,11 @@ function Leaderboard({user,allUsers,shop,weeklyMetricsAll}){
         <div style={{color:"#fff",fontWeight:800,fontSize:20}}>LEADERBOARD</div>
         <div style={{color:"rgba(255,255,255,0.55)",fontSize:12}}>Score del mes (KPI + Riddles + Tasks)</div>
       </Card>
+      <div style={{marginBottom:12}}>
+        <input value={lbSearch} onChange={e=>setLbSearch(e.target.value)} placeholder="🔍 Buscar agente..." style={{width:"100%",border:`1.5px solid ${C.border}`,borderRadius:10,padding:"9px 14px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
+      </div>
       {loading&&<div style={{textAlign:"center",padding:40,color:C.muted}}>Cargando ranking...</div>}
-      {!loading&&rankings.map((r,i)=>{
+      {!loading&&rankings.filter(r=>!lbSearch||r.game_id.toLowerCase().includes(lbSearch.toLowerCase())||(r.profile?.username||"").toLowerCase().includes(lbSearch.toLowerCase())).map((r,i)=>{
         const u=r.profile;
         const isMe=u?.game_id===user.game_id;
         return(
@@ -1051,6 +1055,14 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
         </div>
       )}
       {tab==="users"&&(<div>
+        <div style={{marginBottom:12,position:"relative"}}>
+          <input id="userSearch" placeholder="🔍 Buscar usuario..." onChange={e=>{
+            const q=e.target.value.toLowerCase();
+            document.querySelectorAll("[data-user-row]").forEach(el=>{
+              el.style.display=el.dataset.userRow.toLowerCase().includes(q)?"":"none";
+            });
+          }} style={{width:"100%",border:`1.5px solid ${C.border}`,borderRadius:10,padding:"9px 14px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
+        </div>
         {isSA&&(<Card style={{marginBottom:14,border:`1.5px solid ${C.blue}33`}}>
           <div style={{color:C.blue,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:12}}>CREAR NUEVO USUARIO</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
@@ -1071,7 +1083,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
           ))}
         </div>
         {filtered.map(u=>(
-          <Card key={u.id} style={{marginBottom:10,opacity:u.active?1:0.7,border:`1.5px solid ${u.active?C.border:"#fca5a5"}`}}>
+          <Card key={u.id} data-user-row={`${u.name} ${u.game_id||""} ${u.project||""}`} style={{marginBottom:10,opacity:u.active?1:0.7,border:`1.5px solid ${u.active?C.border:"#fca5a5"}`}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <Av av={u.avatar} sz={42} shop={DEFAULT_SHOP}/>
               <div style={{flex:1,minWidth:0}}>
@@ -1629,7 +1641,7 @@ export default function App(){
         {screen==="dashboard"&&((isYurito||isSAorManager)?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos} bulletin={bulletin}/>)}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
         {screen==="kudos"&&(isYurito?<YuritoKudos cu={cu} allUsers={users} allStaff={allStaff} toast={toast} reloadUsers={reloadUsers}/>:<StaffKudos user={cu} allStaff={allStaff} kudos={staffKudos} isManager={isManager} allAgents={users}
-          onSendKudo={async d=>{try{await staffDb.createKudo(d);const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast("Kudo sent!");}catch(e){toast("Error");}}}
+          onSendKudo={async d=>{try{const kudo={...d,status:isSA?"approved":"pending"};await staffDb.createKudo(kudo);if(isSA&&d.kudo_type==="gold"){await sbFetch(`staff_profiles?id=eq.${d.recipient_id}`,{method:"PATCH",prefer:"return=representation",body:JSON.stringify({coins:(allStaff.find(s=>s.id===d.recipient_id)?.coins||0)+5})});}else if(isSA){await sbFetch(`staff_profiles?id=eq.${d.recipient_id}`,{method:"PATCH",prefer:"return=representation",body:JSON.stringify({coins:(allStaff.find(s=>s.id===d.recipient_id)?.coins||0)+1})});}const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast("Kudo sent!");}catch(e){toast("Error: "+e.message);}}}
           onApproveKudo={async(id,approved)=>{try{await staffDb.updateKudo(id,{status:approved?"approved":"rejected",approved_by:cu.id,approved_at:new Date().toISOString()});const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast(approved?"Approved!":"Rejected");}catch(e){toast("Error");}}}
         />)}
         {screen==="innovation"&&<StaffInnovation user={cu} innovations={staffInnovations} isSuperAdmin={cu?.role==="superadmin"}
