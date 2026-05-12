@@ -74,6 +74,7 @@ const db = {
 const staffDb = {
   login: (u) => sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(u)}&select=*`),
   getAll: () => sbFetch("staff_profiles?select=*&order=full_name.asc"),
+  getMonthPoints: () => sbFetch("staff_points_log?select=staff_game_id,points_awarded&order=created_at.desc&limit=2000").catch(()=>[]),
   create: (d) => sbFetch("staff_profiles", { method: "POST", body: JSON.stringify(d) }),
   update: (id, d) => sbFetch(`staff_profiles?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(d), prefer: "return=representation" }),
   getKudos: (id) => sbFetch(`staff_kudos?recipient_id=eq.${id}&order=created_at.desc`),
@@ -980,7 +981,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
       sbFetch("staff_redemptions?order=created_at.desc&limit=200").then(d=>setAllStaffRed(d||[])).catch(()=>{});
     }
   },[isSA]);
-  const addPrize=async()=>{if(!pf.name.trim()){toast("Escribe el nombre");return;}try{await db.createPrize({name:pf.name,points_cost:pf.pts,stock:pf.stock,category:"general",is_active:true,min_level:pf.minLevel});const updated=await db.getPrizes();setPrizes(updated||[]);setPf({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1});toast("Premio anadido");}catch(e){toast("Error al crear premio");}};
+  const addPrize=async()=>{if(!pf.name.trim()){toast("Escribe el nombre");return;}try{await db.createPrize({name:pf.name,emoji:pf.emoji||"🎁",points_cost:pf.pts,coins_cost:pf.pts,stock:pf.stock,category:"general",is_active:true,min_level:pf.minLevel});const updated=await db.getPrizes();setPrizes(updated||[]);setPf({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1});toast("Premio anadido");}catch(e){toast("Error al crear premio");}};
   const updPz=async(id,field,val)=>{const dbField=field==="pts"?"points_cost":field==="stock"?"stock":field==="minLevel"?"min_level":field;try{await db.updatePrize(id,{[dbField]:val});const updated=await db.getPrizes();setPrizes(updated||[]);}catch(e){toast("Error");}};
 
   // Coins reset (quarterly)
@@ -1592,7 +1593,20 @@ export default function App(){
         const pk=await staffDb.getAllPendingKudos().catch(()=>[]);
         setPendingKudos(pk||[]);
       };
-      setAllStaff((allS||[]).map(adaptStaffProfile));
+      // Load monthPts for each staff member
+      const ptsLog = await staffDb.getMonthPoints().catch(()=>[]);
+      const ptsByGameId = {};
+      (ptsLog||[]).forEach(p=>{ ptsByGameId[p.staff_game_id]=(ptsByGameId[p.staff_game_id]||0)+(p.points_awarded||0); });
+      // Also add kudos points from staff_kudos
+      const kudosApproved = await sbFetch("staff_kudos?status=eq.approved&select=recipient_id,points_awarded").catch(()=>[]);
+      const kuPtsById = {};
+      (kudosApproved||[]).forEach(k=>{ kuPtsById[k.recipient_id]=(kuPtsById[k.recipient_id]||0)+(k.points_awarded||0); });
+      setAllStaff((allS||[]).map(p=>{
+        const adapted = adaptStaffProfile(p);
+        const gamePts = ptsByGameId[adapted.gameId]||0;
+        const kudoPts = kuPtsById[adapted.id]||0;
+        return {...adapted, monthPts: gamePts+kudoPts};
+      }));
     }catch(e){console.error(e);}
   };
   useEffect(()=>{if(loggedIn?.appType==="staff"){loadStaffData(loggedIn);}},[loggedIn?.id]);
