@@ -346,12 +346,10 @@ export default function GeneralReport() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [data, kudos, refs]: any[] = await Promise.all([
-        sbFetch("weekly_metrics?select=*,profiles!weekly_metrics_game_id_fkey(username)&order=week.desc,total_pts.desc"),
-        sbFetch("kudos_log?select=*&order=created_at.desc&limit=500").catch(()=>[]),
-        sbFetch("referrals?select=*&order=submitted_at.desc&limit=500").catch(()=>[]),
-      ]);
-      const enriched = data.map((m: any) => ({ ...m, username: m.profiles?.username || m.game_id }));
+      const data: any[] = await sbFetch("weekly_metrics?select=*&order=week.desc,total_pts.desc").catch(()=>[]);
+      const kudos: any[] = await sbFetch("kudos_log?select=*&order=created_at.desc&limit=500").catch(()=>[]);
+      const refs: any[] = await sbFetch("referrals?select=*&order=submitted_at.desc&limit=500").catch(()=>[]);
+      const enriched = (data||[]).map((m: any) => ({ ...m, username: m.username || m.game_id }));
       setMetrics(enriched);
       setWeeks([...new Set(enriched.map((m: any) => m.week))].sort().reverse() as string[]);
       setKudosData(kudos||[]);
