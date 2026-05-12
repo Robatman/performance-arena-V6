@@ -51,8 +51,8 @@ const db = {
     body:JSON.stringify({week, activities, published_by:publishedBy, updated_at:new Date().toISOString()})
   }),
   clearBulletin: (id) => sbFetch(`weekly_bulletin?id=eq.${id}`, {method:"PATCH", body:JSON.stringify({activities:[]})}),
-  getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&order=created_at.desc`),
-  getAllRedemptions: () => sbFetch(`reward_redemptions?order=created_at.desc&limit=500`),
+  getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&select=id,user_id,reward_id,points_spent,status,redeemed_at&order=redeemed_at.desc`),
+  getAllRedemptions: () => sbFetch(`reward_redemptions?select=id,user_id,reward_id,points_spent,status,redeemed_at&order=redeemed_at.desc&limit=500`),
   // Coins history
   addCoinsTransaction: (d) => sbFetch("coins_transactions", { method: "POST", body: JSON.stringify(d) }),
   getCoinsHistory: (uid) => sbFetch(`coins_transactions?agent_id=eq.${uid}&order=created_at.desc&limit=50`),
