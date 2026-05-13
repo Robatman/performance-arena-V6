@@ -38,6 +38,31 @@ async function dbGet(table: string, filter = "") {
   return txt ? JSON.parse(txt) : [];
 }
 
+// ── Safely add points to staff_profiles.coins ─────────────────────────────
+// If profile doesn't exist yet, creates it with just coins. If it does, adds to existing.
+async function addCoinsToStaff(gameId: string, delta: number) {
+  if (delta === 0) return;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles?game_id=eq.${encodeURIComponent(gameId)}&select=coins,game_id`, { headers: HDRS });
+  const txt = await res.text();
+  const data = txt ? JSON.parse(txt) : [];
+  if (data.length > 0) {
+    // Profile exists — patch coins
+    const newCoins = Math.max(0, (data[0].coins ?? 0) + delta);
+    await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles?game_id=eq.${encodeURIComponent(gameId)}`, {
+      method: "PATCH",
+      headers: { ...HDRS, Prefer: "return=minimal" },
+      body: JSON.stringify({ coins: newCoins }),
+    });
+  } else {
+    // Profile doesn't exist — upsert a minimal row so coins are tracked
+    await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles`, {
+      method: "POST",
+      headers: { ...HDRS, Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ game_id: gameId, coins: Math.max(0, delta) }),
+    });
+  }
+}
+
 type AhtType = "time" | "Productivity";
 type AgentFlag = "ok" | "msl" | "both_empty";
 type ReviewReason = "vacation" | "sick_leave" | "termination" | "skip" | "";
@@ -294,8 +319,13 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
       catch { try { await dbPatch("staff_attrition_monthly",`coach_name=eq.${encodeURIComponent(c.game_id)}&week=eq.${encodeURIComponent(week)}`,{voluntary_exits:c.attrition}); } catch {} }
     }
 
-    // ── AUTO KPI POINTS — attrition scoring per coach ─────────────────────
+    // ── AUTO KPI POINTS — clean existing entries for this week to prevent duplicates ──
     setProgressMsg("Calculando puntos automáticos...");
+    try {
+      await dbDelete("staff_points_log", `week=eq.${encodeURIComponent(week)}&source=eq.auto_kpi`);
+    } catch {}
+
+    // ── AUTO KPI POINTS — attrition scoring per coach ─────────────────────
     for (const c of coaches) {
       try {
         // Attrition points: 0 bajas = +5, 1 baja = +2, 2 bajas = 0, 3+ = -3 por baja
@@ -321,16 +351,8 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
           created_at: new Date().toISOString(),
         });
 
-        // Update coins in staff_profiles
-        const profRes = await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles?game_id=eq.${encodeURIComponent(c.game_id)}&select=coins`, { headers: HDRS });
-        const profText = await profRes.text();
-        const profData = profText ? JSON.parse(profText) : [];
-        if (profData.length > 0) {
-          const currentCoins = profData[0].coins ?? 0;
-          await dbPatch("staff_profiles", `game_id=eq.${encodeURIComponent(c.game_id)}`, {
-            coins: Math.max(0, currentCoins + attrPts),
-          });
-        }
+        // Update coins in staff_profiles (safe upsert)
+        await addCoinsToStaff(c.game_id, attrPts);
       } catch (e: any) { errs.push(`Auto KPI ${c.game_id}: ${e.message}`); }
     }
 
@@ -383,15 +405,8 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
             granted_by: "system",
             created_at: new Date().toISOString(),
           });
-          // Update coins
-          const profRes = await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles?game_id=eq.${encodeURIComponent(coachId)}&select=coins`, { headers: HDRS });
-          const profText = await profRes.text();
-          const profData = profText ? JSON.parse(profText) : [];
-          if (profData.length > 0) {
-            await dbPatch("staff_profiles", `game_id=eq.${encodeURIComponent(coachId)}`, {
-              coins: Math.max(0, (profData[0].coins ?? 0) + totalKpiPts),
-            });
-          }
+          // Update coins (safe upsert)
+          await addCoinsToStaff(coachId, totalKpiPts);
         }
       } catch (e: any) { errs.push(`KPI Coach ${coachId}: ${e.message}`); }
     }
@@ -421,14 +436,8 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
             granted_by: "system",
             created_at: new Date().toISOString(),
           });
-          const profRes = await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles?game_id=eq.${encodeURIComponent(qaCoachId)}&select=coins`, { headers: HDRS });
-          const profText = await profRes.text();
-          const profData = profText ? JSON.parse(profText) : [];
-          if (profData.length > 0) {
-            await dbPatch("staff_profiles", `game_id=eq.${encodeURIComponent(qaCoachId)}`, {
-              coins: Math.max(0, (profData[0].coins ?? 0) + qaPts),
-            });
-          }
+          // Update coins (safe upsert)
+          await addCoinsToStaff(qaCoachId, qaPts);
         }
       } catch (e: any) { errs.push(`KPI QA Coach ${qaCoachId}: ${e.message}`); }
     }
