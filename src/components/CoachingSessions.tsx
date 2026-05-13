@@ -106,7 +106,6 @@ const STATUS_META: Record<string, {label:string,color:string,emoji:string}> = {
 function CoachView({ user, staffProfile }) {
   const [sessions, setSessions]   = useState<any[]>([]);
   const [agents, setAgents]       = useState<string[]>([]);
-  const [weeks, setWeeks]         = useState<string[]>([]);
   const [tab, setTab]             = useState<"list"|"new">("list");
   const [form, setForm]           = useState({ agentGameId: "", week: "", notes: "" });
   const [loading, setLoading]     = useState(true);
@@ -121,28 +120,24 @@ function CoachView({ user, staffProfile }) {
   const load = async () => {
     setLoading(true);
     try {
-      const [sess, metrics, log, weekData] = await Promise.all([
+      const [sess, metrics, log] = await Promise.all([
         db.getSessions(user.gameId),
         db.getCoachAgents(user.gameId),
         db.getPointsLog(user.gameId),
-        db.getWeeks(),
       ]);
       setSessions(sess || []);
       setPointsLog(log || []);
       // Unique agent game_ids from weekly_metrics
       const uniqueAgents = [...new Set((metrics||[]).map((m:any) => m.game_id))] as string[];
       setAgents(uniqueAgents);
-      // Unique weeks — real dates from DB
-      const uniqueWeeks = [...new Set((weekData||[]).map((w:any) => w.week))] as string[];
-      setWeeks(uniqueWeeks);
     } catch(e) { console.error(e); }
     setLoading(false);
   };
 
   const submitSession = async () => {
-    if (!form.agentGameId || !form.week) { showToast("Selecciona agente y semana"); return; }
+    if (!form.agentGameId) { showToast("Selecciona un agente"); return; }
     // Check duplicate for same agent+week
-    const dupe = sessions.find(s => s.agent_game_id === form.agentGameId && s.week === form.week && s.status !== "cancelled");
+    const dupe = sessions.find(s => s.agent_game_id === form.agentGameId && s.week === form.week && s.status !== "cancelled" && form.week);
     if (dupe) { showToast("Ya existe una sesión con ese agente esta semana"); return; }
     setSubmitting(true);
     try {
@@ -260,12 +255,18 @@ function CoachView({ user, staffProfile }) {
             {agents.length===0&&<div style={{color:S.muted,fontSize:11,marginTop:4}}>No se encontraron agentes. Verifica que tu Game ID coincide con el campo "coach" en las métricas.</div>}
           </div>
           <div style={{marginBottom:12}}>
-            <div style={{color:S.muted,fontSize:11,marginBottom:4}}>SEMANA</div>
-            <select value={form.week} onChange={e=>setForm(p=>({...p,week:e.target.value}))} style={inp}>
-              <option value="">Selecciona la semana</option>
-              {weeks.map(w=><option key={w} value={w}>{w}</option>)}
-            </select>
-            {weeks.length===0&&<div style={{color:S.muted,fontSize:11,marginTop:4}}>No hay semanas cargadas aún.</div>}
+            <div style={{color:S.muted,fontSize:11,marginBottom:4}}>PERÍODO / FECHA</div>
+            <input
+              type="text"
+              value={form.week}
+              onChange={e=>setForm(p=>({...p,week:e.target.value}))}
+              placeholder="Ej: W20-2026, Semana del 12 al 16 mayo..."
+              style={inp}
+            />
+            <div style={{color:S.yellow,fontSize:11,marginTop:5,display:"flex",alignItems:"center",gap:4}}>
+              <span>📝</span>
+              <span>Indica la fecha o período de la sesión en el comentario de abajo</span>
+            </div>
           </div>
           <div style={{marginBottom:16}}>
             <div style={{color:S.muted,fontSize:11,marginBottom:4}}>NOTAS (opcional)</div>
