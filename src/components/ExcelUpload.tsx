@@ -38,27 +38,40 @@ async function dbGet(table: string, filter = "") {
   return txt ? JSON.parse(txt) : [];
 }
 
-// ── Safely add points to staff_profiles.coins ─────────────────────────────
-// If profile doesn't exist yet, creates it with just coins. If it does, adds to existing.
-async function addCoinsToStaff(gameId: string, delta: number) {
-  if (delta === 0) return;
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles?game_id=eq.${encodeURIComponent(gameId)}&select=coins,game_id`, { headers: HDRS });
-  const txt = await res.text();
-  const data = txt ? JSON.parse(txt) : [];
-  if (data.length > 0) {
-    // Profile exists — patch coins
-    const newCoins = Math.max(0, (data[0].coins ?? 0) + delta);
+// ── Sync staff_profiles.coins = SUM of approved staff_points_log ─────────
+// Always recalculates from the log — never accumulates on stale value.
+// This way re-uploads never cause drift.
+async function syncCoinsFromLog(gameId: string) {
+  // 1. Sum all approved points from log
+  const logRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/staff_points_log?staff_game_id=eq.${encodeURIComponent(gameId)}&status=eq.approved&select=points`,
+    { headers: HDRS }
+  );
+  const logTxt = await logRes.text();
+  const logRows = logTxt ? JSON.parse(logTxt) : [];
+  const total = Math.max(0, logRows.reduce((s: number, r: any) => s + (r.points ?? 0), 0));
+
+  // 2. Check if profile exists
+  const profRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/staff_profiles?game_id=eq.${encodeURIComponent(gameId)}&select=game_id`,
+    { headers: HDRS }
+  );
+  const profTxt = await profRes.text();
+  const profData = profTxt ? JSON.parse(profTxt) : [];
+
+  if (profData.length > 0) {
+    // Profile exists — set coins to exact log total
     await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles?game_id=eq.${encodeURIComponent(gameId)}`, {
       method: "PATCH",
       headers: { ...HDRS, Prefer: "return=minimal" },
-      body: JSON.stringify({ coins: newCoins }),
+      body: JSON.stringify({ coins: total }),
     });
   } else {
-    // Profile doesn't exist — upsert a minimal row so coins are tracked
+    // Profile doesn't exist yet — create minimal row
     await fetch(`${SUPABASE_URL}/rest/v1/staff_profiles`, {
       method: "POST",
       headers: { ...HDRS, Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({ game_id: gameId, coins: Math.max(0, delta) }),
+      body: JSON.stringify({ game_id: gameId, coins: total }),
     });
   }
 }
@@ -352,7 +365,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
         });
 
         // Update coins in staff_profiles (safe upsert)
-        await addCoinsToStaff(c.game_id, attrPts);
+        await syncCoinsFromLog(c.game_id);
       } catch (e: any) { errs.push(`Auto KPI ${c.game_id}: ${e.message}`); }
     }
 
@@ -406,7 +419,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
             created_at: new Date().toISOString(),
           });
           // Update coins (safe upsert)
-          await addCoinsToStaff(coachId, totalKpiPts);
+          await syncCoinsFromLog(coachId);
         }
       } catch (e: any) { errs.push(`KPI Coach ${coachId}: ${e.message}`); }
     }
@@ -437,7 +450,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
             created_at: new Date().toISOString(),
           });
           // Update coins (safe upsert)
-          await addCoinsToStaff(qaCoachId, qaPts);
+          await syncCoinsFromLog(qaCoachId);
         }
       } catch (e: any) { errs.push(`KPI QA Coach ${qaCoachId}: ${e.message}`); }
     }
