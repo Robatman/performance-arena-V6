@@ -971,7 +971,25 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const [kudosHistory,setKudosHistory]=useState([]);
   useEffect(()=>{
     if(isSA){
-      sbFetch("kudos_log?select=*&order=created_at.desc&limit=500").then(d=>setKudosHistory(d||[])).catch(()=>{});
+      Promise.all([
+        sbFetch("kudos_log?select=*&order=created_at.desc&limit=500").catch(()=>[]),
+        sbFetch("staff_kudos?status=eq.approved&select=*&order=created_at.desc&limit=500").catch(()=>[]),
+      ]).then(([agentKudos, staffKudos])=>{
+        // Normalize staff_kudos to same shape as kudos_log
+        const normalized=(staffKudos||[]).map(k=>({
+          id: k.id,
+          from_user_id: k.given_by,
+          to_user_id: k.recipient_id,
+          reason: k.reason,
+          points_given: k.points_awarded,
+          created_at: k.created_at,
+          _source: "staff", // mark origin
+        }));
+        // Merge and sort by created_at desc
+        const merged=[...(agentKudos||[]),...normalized]
+          .sort((a,b)=>new Date(b.created_at||0).getTime()-new Date(a.created_at||0).getTime());
+        setKudosHistory(merged);
+      });
     }
   },[isSA]);
   const [allStaffRed,setAllStaffRed]=useState([]);
@@ -1209,8 +1227,9 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
             <div style={{color:C.muted,fontSize:12}}>Todos los kudos enviados a agentes — {kudosHistory.length} total</div>
           </Card>
           {kudosHistory.length===0?<Card style={{textAlign:"center",padding:30,color:C.muted}}>Sin kudos aún.</Card>:kudosHistory.map((k,i)=>{
-            const sender=allUsers.find(u=>u.id===k.from_user_id);
-            const receiver=allUsers.find(u=>u.id===k.to_user_id);
+            const allPeople=[...allUsers,...(allStaff||[]).map(s=>({...s,id:s.id,name:s.name||s.gameId}))];
+            const sender=allPeople.find(u=>u.id===k.from_user_id);
+            const receiver=allPeople.find(u=>u.id===k.to_user_id);
             const isGold=(k.points_given||0)>=5;
             return(
               <Card key={k.id||i} style={{marginBottom:8}}>
@@ -1218,8 +1237,9 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                   <div style={{fontSize:22,flexShrink:0}}>{isGold?"🌟":"👏"}</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{color:C.text,fontWeight:700,fontSize:13}}>
-                      {sender?.name||k.from_user_id||"Staff"} → {receiver?.name||k.to_user_id}
+                      {sender?.name||sender?.gameId||k.from_user_id||"Staff"} → {receiver?.name||receiver?.gameId||k.to_user_id}
                     </div>
+                    <div style={{color:C.muted,fontSize:10,marginTop:1}}>{k._source==="staff"?"Staff → ":""}{isGold?"Gold Kudo":"Kudo"} · +{k.points_given||1} pts</div>
                     <div style={{color:C.muted,fontSize:11,marginTop:2,fontStyle:"italic"}}>"{k.reason}"</div>
                     <div style={{color:C.muted,fontSize:10,marginTop:2}}>{k.created_at?new Date(k.created_at).toLocaleString("es-MX"):""}</div>
                   </div>
