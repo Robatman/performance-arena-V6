@@ -48,7 +48,7 @@ const db = {
   getPointsLog: (gameId) => sbFetch(`staff_points_log?staff_game_id=eq.${encodeURIComponent(gameId)}&order=created_at.desc`),
   updateStaffCoins: (gameId, coins) => sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(gameId)}`, { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ coins }) }),
   getStaffByGameId: (gameId) => sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(gameId)}&select=*`),
-  createNotif: (d) => sbFetch("notifications", { method: "POST", body: JSON.stringify(d) }),
+  createNotif: (d) => sbFetch("notifications", { method: "POST", prefer: "return=minimal", body: JSON.stringify(d) }),
   getAgentByGameId: (gameId) => sbFetch(`profiles?game_id=eq.${encodeURIComponent(gameId)}&select=id,full_name,game_id`),
 };
 
@@ -165,12 +165,13 @@ function CoachView({ user, staffProfile }) {
           await db.createNotif({
             recipient_id: agents[0].id,
             title: "📋 Evaluación de Coaching Session",
-            message: `Tu coach ${user.gameId} registró una sesión contigo (${form.week}). Por favor responde 2 preguntas rápidas.`,
+            message: `Tu coach ${user.gameId} registró una sesión contigo (${form.week||"reciente"}). Por favor responde 2 preguntas en la campana 🔔 de tu app.`,
             type: "coaching_session",
-            emoji: "📋",
           });
+        } else {
+          console.warn("[CoachingSessions] Agent not found for game_id:", form.agentGameId);
         }
-      } catch(e) {}
+      } catch(e) { console.error("[CoachingSessions] createNotif agent error:", e); }
 
       // Notify manager
       if (managerGameId) {
@@ -184,9 +185,8 @@ function CoachView({ user, staffProfile }) {
               await db.createNotif({
                 recipient_id: mgStaff[0].id,
                 title: "👔 Verificación de Coaching Session",
-                message: `Coach ${user.gameId} registró sesión con agente ${form.agentGameId} (${form.week}). Pendiente tu verificación.`,
+                message: `Coach ${user.gameId} registró sesión con agente ${form.agentGameId} (${form.week||"reciente"}). Pendiente tu verificación en Avisos 🔔.`,
                 type: "coaching_verify",
-                emoji: "👔",
               });
             }
           }
@@ -540,12 +540,12 @@ export function AgentCoachingCard({ session, agentId, onRespond }) {
           if (mgStaff?.[0]?.id) {
             await sbFetch("notifications", {
               method: "POST",
+              prefer: "return=minimal",
               body: JSON.stringify({
                 recipient_id: mgStaff[0].id,
                 title: "👔 Verificación de Coaching Session",
-                message: `El agente ${session.agent_game_id} respondió la sesión del coach ${session.coach_game_id}. Por favor verifica la sesión.`,
+                message: `El agente ${session.agent_game_id} respondió la sesión del coach ${session.coach_game_id}. Por favor verifica en Avisos 🔔.`,
                 type: "coaching_verify",
-                emoji: "👔",
                 is_read: false,
               }),
             });
