@@ -779,7 +779,92 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
   );
 }
 
-function Notifs({user,notifs,onMarkRead,onMarkAll}){const mine=(notifs||[]).filter(n=>n.recipient_id===user.id||n.toId===user.id).sort((a,b)=>new Date(b.created_at||b.ts)-new Date(a.created_at||a.ts));const unread=mine.filter(n=>!n.is_read&&!n.read).length;return(<div style={{paddingBottom:100}}><Card style={{marginBottom:14,background:`${C.blue}0e`,border:`1.5px solid ${C.blue}33`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:28}}>🔔</div><div style={{color:C.blue,fontWeight:800,fontSize:17}}>Notificaciones</div><div style={{color:C.muted,fontSize:12}}>{unread} sin leer de {mine.length}</div></div>{unread>0&&<Btn onClick={onMarkAll} color={C.blue} sm>Todas leidas</Btn>}</div></Card>{mine.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>📭</div><div style={{color:C.muted}}>No tienes notificaciones aun.</div></Card>}{mine.map(n=>{const isRead=n.is_read||n.read;return(<Card key={n.id} onClick={()=>onMarkRead(n.id)} style={{marginBottom:10,border:`1.5px solid ${isRead?C.border:C.blue}`,background:isRead?C.card:`${C.blue}06`,cursor:"pointer"}}><div style={{display:"flex",gap:10,alignItems:"flex-start"}}><div style={{fontSize:28,flexShrink:0}}>{n.emoji||"📢"}</div><div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}><div style={{color:C.text,fontWeight:700,fontSize:14}}>{n.title}</div>{!isRead&&<div style={{width:8,height:8,borderRadius:"50%",background:C.blue,flexShrink:0,marginTop:4}}/>}</div><div style={{color:C.text,fontSize:13,lineHeight:1.55,marginBottom:4}}>{n.message||n.body}</div></div></div></Card>);})}</div>);}
+function CoachingReplyCard({n, user, onDone}){
+  const [q1,setQ1]=useState(null);
+  const [q2,setQ2]=useState(null);
+  const [submitting,setSubmitting]=useState(false);
+  const [done,setDone]=useState(false);
+  const submit=async()=>{
+    if(q1===null||q2===null){alert("Responde ambas preguntas");return;}
+    setSubmitting(true);
+    try{
+      // Find the coaching session for this agent
+      const sessions=await sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(user.game_id||user.username||"")}&status=eq.pending&order=created_at.desc&limit=1`).catch(()=>[]);
+      if(sessions&&sessions[0]){
+        const s=sessions[0];
+        await sbFetch(`coaching_sessions?id=eq.${s.id}`,{method:"PATCH",body:JSON.stringify({
+          agent_q1:q1===true,agent_q2:q2===true,
+          agent_responded_at:new Date().toISOString(),
+          status:"agent_responded",
+        })});
+        // Notify manager
+        if(s.manager_game_id){
+          const mgStaff=await sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(s.manager_game_id)}&select=id`).catch(()=>[]);
+          if(mgStaff?.[0]?.id){
+            await sbFetch("notifications",{method:"POST",body:JSON.stringify({
+              recipient_id:mgStaff[0].id,
+              title:"👔 Verificación de Coaching Session",
+              message:`El agente ${user.game_id||user.username} respondió la sesión del coach ${s.coach_game_id}. Por favor verifica.`,
+              type:"coaching_verify",emoji:"👔",is_read:false,
+            })});
+          }
+        }
+      }
+      // Mark notif as read
+      await sbFetch(`notifications?id=eq.${n.id}`,{method:"PATCH",body:JSON.stringify({is_read:true})});
+      setDone(true);
+      if(onDone)onDone();
+    }catch(e){alert("Error al enviar respuesta");}
+    setSubmitting(false);
+  };
+  if(done)return(<div style={{background:"#dcfce7",border:"1.5px solid #86efac",borderRadius:10,padding:"10px 14px",marginTop:8}}><span style={{color:"#16a34a",fontWeight:700}}>✅ ¡Gracias! Respuestas enviadas.</span></div>);
+  const QBtn=({val,selected,onClick,label,color})=>(<button onClick={onClick} style={{flex:1,padding:"8px 0",borderRadius:8,border:`2px solid ${selected===val?color:C.border}`,background:selected===val?color+"22":C.card,color:selected===val?color:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>);
+  return(
+    <div style={{marginTop:10,padding:"12px 14px",background:`${C.blue}08`,borderRadius:10,border:`1px solid ${C.blue}33`}}>
+      <div style={{color:C.text,fontWeight:700,fontSize:13,marginBottom:10}}>📋 Responde estas 2 preguntas:</div>
+      <div style={{marginBottom:10}}>
+        <div style={{color:C.muted,fontSize:12,marginBottom:6}}>1. ¿Tu coach te dio retroalimentación clara y específica?</div>
+        <div style={{display:"flex",gap:8}}><QBtn val={true} selected={q1} onClick={()=>setQ1(true)} label="✓ Sí" color={C.green}/><QBtn val={false} selected={q1} onClick={()=>setQ1(false)} label="✗ No" color={C.red}/></div>
+      </div>
+      <div style={{marginBottom:12}}>
+        <div style={{color:C.muted,fontSize:12,marginBottom:6}}>2. ¿Acordaron un plan de acción concreto?</div>
+        <div style={{display:"flex",gap:8}}><QBtn val={true} selected={q2} onClick={()=>setQ2(true)} label="✓ Sí" color={C.green}/><QBtn val={false} selected={q2} onClick={()=>setQ2(false)} label="✗ No" color={C.red}/></div>
+      </div>
+      <Btn onClick={submit} color={C.blue} disabled={submitting||q1===null||q2===null} style={{width:"100%"}}>{submitting?"Enviando...":"Enviar respuestas"}</Btn>
+    </div>
+  );
+}
+
+function Notifs({user,notifs,onMarkRead,onMarkAll,onRefresh}){
+  const [replied,setReplied]=useState({});
+  const mine=(notifs||[]).filter(n=>n.recipient_id===user.id||n.toId===user.id).sort((a,b)=>new Date(b.created_at||b.ts)-new Date(a.created_at||a.ts));
+  const unread=mine.filter(n=>!n.is_read&&!n.read).length;
+  return(<div style={{paddingBottom:100}}>
+    <Card style={{marginBottom:14,background:`${C.blue}0e`,border:`1.5px solid ${C.blue}33`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><div style={{fontSize:28}}>🔔</div><div style={{color:C.blue,fontWeight:800,fontSize:17}}>Notificaciones</div><div style={{color:C.muted,fontSize:12}}>{unread} sin leer de {mine.length}</div></div>
+        {unread>0&&<Btn onClick={onMarkAll} color={C.blue} sm>Todas leidas</Btn>}
+      </div>
+    </Card>
+    {mine.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>📭</div><div style={{color:C.muted}}>No tienes notificaciones aun.</div></Card>}
+    {mine.map(n=>{
+      const isRead=n.is_read||n.read;
+      const isCoaching=n.type==="coaching_session"&&!replied[n.id];
+      return(<Card key={n.id} style={{marginBottom:10,border:`1.5px solid ${isRead&&!isCoaching?C.border:C.blue}`,background:isRead&&!isCoaching?C.card:`${C.blue}06`}}>
+        <div style={{display:"flex",gap:10,alignItems:"flex-start"}} onClick={()=>{if(!isCoaching)onMarkRead(n.id);}}>
+          <div style={{fontSize:28,flexShrink:0}}>{n.emoji||"📢"}</div>
+          <div style={{flex:1}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+              <div style={{color:C.text,fontWeight:700,fontSize:14}}>{n.title}</div>
+              {!isRead&&<div style={{width:8,height:8,borderRadius:"50%",background:C.blue,flexShrink:0,marginTop:4}}/>}
+            </div>
+            <div style={{color:C.text,fontSize:13,lineHeight:1.55,marginBottom:4}}>{n.message||n.body}</div>
+          </div>
+        </div>
+        {isCoaching&&<CoachingReplyCard n={n} user={user} onDone={()=>{setReplied(p=>({...p,[n.id]:true}));onMarkRead(n.id);if(onRefresh)onRefresh();}}/>}
+      </Card>);
+    })}
+  </div>);}
 
 function Info(){
   const secs=[
@@ -925,7 +1010,7 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
   );
 }
 
-function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNotifs,toast,reloadUsers,riddleCount,taskCount,bulletin,setBulletin}){
+function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNotifs,toast,reloadUsers,riddleCount,taskCount,bulletin,setBulletin,allStaff=[]}){
   const [tab,setTab]=useState("users");const isSA=cu.role==="superadmin";
   const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:C.bg,color:C.text};
   const blank={name:"",password:"",role:"user",project:"Campaign K",gameId:""};
@@ -1354,6 +1439,100 @@ function StaffDashboard({user,allStaff,metrics,points,badges,kudos,bulletin}){
   );
 }
 
+
+function StaffNotifs({user, notifs, allStaff, onRefresh}){
+  const [verified,setVerified]=useState({});
+  const mine=(notifs||[]).filter(n=>n.recipient_id===user.id).sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+  const unread=mine.filter(n=>!n.is_read).length;
+
+  const markRead=async(id)=>{
+    try{await sbFetch(`notifications?id=eq.${id}`,{method:"PATCH",body:JSON.stringify({is_read:true})});}catch(e){}
+    if(onRefresh)onRefresh();
+  };
+
+  const verifySession=async(n)=>{
+    try{
+      // Find the session to verify
+      const sessions=await sbFetch(`coaching_sessions?status=eq.agent_responded&manager_game_id=eq.${encodeURIComponent(user.gameId)}&order=created_at.desc&limit=10`).catch(()=>[]);
+      if(sessions&&sessions.length>0){
+        // Find session matching this notif (by coach_game_id in message)
+        const session=sessions[0];
+        await sbFetch(`coaching_sessions?id=eq.${session.id}`,{method:"PATCH",body:JSON.stringify({
+          manager_confirmed:true,
+          manager_responded_at:new Date().toISOString(),
+          status:"completed",
+        })});
+        // Award points to coach
+        const coachStaff=await sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(session.coach_game_id)}&select=id,coins`).catch(()=>[]);
+        if(coachStaff?.[0]){
+          // Insert points log
+          await sbFetch("staff_points_log",{method:"POST",body:JSON.stringify({
+            staff_game_id:session.coach_game_id,
+            points:10,source:"coaching_session",
+            week:session.week||"",
+            description:`Coaching session completada con ${session.agent_game_id}`,
+            status:"approved",
+          })});
+          // Sync coins
+          const logRes=await sbFetch(`staff_points_log?staff_game_id=eq.${encodeURIComponent(session.coach_game_id)}&status=eq.approved&select=points`).catch(()=>[]);
+          const total=(logRes||[]).reduce((s,r)=>s+(r.points||0),0);
+          await sbFetch(`staff_profiles?id=eq.${coachStaff[0].id}`,{method:"PATCH",body:JSON.stringify({coins:total})});
+          // Notify coach
+          await sbFetch("notifications",{method:"POST",body:JSON.stringify({
+            recipient_id:coachStaff[0].id,
+            title:"⭐ Coaching Session verificada",
+            message:`Tu sesión con ${session.agent_game_id} fue verificada. +10 puntos acreditados.`,
+            type:"coaching_complete",emoji:"⭐",is_read:false,
+          })});
+        }
+      }
+      await markRead(n.id);
+      setVerified(p=>({...p,[n.id]:true}));
+    }catch(e){alert("Error al verificar sesión");}
+  };
+
+  return(
+    <div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}>
+      <SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:28}}>🔔</div>
+            <div style={{color:S.text,fontWeight:800,fontSize:17}}>Avisos</div>
+            <div style={{color:S.muted,fontSize:12}}>{unread} sin leer</div>
+          </div>
+          {unread>0&&<SBtn onClick={async()=>{for(const n of mine.filter(x=>!x.is_read))await markRead(n.id);}} color={S.accent} sm>Todas leídas</SBtn>}
+        </div>
+      </SCard>
+      {mine.length===0&&<SCard style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>📭</div><div style={{color:S.muted}}>Sin notificaciones.</div></SCard>}
+      {mine.map(n=>{
+        const isRead=n.is_read;
+        const isVerify=n.type==="coaching_verify"&&!verified[n.id];
+        return(
+          <SCard key={n.id} style={{marginBottom:10,border:`1.5px solid ${isRead&&!isVerify?S.border:S.accent}`,background:isRead&&!isVerify?S.bgCard:`${S.accent}08`}}>
+            <div style={{display:"flex",gap:10,alignItems:"flex-start"}} onClick={()=>{if(!isVerify)markRead(n.id);}}>
+              <div style={{fontSize:26,flexShrink:0}}>{n.emoji||"📢"}</div>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                  <div style={{color:S.text,fontWeight:700,fontSize:14}}>{n.title}</div>
+                  {!isRead&&<div style={{width:8,height:8,borderRadius:"50%",background:S.accent,flexShrink:0,marginTop:4}}/>}
+                </div>
+                <div style={{color:S.muted,fontSize:12,lineHeight:1.5}}>{n.message}</div>
+              </div>
+            </div>
+            {isVerify&&(
+              <div style={{marginTop:10,display:"flex",gap:8}}>
+                <SBtn onClick={()=>verifySession(n)} color={S.green} style={{flex:1}}>✓ Verificar y dar +10 pts</SBtn>
+                <SBtn onClick={()=>markRead(n.id)} color={S.red} style={{flex:1}} sm>✗ Rechazar</SBtn>
+              </div>
+            )}
+            {verified[n.id]&&<div style={{marginTop:8,color:S.green,fontSize:12,fontWeight:700}}>✅ Verificado — puntos acreditados al coach</div>}
+          </SCard>
+        );
+      })}
+    </div>
+  );
+}
+
 function StaffLeaderboard({user,allStaff}){const peers=allStaff.filter(u=>u.active);const sorted=[...peers].sort((a,b)=>(b.monthPts||0)-(a.monthPts||0));const medals=["🥇","🥈","🥉"];return(<div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}><SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none",textAlign:"center"}}><div style={{fontSize:34}}>🏆</div><div style={{color:S.text,fontWeight:800,fontSize:20}}>LEADERBOARD</div><div style={{color:S.muted,fontSize:12}}>{STAFF_ROLES[user.role]} · {user.project}</div></SCard>{sorted.length===0&&<SCard style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>👥</div><div style={{color:S.muted}}>No peers found.</div></SCard>}{sorted.map((u,i)=>{const isMe=u.id===user.id;const pts=u.monthPts||0;return(<div key={u.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:8,borderRadius:14,background:isMe?`${S.accent}18`:S.bgCard,border:`1px solid ${isMe?S.accent:S.border}`}}><div style={{width:30,textAlign:"center",fontWeight:900,color:i<3?"#f59e0b":S.muted,fontSize:i<3?20:14}}>{i<3?medals[i]:`#${i+1}`}</div><div style={{width:44,height:44,borderRadius:"50%",background:`${S.accent}22`,border:`1px solid ${S.accent}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{ROLE_EMOJI[u.role]||"👤"}</div><div style={{flex:1}}><div style={{color:S.text,fontWeight:700,fontSize:14}}>{u.name}{isMe&&<span style={{color:S.accent,fontSize:11}}> · YOU</span>}</div><div style={{color:S.muted,fontSize:11}}>{u.project}</div></div><div style={{textAlign:"right"}}><div style={{color:S.accent,fontWeight:900,fontSize:19}}>{pts}</div><div style={{color:S.muted,fontSize:11}}>pts</div></div></div>);})}</div>);}
 
 function StaffInnovation({user,innovations,onSubmit,onApprove,isSuperAdmin}){const [tab,setTab]=useState("my");const [form,setForm]=useState({category:"process_improvement",title:"",description:"",tool_used:""});const [submitting,setSubmitting]=useState(false);const myInnovations=(innovations||[]).filter(i=>i.staff_id===user.id);const pending=(innovations||[]).filter(i=>i.status==="pending");const isManager=user.role==="manager"||user.role==="training_manager"||isSuperAdmin;const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};const submit=async()=>{if(!form.title.trim()||!form.description.trim())return;setSubmitting(true);const cat=INNOVATION_CATS[form.category];await onSubmit({...form,staff_id:user.id,status:"pending",points_awarded:cat.pts,week_reference:new Date().toISOString().split("T")[0]});setForm({category:"process_improvement",title:"",description:"",tool_used:""});setSubmitting(false);};const tabs=[{id:"my",label:"My Submissions",show:true},{id:"submit",label:"+ Submit",show:true},{id:"pending",label:`Pending (${pending.length})`,show:isManager}];return(<div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}><SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}><div style={{fontSize:32}}>🚀</div><div style={{color:S.text,fontWeight:800,fontSize:18}}>Innovation & AI Projects</div><div style={{color:S.muted,fontSize:12,marginTop:4}}>Submit projects to earn bonus points</div></SCard><div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>{tabs.filter(t=>t.show).map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",borderRadius:9,border:`1px solid ${tab===t.id?S.accent:S.border}`,background:tab===t.id?`${S.accent}22`:S.bgCard,color:tab===t.id?S.accent:S.muted,fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{t.label}</button>)}</div>{tab==="my"&&(<div>{myInnovations.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>💡</div><div style={{color:S.muted}}>No submissions yet.</div></SCard>}{myInnovations.map((inn,i)=>{const cat=INNOVATION_CATS[inn.category]||{};return(<SCard key={i} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}><div style={{display:"flex",gap:8,alignItems:"center"}}><div style={{fontSize:22}}>{cat.emoji||"💡"}</div><div><div style={{color:S.text,fontWeight:700}}>{inn.title}</div><div style={{color:S.muted,fontSize:11}}>{cat.label}</div></div></div><div style={{padding:"3px 10px",borderRadius:20,background:inn.status==="approved"?`${S.green}22`:inn.status==="rejected"?`${S.red}22`:`${S.yellow}22`,color:inn.status==="approved"?S.green:inn.status==="rejected"?S.red:S.yellow,fontSize:11,fontWeight:700}}>{inn.status.toUpperCase()}</div></div>{inn.status==="approved"&&<div style={{color:S.green,fontWeight:700,fontSize:13}}>+{inn.points_awarded} pts earned</div>}</SCard>);})}</div>)}{tab==="submit"&&(<SCard><div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:14}}>NEW SUBMISSION</div><div style={{marginBottom:12}}><div style={{color:S.muted,fontSize:11,marginBottom:5}}>CATEGORY</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{Object.entries(INNOVATION_CATS).filter(([k,v])=>!v.adminOnly||isSuperAdmin).map(([k,v])=>(<div key={k} onClick={()=>setForm(p=>({...p,category:k}))} style={{padding:10,borderRadius:9,border:`1.5px solid ${form.category===k?S.accent:S.border}`,background:form.category===k?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:20}}>{v.emoji}</div><div style={{color:S.text,fontSize:11,fontWeight:700,marginTop:3}}>{v.label}</div><div style={{color:S.accent,fontSize:10}}>+{v.pts} pts</div></div>))}</div></div><div style={{marginBottom:10}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TITLE</div><input value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} style={inp} placeholder="Project name"/></div><div style={{marginBottom:10}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>DESCRIPTION</div><textarea value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} rows={4} style={{...inp,resize:"vertical"}} placeholder="Describe what you did..."/></div>{(form.category==="ai_project"||form.category==="process_improvement")&&(<div style={{marginBottom:14}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TOOL USED</div><input value={form.tool_used} onChange={e=>setForm(p=>({...p,tool_used:e.target.value}))} style={inp} placeholder="e.g. ChatGPT, Claude..."/></div>)}<SBtn onClick={submit} disabled={submitting||!form.title.trim()||!form.description.trim()} style={{width:"100%",padding:11}}>{submitting?"Submitting...":"SUBMIT"}</SBtn></SCard>)}{tab==="pending"&&isManager&&(<div>{pending.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>✅</div><div style={{color:S.muted}}>No pending.</div></SCard>}{pending.map((inn,i)=>{const cat=INNOVATION_CATS[inn.category]||{};const canApprove=inn.category==="ai_project"?isSuperAdmin:true;return(<SCard key={i} style={{marginBottom:12}}><div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}><div style={{fontSize:22}}>{cat.emoji||"💡"}</div><div><div style={{color:S.text,fontWeight:700}}>{inn.title}</div><div style={{color:S.muted,fontSize:11}}>{cat.label} · +{inn.points_awarded} pts</div></div></div><div style={{color:S.muted,fontSize:12,marginBottom:8}}>{inn.description}</div>{!canApprove&&<div style={{color:S.yellow,fontSize:12,padding:"8px 12px",background:`${S.yellow}18`,borderRadius:8,marginBottom:8}}>⚠️ Only Super Admin can approve AI Projects</div>}{canApprove&&(<div style={{display:"flex",gap:8}}><SBtn onClick={()=>onApprove(inn.id,true,"")} color={S.green} style={{flex:1}}>✓ Approve</SBtn><SBtn onClick={()=>onApprove(inn.id,false,"Not meeting criteria")} color={S.red} style={{flex:1}}>✗ Reject</SBtn></div>)}</SCard>);})}</div>)}</div>);}
@@ -1544,7 +1723,9 @@ export default function App(){
   const [allStaff,setAllStaff]=useState([]);const [staffMetrics,setStaffMetrics]=useState([]);
   const [staffPoints,setStaffPoints]=useState(null);const [staffBadges,setStaffBadges]=useState([]);
   const [staffKudos,setStaffKudos]=useState([]);
-  const [pendingKudos,setPendingKudos]=useState([]);const [staffInnovations,setStaffInnovations]=useState([]);
+  const [pendingKudos,setPendingKudos]=useState([]);
+  const [staffNotifs,setStaffNotifs]=useState([]);
+  const loadStaffNotifs=async(uid)=>{try{const d=await sbFetch(`notifications?recipient_id=eq.${uid}&order=created_at.desc&limit=50`).catch(()=>[]);setStaffNotifs(d||[]);}catch(e){}};const [staffInnovations,setStaffInnovations]=useState([]);
 
   // Score/Coins data for current agent
   const [availableWeeks,setAvailableWeeks]=useState([]);
@@ -1629,7 +1810,7 @@ export default function App(){
       }));
     }catch(e){console.error(e);}
   };
-  useEffect(()=>{if(loggedIn?.appType==="staff"){loadStaffData(loggedIn);}},[loggedIn?.id]);
+  useEffect(()=>{if(loggedIn?.appType==="staff"){loadStaffData(loggedIn);loadStaffNotifs(loggedIn.id);const si=setInterval(()=>loadStaffNotifs(loggedIn.id),30000);return()=>clearInterval(si);}},[loggedIn?.id]);
 
   const reloadUsers=async()=>{const d=await db.getUsers();setUsers((d||[]).map(adaptProfile));};
   const reloadStaff=async()=>{
@@ -1676,6 +1857,7 @@ export default function App(){
       {id:"innovation",icon:"🚀",label:"Projects"},
       ...(["team_coach","manager","superadmin"].includes(cu?.role)?[{id:"sessions",icon:"🎯",label:"Sessions"}]:[]),
       ...(["team_coach","quality_coach","training_coach","manager","training_manager","superadmin"].includes(cu?.role)?[{id:"activities",icon:"⭐",label:"Actividades"}]:[]),
+      {id:"staffnotifs",icon:"🔔",label:"Avisos"},
       {id:"store",icon:"🏪",label:"Tienda"},
       {id:"profile",icon:"🎨",label:"Profile"},
       ...(cu?.role==="superadmin"?[{id:"report",icon:"📊",label:"Reporte"},{id:"admin",icon:"⚙️",label:"Admin"}]:[])];
@@ -1703,6 +1885,7 @@ export default function App(){
           onApprove={async(id,approved,notes)=>{try{await staffDb.updateInnovation(id,{status:approved?"approved":"rejected",reviewed_by:cu.id,review_notes:notes,reviewed_at:new Date().toISOString()});const i=await staffDb.getInnovations(cu.id);setStaffInnovations(i||[]);toast(approved?"Approved!":"Rejected");}catch(e){toast("Error");}}}
         />}
         {screen==="sessions"&&<CoachingSessions user={cu} staffProfile={allStaff.find(s=>s.id===cu?.id)||cu}/>}
+        {screen==="staffnotifs"&&<StaffNotifs user={cu} notifs={staffNotifs} allStaff={allStaff} onRefresh={()=>loadStaffNotifs(cu.id)}/>}
         {screen==="activities"&&<StaffActivitiesPanel user={cu}/>}
         {screen==="store"&&<StaffStore user={cu} staffProfile={allStaff.find(s=>s.id===cu?.id)||{...cu,gameId:cu?.gameId||cu?.game_id||cu?.username}} onCoinsUpdate={(coins)=>{setLoggedIn({...cu,coins});}}/>}
         {screen==="profile"&&<StaffProfile user={cu} onUpdate={u=>{setLoggedIn(u);}} toast={toast}/>}
@@ -1710,7 +1893,7 @@ export default function App(){
         {screen==="admin"&&cu?.role==="superadmin"&&<StaffAdminPanel cu={cu} allStaff={allStaff} toast={toast} reloadStaff={reloadStaff}/>}
       </div>
       <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:S.bgCard,borderTop:`1px solid ${S.border}`,display:"flex",padding:"6px 0 10px",overflowX:"auto"}}>
-        {staffNav.map(item=>{const active=screen===item.id;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px"}}><div style={{fontSize:17,filter:active?"none":"grayscale(60%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?S.accent:S.muted,whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:S.accent}}/>}</button>);})}
+        {staffNav.map(item=>{const active=screen===item.id;const staffUnread=item.id==="staffnotifs"?(staffNotifs||[]).filter(n=>!n.is_read&&n.recipient_id===cu?.id).length:0;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{staffUnread>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{staffUnread}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(60%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?S.accent:S.muted,whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:S.accent}}/>}</button>);})}
       </div>
     </>;
   }
@@ -1758,9 +1941,9 @@ export default function App(){
       {screen==="referrals"&&<ReferralsPanel isAdmin={false}/>}
       {screen==="report"&&isSA&&<GeneralReport/>}
       {screen==="info"&&<Info/>}
-      {screen==="notifs"&&<Notifs user={cu} notifs={notifs} onMarkRead={markNotifRead} onMarkAll={markAllRead}/>}
+      {screen==="notifs"&&<Notifs user={cu} notifs={notifs} onMarkRead={markNotifRead} onMarkAll={markAllRead} onRefresh={()=>loadNotifs(cu.id)}/>}
       {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps}/>}
-      {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount} bulletin={bulletin} setBulletin={setBulletin}/>}
+      {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount} bulletin={bulletin} setBulletin={setBulletin} allStaff={allStaff}/>}
     </div>
     <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:C.card,borderTop:`1.5px solid ${C.border}`,display:"flex",padding:"6px 0 10px",boxShadow:`0 -2px 10px ${C.blue}10`,overflowX:"auto"}}>
       {nav.map(item=>{const active=screen===item.id;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{item.badge>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{item.badge}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(55%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?C.blue:C.muted,transition:"color 0.18s",whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:C.blue}}/>}</button>);})}
