@@ -184,7 +184,11 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     reader.onload = (ev) => {
       try {
         const wb = XLSX.read(new Uint8Array(ev.target?.result as ArrayBuffer), { type:"array" });
-        const mName = wb.SheetNames.find(n => /april|week|kpi|metric/i.test(n)) || wb.SheetNames[1] || wb.SheetNames[0];
+        const MONTHS_RE_XL = /jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|ene|abr|ago|dic/i;
+        const mName = wb.SheetNames.find(n => /week|kpi|metric/i.test(n))
+          || wb.SheetNames.find(n => MONTHS_RE_XL.test(n))
+          || wb.SheetNames.find(n => !/coach|attrition|staff|manager/i.test(n))
+          || wb.SheetNames[0];
         const ms = wb.Sheets[mName];
         if (!ms) { setErrors([`No hoja de métricas. Hojas: ${wb.SheetNames.join(", ")}`]); setStage("error"); return; }
 
@@ -223,15 +227,24 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
             const ahtPts  = flag==="ok" ? calcPts(ahtSec, ahtGoal, ahtType==="Productivity") : 0;
             const qaPts   = flag==="ok" ? calcPts(qaN, qaGoal, true) : 0;
             const attPts  = flag==="msl" ? 0 : att.pts;
+            // #REF! = broken Excel formula in Manager col → treat as blank
+            const rawMgr = cManager ? String(r[cManager]??"").trim() : "";
+            const cleanMgr = (rawMgr.startsWith("#") || rawMgr === "") ? "" : rawMgr;
+            // Absent > 1 = MSL/special leave → mark as skip so KPI calcs exclude them
+            const isSkipAbsent = abs > 1;
+            const effectiveFlag: AgentFlag = isSkipAbsent ? "msl" : flag;
+            const effAhtPts  = effectiveFlag==="ok" ? ahtPts : 0;
+            const effQaPts   = effectiveFlag==="ok" ? qaPts  : 0;
+            const effAttPts  = effectiveFlag==="msl" ? 0 : attPts;
             return {
               game_id: gid, project: String(r[cProject]??"").trim(),
-              coach_id: String(r[cCoach]??"").trim(), qcoach: String(r[cQcoach]??"").trim(), manager_game_id: cManager ? String(r[cManager]??"").trim() : "",
+              coach_id: String(r[cCoach]??"").trim(), qcoach: String(r[cQcoach]??"").trim(), manager_game_id: cleanMgr,
               aht_seconds: ahtSec, aht_goal_seconds: ahtGoal, aht_type: ahtType,
-              qa_score: qaN, qa_goal: qaGoal, absences: abs, tardies: tard, flag,
-              attendance_status: att.status, attendance_pts: attPts, aht_pts: ahtPts, qa_pts: qaPts,
-              total_pts: attPts+ahtPts+qaPts,
+              qa_score: qaN, qa_goal: qaGoal, absences: abs, tardies: tard, flag: effectiveFlag,
+              attendance_status: att.status, attendance_pts: effAttPts, aht_pts: effAhtPts, qa_pts: effQaPts,
+              total_pts: effAttPts+effAhtPts+effQaPts,
               is_new: !existingIds.has(gid.toUpperCase()),
-              review_reason: flag!=="ok" ? "" : undefined,
+              review_reason: effectiveFlag!=="ok" ? "" : undefined,
             };
           });
 
