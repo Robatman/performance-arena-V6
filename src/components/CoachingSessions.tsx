@@ -533,6 +533,26 @@ export function AgentCoachingCard({ session, agentId, onRespond }) {
         })
       });
 
+      // ── Notify manager to verify after agent responds ──────────────────
+      try {
+        if (session.manager_game_id) {
+          const mgStaff = await sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(session.manager_game_id)}&select=id`).catch(()=>[]);
+          if (mgStaff?.[0]?.id) {
+            await sbFetch("notifications", {
+              method: "POST",
+              body: JSON.stringify({
+                recipient_id: mgStaff[0].id,
+                title: "👔 Verificación de Coaching Session",
+                message: `El agente ${session.agent_game_id} respondió la sesión del coach ${session.coach_game_id}. Por favor verifica la sesión.`,
+                type: "coaching_verify",
+                emoji: "👔",
+                is_read: false,
+              }),
+            });
+          }
+        }
+      } catch(e) {}
+
       // Try to award points — only succeeds if BOTH agent AND manager have confirmed
       // and points_paid is not already true
       if (!session.points_paid && session.manager_confirmed === true && q1 === true && q2 === true) {
