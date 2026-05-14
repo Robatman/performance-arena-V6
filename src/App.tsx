@@ -1379,7 +1379,7 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
   const filtered=allStaff.filter(u=>filter==="active"?u.active:!u.active);
   return(
     <div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}>
-      {showExcel&&<ExcelUpload onClose={()=>setShowExcel(false)}/>}
+      {showExcel&&<ExcelUpload onClose={async()=>{setShowExcel(false);await reloadStaff();}}/>}
       <SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{fontSize:30}}>⚡</div><div><div style={{color:S.text,fontWeight:800,fontSize:17}}>SUPER ADMIN PANEL</div><div style={{color:S.muted,fontSize:12}}>{cu.name}</div></div></div>
@@ -1612,7 +1612,21 @@ export default function App(){
   useEffect(()=>{if(loggedIn?.appType==="staff"){loadStaffData(loggedIn);}},[loggedIn?.id]);
 
   const reloadUsers=async()=>{const d=await db.getUsers();setUsers((d||[]).map(adaptProfile));};
-  const reloadStaff=async()=>{const d=await staffDb.getAll();setAllStaff((d||[]).map(adaptStaffProfile));};
+  const reloadStaff=async()=>{
+    const [d, ptsLog, kudosApproved] = await Promise.all([
+      staffDb.getAll(),
+      staffDb.getMonthPoints().catch(()=>[]),
+      sbFetch("staff_kudos?status=eq.approved&select=recipient_id,points_awarded").catch(()=>[]),
+    ]);
+    const ptsByGameId={};
+    (ptsLog||[]).forEach(p=>{ ptsByGameId[p.staff_game_id]=(ptsByGameId[p.staff_game_id]||0)+(p.points||0); });
+    const kuPtsById={};
+    (kudosApproved||[]).forEach(k=>{ kuPtsById[k.recipient_id]=(kuPtsById[k.recipient_id]||0)+(k.points_awarded||0); });
+    setAllStaff((d||[]).map(p=>{
+      const adapted=adaptStaffProfile(p);
+      return {...adapted, monthPts:(ptsByGameId[adapted.gameId]||0)+(kuPtsById[adapted.id]||0)};
+    }));
+  };
   const toast=msg=>setToastMsg(msg);
   const cu=users.find(u=>u.id===loggedIn?.id)||loggedIn;
   const syncUser=upd=>{setUsers(users.map(u=>u.id===upd.id?upd:u));setLoggedIn(upd);};
