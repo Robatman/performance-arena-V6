@@ -789,7 +789,9 @@ function CoachingReplyCard({n, user, onDone}){
     setSubmitting(true);
     try{
       // Find the coaching session for this agent
-      const sessions=await sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(user.game_id||user.username||"")}&status=eq.pending&order=created_at.desc&limit=1`).catch(()=>[]);
+      // Use gameId or username — Performance Arena agents use different field names
+      const agentGameId=user.gameId||user.game_id||user.username||"";
+      const sessions=await sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(agentGameId)}&status=eq.pending&order=created_at.desc&limit=1`).catch(()=>[]);
       if(sessions&&sessions[0]){
         const s=sessions[0];
         await sbFetch(`coaching_sessions?id=eq.${s.id}`,{method:"PATCH",body:JSON.stringify({
@@ -797,18 +799,25 @@ function CoachingReplyCard({n, user, onDone}){
           agent_responded_at:new Date().toISOString(),
           status:"agent_responded",
         })});
-        // Notify manager
+        // Notify manager — no emoji field, use only allowed types
         if(s.manager_game_id){
           const mgStaff=await sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(s.manager_game_id)}&select=id`).catch(()=>[]);
           if(mgStaff?.[0]?.id){
-            await sbFetch("notifications",{method:"POST",body:JSON.stringify({
+            await sbFetch("notifications",{method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({
               recipient_id:mgStaff[0].id,
               title:"👔 Verificación de Coaching Session",
-              message:`El agente ${user.game_id||user.username} respondió la sesión del coach ${s.coach_game_id}. Por favor verifica.`,
-              type:"coaching_verify",emoji:"👔",is_read:false,
+              message:`El agente ${agentGameId} respondió la sesión del coach ${s.coach_game_id}. Verifica en Avisos 🔔.`,
+              type:"coaching_verify",
+              is_read:false,
             })});
+          } else {
+            console.warn("[CoachingReply] Manager staff profile not found for game_id:", s.manager_game_id);
           }
+        } else {
+          console.warn("[CoachingReply] Session has no manager_game_id:", s.id);
         }
+      } else {
+        console.warn("[CoachingReply] No pending session found for agent:", agentGameId);
       }
       // Mark notif as read
       await sbFetch(`notifications?id=eq.${n.id}`,{method:"PATCH",body:JSON.stringify({is_read:true})});
