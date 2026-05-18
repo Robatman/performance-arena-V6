@@ -1408,7 +1408,10 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
 
 // ─── STAFF COMPONENTS (unchanged) ─────────────────────────────────────────────
 function StaffDashboard({user,allStaff,metrics,points,badges,kudos,bulletin}){
-  const totalPts=(points?.points_month)||0;const totalPtsAll=(points?.points_total)||0;
+  // FIX: read points from staff_points_log (via allStaff.monthPts) — staff_points table is unused/empty
+  const meInAllStaff=(allStaff||[]).find(s=>s.id===user.id);
+  const totalPts=meInAllStaff?.monthPts||(points?.points_month)||0;
+  const totalPtsAll=totalPts; // same source — staff_points_log is cumulative
   const roleEmoji=ROLE_EMOJI[user.role]||"👤";
   const levelNames=["","Rookie","Rising Star","Performer","Elite Coach","Legend"];
   const levelColors=["","#6b7280",S.accent,S.purple,S.yellow,S.green];
@@ -1796,7 +1799,11 @@ export default function App(){
         staffDb.getBadges(su.id),staffDb.getKudos(su.id),
         staffDb.getInnovations(su.id),staffDb.getAll(),
       ]);
-      setStaffMetrics(metrics||[]);setStaffPoints((pts||[])[0]||null);
+      setStaffMetrics(metrics||[]);
+      // FIX: calculate real points from staff_points_log instead of empty staff_points table
+      const myPtsLog=await sbFetch(`staff_points_log?staff_game_id=eq.${encodeURIComponent(su.gameId)}&status=eq.approved&select=points`).catch(()=>[]);
+      const myTotalPts=(myPtsLog||[]).reduce((s,p)=>s+(p.points||0),0);
+      setStaffPoints({points_month:myTotalPts,points_total:myTotalPts});
       setStaffBadges(badges||[]);setStaffKudos(kudos||[]);
       setStaffInnovations(innovations||[]);
       if(su.role==="manager"||su.role==="superadmin"||su.role==="training_manager"){
