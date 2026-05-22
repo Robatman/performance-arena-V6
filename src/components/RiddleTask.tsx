@@ -287,7 +287,7 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
                   <span style={{color:C.muted, fontSize:12}}>{activeRiddle.week}</span>
                   <span style={{color:C.purple, fontWeight:800, fontSize:14}}>+{activeRiddle.points} pts</span>
                 </div>
-                <div style={{color:C.purple, fontWeight:800, fontSize:16, lineHeight:1.5}}>{isAdmin ? activeRiddle.question : activeRiddle.question.substring(0,60)+(activeRiddle.question.length>60?"...":"")}</div>
+                <div style={{color:C.purple, fontWeight:800, fontSize:16, lineHeight:1.5}}>{activeRiddle.question}</div>
               </div>
 
               {myAnswer ? (
