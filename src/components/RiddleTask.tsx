@@ -36,10 +36,11 @@ const inp = {
 interface Props {
   gameId: string
   isAdmin: boolean
+  defaultTab?: 'riddle' | 'task'
 }
 
-export default function RiddleTask({ gameId, isAdmin }: Props) {
-  const [tab, setTab] = useState<'riddle' | 'task'>('riddle')
+export default function RiddleTask({ gameId, isAdmin, defaultTab = 'riddle' }: Props) {
+  const [tab, setTab] = useState<'riddle' | 'task'>(defaultTab)
 
   return (
     <div style={{paddingBottom:100}}>
