@@ -788,10 +788,20 @@ function CoachingReplyCard({n, user, onDone}){
     if(q1===null||q2===null){alert("Responde ambas preguntas");return;}
     setSubmitting(true);
     try{
-      // Find the coaching session for this agent
-      // Use gameId or username — Performance Arena agents use different field names
       const agentGameId=user.gameId||user.game_id||user.username||"";
-      const sessions=await sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(agentGameId)}&status=eq.pending&order=created_at.desc&limit=1`).catch(()=>[]);
+      // Resolve the specific session using the notification sender_id (coach UUID)
+      // to avoid matching the wrong session when agent has multiple pending sessions.
+      let sessions=[];
+      if(n.sender_id){
+        const coachArr=await sbFetch(`staff_profiles?id=eq.${n.sender_id}&select=game_id`).catch(()=>[]);
+        const coachGameId=coachArr?.[0]?.game_id;
+        if(coachGameId){
+          sessions=await sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(agentGameId)}&coach_game_id=eq.${encodeURIComponent(coachGameId)}&status=eq.pending&order=created_at.desc&limit=1`).catch(()=>[]);
+        }
+      }
+      if(!sessions?.length){
+        sessions=await sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(agentGameId)}&status=eq.pending&order=created_at.desc&limit=1`).catch(()=>[]);
+      }
       if(sessions&&sessions[0]){
         const s=sessions[0];
         await sbFetch(`coaching_sessions?id=eq.${s.id}`,{method:"PATCH",body:JSON.stringify({
@@ -922,11 +932,14 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
   const equip=item=>{if(!isOwned(item.id)){toast("Compra este item primero");return;}setAv(p=>({...p,[item.type]:p[item.type]===item.id?null:item.id}));};
   const saveAv=async()=>{setSaving(true);try{await db.updateUser(user.id,{avatar_accessories:av});onUpdate({...user,avatar:av});toast("Avatar guardado!");}catch(e){toast("Error al guardar avatar");}setSaving(false);};
   const buy=async(item)=>{
-    if(coins<item.pts){toast("No tienes suficientes coins");return;}
-    const newOwned=[...(user.ownedItems||[]),item.id];
     try{
-      await db.updateUser(user.id,{owned_items:newOwned,coins:(user.coins||0)-(item.pts)});
-      onUpdate({...user,ownedItems:newOwned,coins:(user.coins||0)-(item.pts)});
+      const freshArr=await sbFetch(`profiles?id=eq.${user.id}&select=coins,owned_items`).catch(()=>null);
+      const fresh=freshArr?.[0];
+      const freshCoins=fresh?.coins??coins;
+      if(freshCoins<item.pts){toast("No tienes suficientes coins");return;}
+      const newOwned=[...(fresh?.owned_items||user.ownedItems||[]),item.id];
+      await db.updateUser(user.id,{owned_items:newOwned,coins:freshCoins-item.pts});
+      onUpdate({...user,ownedItems:newOwned,coins:freshCoins-item.pts});
       toast(`${item.label} comprado! -${item.pts} 🪙`);
     }catch(e){toast("Error al comprar item");}
   };
@@ -1056,7 +1069,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   };
 
   const [nf,setNf]=useState({toId:"all",title:"",body:""});
-  const sendNotif=async()=>{if(!nf.title.trim()||!nf.body.trim()){toast("Completa titulo y mensaje");return;}const targets=nf.toId==="all"?allUsers.filter(u=>u.active&&u.role==="user"):allUsers.filter(u=>u.id===nf.toId);try{for(const u of targets){await db.createNotif({recipient_id:u.id,sender_id:cu.id,title:nf.title,message:nf.body,type:"info"});}setNf({toId:"all",title:"",body:""});toast(`Notificacion enviada a ${targets.length} usuario(s)`);}catch(e){toast("Error");}};
+  const sendNotif=async()=>{if(!nf.title.trim()||!nf.body.trim()){toast("Completa titulo y mensaje");return;}const targets=nf.toId==="all"?allUsers.filter(u=>u.active&&u.role==="user"):allUsers.filter(u=>u.id===nf.toId);try{await Promise.all(targets.map(u=>db.createNotif({recipient_id:u.id,sender_id:cu.id,title:nf.title,message:nf.body,type:"info"})));setNf({toId:"all",title:"",body:""});toast(`Notificacion enviada a ${targets.length} usuario(s)`);}catch(e){toast("Error");}};
 
   const [pf,setPf]=useState({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1});
   const [bulletinWeek,setBulletinWeek]=useState("");
@@ -1100,9 +1113,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const resetAllCoins=async()=>{
     if(!window.confirm("¿Reiniciar coins de TODOS los agentes? Esta acción no se puede deshacer."))return;
     try{
-      for(const u of allUsers.filter(x=>x.active)){
-        await db.updateUser(u.id,{coins:0});
-      }
+      await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({coins:0}),prefer:"return=minimal"});
       await reloadUsers();toast("Coins reiniciados para todos los agentes");
     }catch(e){toast("Error al reiniciar coins");}
   };

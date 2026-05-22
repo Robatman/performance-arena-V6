@@ -145,7 +145,7 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
   async function approveAnswer(ans: any, approve: boolean) {
     try {
       if (approve) {
-        const points = activeRiddle?.points || 10
+        const points = activeRiddle?.points || 2
         await sbFetch(`agent_riddle_answers?id=eq.${ans.id}`, {
           method:"PATCH", body: JSON.stringify({ approved: true, correct: true, points_awarded: points })
         })
@@ -287,7 +287,7 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
                   <span style={{color:C.muted, fontSize:12}}>{activeRiddle.week}</span>
                   <span style={{color:C.purple, fontWeight:800, fontSize:14}}>+{activeRiddle.points} pts</span>
                 </div>
-                <div style={{color:C.purple, fontWeight:800, fontSize:16, lineHeight:1.5}}>{isSA ? activeRiddle.question : activeRiddle.question.substring(0,60)+(activeRiddle.question.length>60?"...":"")}</div>
+                <div style={{color:C.purple, fontWeight:800, fontSize:16, lineHeight:1.5}}>{isAdmin ? activeRiddle.question : activeRiddle.question.substring(0,60)+(activeRiddle.question.length>60?"...":"")}</div>
               </div>
 
               {myAnswer ? (
@@ -388,7 +388,7 @@ function TaskSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) 
     setSaving(true)
     try {
       await sbFetch("tasks", { method:"POST", body: JSON.stringify({
-        week: form.week, title: form.title, instructions: form.instructions, points: 10, active: false
+        week: form.week, title: form.title, instructions: form.instructions, points: 2, active: false
       })})
       setForm({ week:'', title:'', instructions:'' })
       showToast('✅ Task creada! Actívala desde Gestionar.')

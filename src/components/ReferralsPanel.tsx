@@ -45,12 +45,12 @@ const STATUS_CONFIG = {
 async function addCoinsToAgent(gameId: string, amount: number, reason: string) {
   // Leer coins actuales
   const profile = await sbFetch(
-    `profiles?game_id=eq.${gameId}&select=coins`
+    `profiles?game_id=eq.${encodeURIComponent(gameId)}&select=coins`
   );
   if (!profile || profile.length === 0) return;
 
   const currentCoins = profile[0].coins ?? 0;
-  await sbFetch(`profiles?game_id=eq.${gameId}`, {
+  await sbFetch(`profiles?game_id=eq.${encodeURIComponent(gameId)}`, {
     method: "PATCH",
     body: JSON.stringify({ coins: currentCoins + amount }),
   });
@@ -71,16 +71,22 @@ async function addCoinsToAgent(gameId: string, amount: number, reason: string) {
 }
 
 async function sendNotification(gameId: string, message: string) {
-  await sbFetch("notifications", {
-    method: "POST",
-    prefer: "return=minimal",
-    body: JSON.stringify({
-      game_id: gameId,
-      message,
-      read: false,
-      created_at: new Date().toISOString(),
-    }),
-  }).catch(() => {});
+  try {
+    const profiles = await sbFetch(`profiles?game_id=eq.${encodeURIComponent(gameId)}&select=id`);
+    if (!profiles || !profiles[0]) return;
+    await sbFetch("notifications", {
+      method: "POST",
+      prefer: "return=minimal",
+      body: JSON.stringify({
+        recipient_id: profiles[0].id,
+        message,
+        title: "Actualización de referido",
+        type: "referral",
+        is_read: false,
+        created_at: new Date().toISOString(),
+      }),
+    });
+  } catch {}
 }
 
 // ──────────────────────────────────────────────────────────────────────────

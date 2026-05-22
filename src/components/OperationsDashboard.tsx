@@ -79,7 +79,6 @@ export default function OperationsDashboard({ user }: { user: any }) {
   // Super Admin  → all data
   // Manager      → only their project (normalized comparison)
   // Coach        → only their agents (coach field matches staff name)
-  console.log("OpsDB user:", user?.gameId, "project:", user?.project, "role:", user?.role);
   const weekData = allMetrics.filter((m: any) => {
     if (m.week !== week) return false;
     if (isSA) return true;
@@ -174,9 +173,6 @@ export default function OperationsDashboard({ user }: { user: any }) {
           : isCoach
           ? `No se encontraron agentes con coach game_id "${user.gameId}" en la semana ${week}.`
           : "No hay datos disponibles."}
-      </p>
-      <p style={{color:Sty.muted,fontSize:11,margin:0,opacity:0.8}}>
-        Debug: gameId={user.gameId} | project={user.project} | role={user.role}
       </p>
     </div>
   );

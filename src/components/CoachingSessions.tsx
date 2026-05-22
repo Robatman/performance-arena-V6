@@ -62,7 +62,8 @@ async function tryAwardPoints(session: any, grantedBy: string) {
   const agentOk = session.agent_q1 === true && session.agent_q2 === true;
   const managerOk = session.manager_confirmed === true;
   if (!agentOk || !managerOk) return false;
-  await db.updateSession(session.id, { points_paid: true, status: "completed" });
+  // Award points before marking session paid — if addPoints fails, session stays unpaid and can be retried.
+  // addPoints has a reference_id duplicate guard so re-runs are safe.
   await db.addPoints({
     staff_game_id: session.coach_game_id,
     points: POINTS_PER_SESSION,
@@ -80,6 +81,7 @@ async function tryAwardPoints(session: any, grantedBy: string) {
     const cur = coachStaff[0].coins || 0;
     await db.updateStaffCoins(session.coach_game_id, cur + POINTS_PER_SESSION);
   }
+  await db.updateSession(session.id, { points_paid: true, status: "completed" });
   return true;
 }
 
@@ -853,12 +855,13 @@ export function PointsBreakdownView() {
         // AGENT breakdown
         setPersonType("agent");
         const agent = agentProf[0];
-        const [metrics, riddles, tasks] = await Promise.all([
+        const [metrics, riddles, tasks, referrals] = await Promise.all([
           sbFetch(`weekly_metrics?game_id=eq.${encodeURIComponent(gameId.trim())}&select=*&order=week.asc`).catch(()=>[]),
           sbFetch(`agent_riddle_answers?game_id=eq.${encodeURIComponent(gameId.trim())}&select=*`).catch(()=>[]),
           sbFetch(`agent_task_submissions?game_id=eq.${encodeURIComponent(gameId.trim())}&select=*`).catch(()=>[]),
+          sbFetch(`referrals?referred_by_game_id=eq.${encodeURIComponent(gameId.trim())}&select=pts_awarded`).catch(()=>[]),
         ]);
-        setResult({ agent, metrics: metrics||[], riddles: riddles||[], tasks: tasks||[] });
+        setResult({ agent, metrics: metrics||[], riddles: riddles||[], tasks: tasks||[], referrals: referrals||[] });
       } else if (staffProf && staffProf.length > 0) {
         // STAFF breakdown
         setPersonType("staff");
@@ -885,15 +888,16 @@ export function PointsBreakdownView() {
 
   // ── Agent breakdown render ────────────────────────────────────────────────
   const renderAgent = () => {
-    const { agent, metrics, riddles, tasks } = result;
+    const { agent, metrics, riddles, tasks, referrals } = result;
     const approvedRiddles = riddles.filter(r=>r.status==="approved");
     const approvedTasks = tasks.filter(t=>t.status==="approved");
     const kpiScore = metrics.reduce((s,w)=>(s+(w.qa_pts||0)+(w.aht_pts||0)+(w.attendance_pts||0)),0);
     const riddleScore = approvedRiddles.length * 2;
     const taskScore = approvedTasks.length * 2;
     const kudosCoins = (agent.kudos||0)*1 + (agent.gold_kudos||0)*5;
+    const refCoins = (referrals||[]).reduce((s:number,r:any)=>s+(r.pts_awarded||0),0);
     const totalScore = kpiScore + riddleScore + taskScore;
-    const totalCoins = totalScore + kudosCoins;
+    const totalCoins = totalScore + kudosCoins + refCoins;
 
     return (
       <div>
@@ -929,6 +933,7 @@ export function PointsBreakdownView() {
             {icon:"🧠",label:"Riddles aprobados",val:riddleScore,color:S.purple,desc:`${approvedRiddles.length} riddles × 2pts`},
             {icon:"📋",label:"Tasks aprobadas",val:taskScore,color:"#f97316",desc:`${approvedTasks.length} tasks × 2pts`},
             {icon:"👏",label:"Kudos (coins extra)",val:kudosCoins,color:"#fbbf24",desc:`${agent.kudos||0} regular + ${agent.gold_kudos||0} gold`},
+            {icon:"👥",label:"Referidos",val:refCoins,color:"#34d399",desc:`${(referrals||[]).length} referido(s) · ${refCoins} coins`},
           ].map(r=>(
             <div key={r.label} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${S.border}`}}>
               <span style={{fontSize:18,width:24}}>{r.icon}</span>
@@ -1081,7 +1086,7 @@ export function PointsBreakdownView() {
                   </div>
                   <div style={{display:"flex",gap:4,alignItems:"center"}}>
                     <STag color={meta.color}>{s.status}</STag>
-                    {s.points_paid&&<STag color={S.green}>+10pts</STag>}
+                    {s.points_paid&&<STag color={S.green}>+{POINTS_PER_SESSION}pts</STag>}
                   </div>
                 </div>
               );

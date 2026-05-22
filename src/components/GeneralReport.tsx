@@ -184,11 +184,21 @@ function AIInsightsPanel({
     setAnswer("");
     const prompt = buildInsightPrompt(agentSummaries, projectSummaries, coachSummaries, weekLabel, projectLabel, q);
     try {
+      const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY as string | undefined;
+      if (!apiKey) {
+        setAnswer("Configura VITE_ANTHROPIC_API_KEY en tu .env para habilitar el análisis IA.");
+        setAiLoading(false);
+        return;
+      }
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-5",
           max_tokens: 1000,
           messages: [{ role: "user", content: prompt }],
         }),
@@ -346,9 +356,11 @@ export default function GeneralReport() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const data: any[] = await sbFetch("weekly_metrics?select=*&order=week.desc,total_pts.desc").catch(()=>[]);
-      const kudos: any[] = await sbFetch("kudos_log?select=*&order=created_at.desc&limit=500").catch(()=>[]);
-      const refs: any[] = await sbFetch("referrals?select=*&order=submitted_at.desc&limit=500").catch(()=>[]);
+      const [data, kudos, refs] = await Promise.all([
+        sbFetch("weekly_metrics?select=*&order=week.desc,total_pts.desc").catch(()=>[]),
+        sbFetch("kudos_log?select=*&order=created_at.desc&limit=500").catch(()=>[]),
+        sbFetch("referrals?select=*&order=submitted_at.desc&limit=500").catch(()=>[]),
+      ]);
       const enriched = (data||[]).map((m: any) => ({ ...m, username: m.username || m.game_id }));
       setMetrics(enriched);
       setWeeks([...new Set(enriched.map((m: any) => m.week))].sort().reverse() as string[]);

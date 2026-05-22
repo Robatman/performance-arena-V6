@@ -107,47 +107,49 @@ function StoreView({ user, staffProfile, onCoinsUpdate }) {
     setLoading(true);
     const gid = user?.gameId || user?.game_id || user?.username || "";
     try {
-      const r = await db.getRewards().catch(()=>[]);
+      const [r, red, log] = await Promise.all([
+        db.getRewards().catch(()=>[]),
+        gid ? db.getMyRedemptions(gid).catch(()=>[]) : Promise.resolve([]),
+        gid ? db.getPointsLog(gid).catch(()=>[]) : Promise.resolve([]),
+      ]);
       setRewards(r||[]);
-      if(gid){
-        const [red, log] = await Promise.all([
-          db.getMyRedemptions(gid).catch(()=>[]),
-          db.getPointsLog(gid).catch(()=>[]),
-        ]);
-        setMyR(red||[]);
-        setLog(log||[]);
-      }
+      setMyR(red||[]);
+      setLog(log||[]);
     } catch(e){}
     setLoading(false);
   };
 
   const redeem = async (reward:any) => {
     const cost = reward.coins_cost;
-    if (coins < cost) { showToast("No tienes suficientes coins"); return; }
     try {
-      // Deduct coins
-      const newCoins = coins - cost;
-      await db.updateCoins(staffProfile.id, newCoins);
-      // Create redemption
-      await db.createRedemption({
-        staff_game_id: user.gameId,
-        reward_id: reward.id,
-        reward_name: reward.name,
-        coins_spent: cost,
-        status: "pending",
-      });
-      // Log negative transaction
-      await db.addPointsLog({
-        staff_game_id: user.gameId,
-        points: -cost,
-        source: "store_purchase",
-        description: `Canjeó: ${reward.name}`,
-        status: "approved",
-      });
-      // Update stock
-      if ((reward.stock||0) < 999) {
-        await db.updateReward(reward.id, { stock: Math.max(0, (reward.stock||0)-1) });
-      }
+      // Read fresh balance to prevent stale-prop double-spend
+      const gid = user?.gameId || user?.game_id || "";
+      const freshArr = await db.getStaffByGameId(gid).catch(()=>null);
+      const fresh = freshArr?.[0];
+      if (!fresh) { showToast("Error al leer tu balance"); return; }
+      const freshCoins = fresh.coins ?? 0;
+      if (freshCoins < cost) { showToast("No tienes suficientes coins"); return; }
+      const newCoins = freshCoins - cost;
+      await db.updateCoins(fresh.id, newCoins);
+      await Promise.all([
+        db.createRedemption({
+          staff_game_id: user.gameId,
+          reward_id: reward.id,
+          reward_name: reward.name,
+          coins_spent: cost,
+          status: "pending",
+        }),
+        db.addPointsLog({
+          staff_game_id: user.gameId,
+          points: -cost,
+          source: "store_purchase",
+          description: `Canjeó: ${reward.name}`,
+          status: "approved",
+        }),
+        (reward.stock||0) < 999
+          ? db.updateReward(reward.id, { stock: Math.max(0, (reward.stock||0)-1) })
+          : Promise.resolve(),
+      ]);
       onCoinsUpdate(newCoins);
       showToast(`✅ ${reward.name} canjeado! Pendiente de aprobación.`);
       await load();

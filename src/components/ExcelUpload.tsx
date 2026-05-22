@@ -329,15 +329,15 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
 
     // Update coach_id and qa_coach in agent profiles
     setProgressMsg("Actualizando perfiles...");
-    for (const a of agents.filter(x=>x.review_reason!=="termination")) {
-      try {
-        await dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, {
+    await Promise.all(
+      agents.filter(x=>x.review_reason!=="termination").map(a =>
+        dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, {
           team: a.project,
           coach_id: a.coach_id||null,
           qa_coach: a.qcoach||null,
-        });
-      } catch(e:any) { /* ignore */ }
-    }
+        }).catch(()=>{})
+      )
+    );
 
     setProgressMsg("Actualizando coaches...");
     for (const c of coaches) {
@@ -630,7 +630,8 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                   <thead><tr>{["Game ID","Posición","Manager","Attrition","Impacto"].map(h=><th key={h} style={{background:"#0c2240",color:"#93c5fd",fontWeight:600,padding:"7px 8px",textAlign:"left"}}>{h}</th>)}</tr></thead>
                   <tbody>{coaches.map((c,i)=>{
-                    const imp=c.attrition===0?"+10":c.attrition===1?"+2":c.attrition===2?"0":"-5";
+                    const attrPts=c.attrition===0?5:c.attrition===1?2:c.attrition===2?0:-(c.attrition-2)*3;
+                    const imp=attrPts>0?`+${attrPts}`:String(attrPts);
                     const col=c.attrition===0?"#16a34a":c.attrition===1?"#d97706":c.attrition===2?"#6b7280":"#dc2626";
                     return(<tr key={i} style={{background:i%2===0?"#0f172a":"#0c1a2e"}}>
                       <td style={{padding:"6px 8px",color:"#e2e8f0",fontWeight:600}}>{c.game_id}</td>
