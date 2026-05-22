@@ -1401,7 +1401,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
           })}
         </div>
       )}
-      {tab==="referrals"&&<ReferralsPanel isAdmin={true}/>}
+      {tab==="referrals"&&<ReferralsPanel isAdmin={true} currentUser={{game_id:cu.game_id||cu.username||"",username:cu.username||cu.name||""}}/>}
     </div>
   );
 }
@@ -1954,7 +1954,7 @@ export default function App(){
           toast(`${p.name} canjeado! -${cost} 🪙`);
         }catch(e){toast("Error al canjear");}
       }}/>}
-      {screen==="referrals"&&<ReferralsPanel isAdmin={false}/>}
+      {screen==="referrals"&&<ReferralsPanel isAdmin={false} currentUser={{game_id:cu.game_id||cu.username||"",username:cu.username||cu.name||""}}/>}
       {screen==="report"&&isSA&&<GeneralReport/>}
       {screen==="info"&&<Info/>}
       {screen==="notifs"&&<Notifs user={cu} notifs={notifs} onMarkRead={markNotifRead} onMarkAll={markAllRead} onRefresh={()=>loadNotifs(cu.id)}/>}
