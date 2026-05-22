@@ -123,8 +123,8 @@ export default function ReferralsPanel({
     try {
       // Admin ve todos; agente solo los suyos
       const filter = isAdmin
-        ? "referrals?select=*,profiles!referrals_referred_by_game_id_fkey(username)&order=submitted_at.desc"
-        : `referrals?referred_by_game_id=eq.${currentGameId}&select=*,profiles!referrals_referred_by_game_id_fkey(username)&order=submitted_at.desc`;
+        ? "referrals?select=*&order=submitted_at.desc"
+        : `referrals?referred_by_game_id=eq.${currentGameId}&select=*&order=submitted_at.desc`;
 
       const data = await sbFetch(filter);
       setReferrals(
