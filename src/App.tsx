@@ -82,6 +82,7 @@ const staffDb = {
   createKudo: (d) => sbFetch("staff_kudos", { method: "POST", body: JSON.stringify(d) }),
   updateKudo: (id, d) => sbFetch(`staff_kudos?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(d) }),
   getInnovations: (id) => sbFetch(`staff_innovation_submissions?staff_id=eq.${id}&order=created_at.desc`),
+  getAllInnovations: () => sbFetch(`staff_innovation_submissions?order=created_at.desc`),
   createInnovation: (d) => sbFetch("staff_innovation_submissions", { method: "POST", body: JSON.stringify(d) }),
   updateInnovation: (id, d) => sbFetch(`staff_innovation_submissions?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(d) }),
   getMetrics: (role, id) => {
@@ -1805,10 +1806,12 @@ export default function App(){
 
   const loadStaffData=async(su)=>{
     try{
+      const canReviewAll=su.role==="manager"||su.role==="training_manager"||su.role==="superadmin";
       const [metrics,pts,badges,kudos,innovations,allS]=await Promise.all([
         staffDb.getMetrics(su.role,su.id),staffDb.getPoints(su.id),
         staffDb.getBadges(su.id),staffDb.getKudos(su.id),
-        staffDb.getInnovations(su.id),staffDb.getAll(),
+        canReviewAll ? staffDb.getAllInnovations() : staffDb.getInnovations(su.id),
+        staffDb.getAll(),
       ]);
       setStaffMetrics(metrics||[]);
       // FIX: calculate real points from staff_points_log instead of empty staff_points table
@@ -1908,8 +1911,8 @@ export default function App(){
           onApproveKudo={async(id,approved)=>{try{await staffDb.updateKudo(id,{status:approved?"approved":"rejected",approved_by:cu.id,approved_at:new Date().toISOString()});if(approved){const kudo=pendingKudos.find(k=>k.id===id);if(kudo?.recipient_id){const profRes=await sbFetch(`staff_profiles?id=eq.${kudo.recipient_id}&select=coins`).catch(()=>[]);const current=profRes?.[0]?.coins||0;await sbFetch(`staff_profiles?id=eq.${kudo.recipient_id}`,{method:"PATCH",body:JSON.stringify({coins:current+(kudo.points_awarded||1)})});}}const allPending=await staffDb.getAllPendingKudos();setPendingKudos(allPending||[]);const k=await staffDb.getKudos(cu.id);setStaffKudos(k||[]);toast(approved?"Approved! Coins updated":"Rejected");}catch(e){toast("Error: "+e.message);}}}
         />)}
         {screen==="innovation"&&<StaffInnovation user={cu} innovations={staffInnovations} isSuperAdmin={cu?.role==="superadmin"}
-          onSubmit={async d=>{try{await staffDb.createInnovation(d);const i=await staffDb.getInnovations(cu.id);setStaffInnovations(i||[]);toast("Submitted!");}catch(e){toast("Error");}}}
-          onApprove={async(id,approved,notes)=>{try{await staffDb.updateInnovation(id,{status:approved?"approved":"rejected",reviewed_by:cu.id,review_notes:notes,reviewed_at:new Date().toISOString()});const i=await staffDb.getInnovations(cu.id);setStaffInnovations(i||[]);toast(approved?"Approved!":"Rejected");}catch(e){toast("Error");}}}
+          onSubmit={async d=>{try{await staffDb.createInnovation(d);const canReviewAll=cu.role==="manager"||cu.role==="training_manager"||cu.role==="superadmin";const i=await(canReviewAll?staffDb.getAllInnovations():staffDb.getInnovations(cu.id));setStaffInnovations(i||[]);toast("Submitted!");}catch(e){toast("Error");}}}
+          onApprove={async(id,approved,notes)=>{try{await staffDb.updateInnovation(id,{status:approved?"approved":"rejected",reviewed_by:cu.id,review_notes:notes,reviewed_at:new Date().toISOString()});const canReviewAll=cu.role==="manager"||cu.role==="training_manager"||cu.role==="superadmin";const i=await(canReviewAll?staffDb.getAllInnovations():staffDb.getInnovations(cu.id));setStaffInnovations(i||[]);toast(approved?"Approved!":"Rejected");}catch(e){toast("Error");}}}
         />}
         {screen==="sessions"&&<CoachingSessions user={cu} staffProfile={allStaff.find(s=>s.id===cu?.id)||cu}/>}
         {screen==="staffnotifs"&&<StaffNotifs user={cu} notifs={staffNotifs} allStaff={allStaff} onRefresh={()=>loadStaffNotifs(cu.id)}/>}
