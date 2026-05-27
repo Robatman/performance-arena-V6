@@ -545,6 +545,7 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
 
 function Leaderboard({user,allUsers,shop,weeklyMetricsAll}){
   const [lbSearch,setLbSearch]=useState("");
+  const [levelFilter,setLevelFilter]=useState(null);
   const [rankings,setRankings]=useState([]);
   const [loading,setLoading]=useState(true);
   const medals=["🥇","🥈","🥉"];
@@ -580,11 +581,16 @@ function Leaderboard({user,allUsers,shop,weeklyMetricsAll}){
         <div style={{color:"#fff",fontWeight:800,fontSize:20}}>LEADERBOARD</div>
         <div style={{color:"rgba(255,255,255,0.55)",fontSize:12}}>Score del mes (KPI + Riddles + Tasks)</div>
       </Card>
-      <div style={{marginBottom:12}}>
+      <div style={{marginBottom:8}}>
         <input value={lbSearch} onChange={e=>setLbSearch(e.target.value)} placeholder="🔍 Buscar agente..." style={{width:"100%",border:`1.5px solid ${C.border}`,borderRadius:10,padding:"9px 14px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
       </div>
+      <div style={{display:"flex",gap:6,marginBottom:12,overflowX:"auto"}}>
+        {[{v:null,label:"Todos"},{v:1,label:"Nivel 1"},{v:2,label:"Nivel 2"},{v:3,label:"Nivel 3"},{v:4,label:"Nivel 4"}].map(opt=>(
+          <button key={String(opt.v)} onClick={()=>setLevelFilter(opt.v)} style={{padding:"6px 14px",borderRadius:8,border:`1.5px solid ${levelFilter===opt.v?C.blue:C.border}`,background:levelFilter===opt.v?`${C.blue}12`:C.card,color:levelFilter===opt.v?C.blue:C.muted,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{opt.label}</button>
+        ))}
+      </div>
       {loading&&<div style={{textAlign:"center",padding:40,color:C.muted}}>Cargando ranking...</div>}
-      {!loading&&rankings.filter(r=>!lbSearch||r.game_id.toLowerCase().includes(lbSearch.toLowerCase())||(r.profile?.username||"").toLowerCase().includes(lbSearch.toLowerCase())).map((r,i)=>{
+      {!loading&&rankings.filter(r=>(!lbSearch||(r.game_id.toLowerCase().includes(lbSearch.toLowerCase())||(r.profile?.username||"").toLowerCase().includes(lbSearch.toLowerCase())))&&(!levelFilter||r.profile?.level===levelFilter)).map((r,i)=>{
         const u=r.profile;
         const isMe=u?.game_id===user.game_id;
         return(
@@ -797,38 +803,57 @@ function CoachingReplyCard({n, user, onDone}){
         const coachArr=await sbFetch(`staff_profiles?id=eq.${n.sender_id}&select=game_id`).catch(()=>[]);
         const coachGameId=coachArr?.[0]?.game_id;
         if(coachGameId){
-          sessions=await sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(agentGameId)}&coach_game_id=eq.${encodeURIComponent(coachGameId)}&status=eq.pending&order=created_at.desc&limit=1`).catch(()=>[]);
+          sessions=await sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(agentGameId)}&coach_game_id=eq.${encodeURIComponent(coachGameId)}&status=in.(pending,manager_responded)&order=created_at.desc&limit=1`).catch(()=>[]);
         }
       }
       if(!sessions?.length){
-        sessions=await sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(agentGameId)}&status=eq.pending&order=created_at.desc&limit=1`).catch(()=>[]);
+        sessions=await sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(agentGameId)}&status=in.(pending,manager_responded)&order=created_at.desc&limit=1`).catch(()=>[]);
       }
       if(sessions&&sessions[0]){
         const s=sessions[0];
+        // If manager already confirmed, completing now awards points immediately
+        const bothConfirmed=s.manager_confirmed===true&&q1===true&&q2===true;
         await sbFetch(`coaching_sessions?id=eq.${s.id}`,{method:"PATCH",body:JSON.stringify({
           agent_q1:q1===true,agent_q2:q2===true,
           agent_responded_at:new Date().toISOString(),
-          status:"agent_responded",
+          status:bothConfirmed?"completed":"agent_responded",
+          ...(bothConfirmed?{points_paid:true}:{}),
         })});
-        // Notify manager — no emoji field, use only allowed types
-        if(s.manager_game_id){
+        if(bothConfirmed){
+          // Award points to coach
+          try{
+            const coachStaff=await sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(s.coach_game_id)}&select=id,coins`).catch(()=>[]);
+            if(coachStaff?.[0]){
+              await sbFetch("staff_points_log",{method:"POST",prefer:"return=minimal",body:JSON.stringify({
+                staff_game_id:s.coach_game_id,points:10,source:"coaching_session",
+                week:s.week||"",description:`Coaching session completada con ${agentGameId}`,
+                status:"approved",reference_id:s.id,created_at:new Date().toISOString(),
+              })});
+              const logRes=await sbFetch(`staff_points_log?staff_game_id=eq.${encodeURIComponent(s.coach_game_id)}&status=eq.approved&select=points`).catch(()=>[]);
+              const total=(logRes||[]).reduce((acc,r)=>acc+(r.points||0),0);
+              await sbFetch(`staff_profiles?id=eq.${coachStaff[0].id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({coins:total})});
+              await sbFetch("notifications",{method:"POST",prefer:"return=minimal",body:JSON.stringify({
+                recipient_id:coachStaff[0].id,
+                title:"⭐ Coaching Session completada",
+                message:`El agente ${agentGameId} confirmó tu sesión. +10 pts acreditados 🎉`,
+                type:"coaching_complete",is_read:false,
+              })});
+            }
+          }catch(e){console.error("[CoachingReply] points award error:",e);}
+        } else if(s.manager_game_id){
+          // Notify manager that agent responded (session not yet complete)
           const mgStaff=await sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(s.manager_game_id)}&select=id`).catch(()=>[]);
           if(mgStaff?.[0]?.id){
             await sbFetch("notifications",{method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({
               recipient_id:mgStaff[0].id,
               title:"👔 Verificación de Coaching Session",
               message:`El agente ${agentGameId} respondió la sesión del coach ${s.coach_game_id}. Verifica en Avisos 🔔.`,
-              type:"coaching_verify",
-              is_read:false,
+              type:"coaching_verify",is_read:false,
             })});
-          } else {
-            console.warn("[CoachingReply] Manager staff profile not found for game_id:", s.manager_game_id);
           }
-        } else {
-          console.warn("[CoachingReply] Session has no manager_game_id:", s.id);
         }
       } else {
-        console.warn("[CoachingReply] No pending session found for agent:", agentGameId);
+        console.warn("[CoachingReply] No unanswered session found for agent:", agentGameId);
       }
       // Mark notif as read
       await sbFetch(`notifications?id=eq.${n.id}`,{method:"PATCH",body:JSON.stringify({is_read:true})});
@@ -936,7 +961,7 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
     try{
       const freshArr=await sbFetch(`profiles?id=eq.${user.id}&select=coins,owned_items`).catch(()=>null);
       const fresh=freshArr?.[0];
-      const freshCoins=fresh?.coins??coins;
+      const freshCoins=fresh?.coins||coins;
       if(freshCoins<item.pts){toast("No tienes suficientes coins");return;}
       const newOwned=[...(fresh?.owned_items||user.ownedItems||[]),item.id];
       await db.updateUser(user.id,{owned_items:newOwned,coins:freshCoins-item.pts});
@@ -1476,37 +1501,46 @@ function StaffNotifs({user, notifs, allStaff, onRefresh}){
 
   const verifySession=async(n)=>{
     try{
-      // Find the session to verify
-      const sessions=await sbFetch(`coaching_sessions?status=eq.agent_responded&manager_game_id=eq.${encodeURIComponent(user.gameId)}&order=created_at.desc&limit=10`).catch(()=>[]);
+      // Pull all agent_responded sessions for this manager, then pick the best match
+      const sessions=await sbFetch(`coaching_sessions?status=eq.agent_responded&manager_game_id=eq.${encodeURIComponent(user.gameId)}&order=created_at.desc&limit=20`).catch(()=>[]);
       if(sessions&&sessions.length>0){
-        // Find session matching this notif (by coach_game_id in message)
-        const session=sessions[0];
-        await sbFetch(`coaching_sessions?id=eq.${session.id}`,{method:"PATCH",body:JSON.stringify({
+        // Try to match session by agent/coach IDs mentioned in the notification message
+        const msg=n.message||"";
+        let session=sessions.find(s=>msg.includes(s.agent_game_id)&&msg.includes(s.coach_game_id))||sessions[0];
+        await sbFetch(`coaching_sessions?id=eq.${session.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({
           manager_confirmed:true,
           manager_responded_at:new Date().toISOString(),
           status:"completed",
         })});
-        // Award points to coach
+        // Award points to coach (duplicate-safe via reference_id)
         const coachStaff=await sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(session.coach_game_id)}&select=id,coins`).catch(()=>[]);
         if(coachStaff?.[0]){
-          // Insert points log
-          await sbFetch("staff_points_log",{method:"POST",body:JSON.stringify({
-            staff_game_id:session.coach_game_id,
-            points:10,source:"coaching_session",
-            week:session.week||"",
-            description:`Coaching session completada con ${session.agent_game_id}`,
-            status:"approved",
-          })});
-          // Sync coins
+          const existing=await sbFetch(`staff_points_log?reference_id=eq.${session.id}&source=eq.coaching_session`).catch(()=>[]);
+          if(!existing?.length){
+            await sbFetch("staff_points_log",{method:"POST",prefer:"return=minimal",body:JSON.stringify({
+              staff_game_id:session.coach_game_id,points:10,source:"coaching_session",
+              week:session.week||"",description:`Coaching session completada con ${session.agent_game_id}`,
+              status:"approved",reference_id:session.id,created_at:new Date().toISOString(),
+            })});
+          }
           const logRes=await sbFetch(`staff_points_log?staff_game_id=eq.${encodeURIComponent(session.coach_game_id)}&status=eq.approved&select=points`).catch(()=>[]);
           const total=(logRes||[]).reduce((s,r)=>s+(r.points||0),0);
-          await sbFetch(`staff_profiles?id=eq.${coachStaff[0].id}`,{method:"PATCH",body:JSON.stringify({coins:total})});
-          // Notify coach
-          await sbFetch("notifications",{method:"POST",body:JSON.stringify({
+          await sbFetch(`staff_profiles?id=eq.${coachStaff[0].id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({coins:total})});
+          await sbFetch("notifications",{method:"POST",prefer:"return=minimal",body:JSON.stringify({
             recipient_id:coachStaff[0].id,
             title:"⭐ Coaching Session verificada",
             message:`Tu sesión con ${session.agent_game_id} fue verificada. +10 puntos acreditados.`,
             type:"coaching_complete",emoji:"⭐",is_read:false,
+          })});
+        }
+        // Also notify the agent that the session was completed
+        const agentProfile=await sbFetch(`profiles?game_id=eq.${encodeURIComponent(session.agent_game_id)}&select=id`).catch(()=>[]);
+        if(agentProfile?.[0]?.id){
+          await sbFetch("notifications",{method:"POST",prefer:"return=minimal",body:JSON.stringify({
+            recipient_id:agentProfile[0].id,
+            title:"✅ Sesión de Coaching completada",
+            message:`Tu coaching session con ${session.coach_game_id} fue verificada y completada. ¡Buen trabajo! 🎉`,
+            type:"coaching_complete",is_read:false,
           })});
         }
       }
@@ -1559,7 +1593,7 @@ function StaffNotifs({user, notifs, allStaff, onRefresh}){
 
 function StaffLeaderboard({user,allStaff}){const peers=allStaff.filter(u=>u.active);const sorted=[...peers].sort((a,b)=>(b.monthPts||0)-(a.monthPts||0));const medals=["🥇","🥈","🥉"];return(<div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}><SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none",textAlign:"center"}}><div style={{fontSize:34}}>🏆</div><div style={{color:S.text,fontWeight:800,fontSize:20}}>LEADERBOARD</div><div style={{color:S.muted,fontSize:12}}>{STAFF_ROLES[user.role]} · {user.project}</div></SCard>{sorted.length===0&&<SCard style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>👥</div><div style={{color:S.muted}}>No peers found.</div></SCard>}{sorted.map((u,i)=>{const isMe=u.id===user.id;const pts=u.monthPts||0;return(<div key={u.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:8,borderRadius:14,background:isMe?`${S.accent}18`:S.bgCard,border:`1px solid ${isMe?S.accent:S.border}`}}><div style={{width:30,textAlign:"center",fontWeight:900,color:i<3?"#f59e0b":S.muted,fontSize:i<3?20:14}}>{i<3?medals[i]:`#${i+1}`}</div><div style={{width:44,height:44,borderRadius:"50%",background:`${S.accent}22`,border:`1px solid ${S.accent}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{ROLE_EMOJI[u.role]||"👤"}</div><div style={{flex:1}}><div style={{color:S.text,fontWeight:700,fontSize:14}}>{u.name}{isMe&&<span style={{color:S.accent,fontSize:11}}> · YOU</span>}</div><div style={{color:S.muted,fontSize:11}}>{u.project}</div></div><div style={{textAlign:"right"}}><div style={{color:S.accent,fontWeight:900,fontSize:19}}>{pts}</div><div style={{color:S.muted,fontSize:11}}>pts</div></div></div>);})}</div>);}
 
-function StaffInnovation({user,innovations,onSubmit,onApprove,isSuperAdmin}){const [tab,setTab]=useState("my");const [form,setForm]=useState({category:"process_improvement",title:"",description:"",tool_used:""});const [submitting,setSubmitting]=useState(false);const myInnovations=(innovations||[]).filter(i=>i.staff_id===user.id);const pending=(innovations||[]).filter(i=>i.status==="pending");const isManager=user.role==="manager"||user.role==="training_manager"||isSuperAdmin;const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};const submit=async()=>{if(!form.title.trim()||!form.description.trim())return;setSubmitting(true);const cat=INNOVATION_CATS[form.category];await onSubmit({...form,staff_id:user.id,status:"pending",points_awarded:cat.pts,week_reference:new Date().toISOString().split("T")[0]});setForm({category:"process_improvement",title:"",description:"",tool_used:""});setSubmitting(false);};const tabs=[{id:"my",label:"My Submissions",show:true},{id:"submit",label:"+ Submit",show:true},{id:"pending",label:`Pending (${pending.length})`,show:isManager}];return(<div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}><SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}><div style={{fontSize:32}}>🚀</div><div style={{color:S.text,fontWeight:800,fontSize:18}}>Innovation & AI Projects</div><div style={{color:S.muted,fontSize:12,marginTop:4}}>Submit projects to earn bonus points</div></SCard><div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>{tabs.filter(t=>t.show).map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",borderRadius:9,border:`1px solid ${tab===t.id?S.accent:S.border}`,background:tab===t.id?`${S.accent}22`:S.bgCard,color:tab===t.id?S.accent:S.muted,fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{t.label}</button>)}</div>{tab==="my"&&(<div>{myInnovations.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>💡</div><div style={{color:S.muted}}>No submissions yet.</div></SCard>}{myInnovations.map((inn,i)=>{const cat=INNOVATION_CATS[inn.category]||{};return(<SCard key={i} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}><div style={{display:"flex",gap:8,alignItems:"center"}}><div style={{fontSize:22}}>{cat.emoji||"💡"}</div><div><div style={{color:S.text,fontWeight:700}}>{inn.title}</div><div style={{color:S.muted,fontSize:11}}>{cat.label}</div></div></div><div style={{padding:"3px 10px",borderRadius:20,background:inn.status==="approved"?`${S.green}22`:inn.status==="rejected"?`${S.red}22`:`${S.yellow}22`,color:inn.status==="approved"?S.green:inn.status==="rejected"?S.red:S.yellow,fontSize:11,fontWeight:700}}>{inn.status.toUpperCase()}</div></div>{inn.status==="approved"&&<div style={{color:S.green,fontWeight:700,fontSize:13}}>+{inn.points_awarded} pts earned</div>}</SCard>);})}</div>)}{tab==="submit"&&(<SCard><div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:14}}>NEW SUBMISSION</div><div style={{marginBottom:12}}><div style={{color:S.muted,fontSize:11,marginBottom:5}}>CATEGORY</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{Object.entries(INNOVATION_CATS).filter(([k,v])=>!v.adminOnly||isSuperAdmin).map(([k,v])=>(<div key={k} onClick={()=>setForm(p=>({...p,category:k}))} style={{padding:10,borderRadius:9,border:`1.5px solid ${form.category===k?S.accent:S.border}`,background:form.category===k?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:20}}>{v.emoji}</div><div style={{color:S.text,fontSize:11,fontWeight:700,marginTop:3}}>{v.label}</div><div style={{color:S.accent,fontSize:10}}>+{v.pts} pts</div></div>))}</div></div><div style={{marginBottom:10}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TITLE</div><input value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} style={inp} placeholder="Project name"/></div><div style={{marginBottom:10}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>DESCRIPTION</div><textarea value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} rows={4} style={{...inp,resize:"vertical"}} placeholder="Describe what you did..."/></div>{(form.category==="ai_project"||form.category==="process_improvement")&&(<div style={{marginBottom:14}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TOOL USED</div><input value={form.tool_used} onChange={e=>setForm(p=>({...p,tool_used:e.target.value}))} style={inp} placeholder="e.g. ChatGPT, Claude..."/></div>)}<SBtn onClick={submit} disabled={submitting||!form.title.trim()||!form.description.trim()} style={{width:"100%",padding:11}}>{submitting?"Submitting...":"SUBMIT"}</SBtn></SCard>)}{tab==="pending"&&isManager&&(<div>{pending.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>✅</div><div style={{color:S.muted}}>No pending.</div></SCard>}{pending.map((inn,i)=>{const cat=INNOVATION_CATS[inn.category]||{};const canApprove=inn.category==="ai_project"?isSuperAdmin:true;return(<SCard key={i} style={{marginBottom:12}}><div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}><div style={{fontSize:22}}>{cat.emoji||"💡"}</div><div><div style={{color:S.text,fontWeight:700}}>{inn.title}</div><div style={{color:S.muted,fontSize:11}}>{cat.label} · +{inn.points_awarded} pts</div></div></div><div style={{color:S.muted,fontSize:12,marginBottom:8}}>{inn.description}</div>{!canApprove&&<div style={{color:S.yellow,fontSize:12,padding:"8px 12px",background:`${S.yellow}18`,borderRadius:8,marginBottom:8}}>⚠️ Only Super Admin can approve AI Projects</div>}{canApprove&&(<div style={{display:"flex",gap:8}}><SBtn onClick={()=>onApprove(inn.id,true,"")} color={S.green} style={{flex:1}}>✓ Approve</SBtn><SBtn onClick={()=>onApprove(inn.id,false,"Not meeting criteria")} color={S.red} style={{flex:1}}>✗ Reject</SBtn></div>)}</SCard>);})}</div>)}</div>);}
+function StaffInnovation({user,innovations,onSubmit,onApprove,isSuperAdmin}){const [tab,setTab]=useState("my");const [form,setForm]=useState({category:"process_improvement",title:"",description:"",tool_used:""});const [submitting,setSubmitting]=useState(false);const myInnovations=(innovations||[]).filter(i=>i.staff_id===user.id);const pending=(innovations||[]).filter(i=>i.status==="pending");const reviewed=(innovations||[]).filter(i=>i.status!=="pending");const isManager=user.role==="manager"||user.role==="training_manager"||isSuperAdmin;const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};const submit=async()=>{if(!form.title.trim()||!form.description.trim())return;setSubmitting(true);const cat=INNOVATION_CATS[form.category];await onSubmit({...form,staff_id:user.id,status:"pending",points_awarded:cat.pts,week_reference:new Date().toISOString().split("T")[0]});setForm({category:"process_improvement",title:"",description:"",tool_used:""});setSubmitting(false);};const tabs=[{id:"my",label:"My Submissions",show:true},{id:"submit",label:"+ Submit",show:true},{id:"pending",label:`Pending (${pending.length})`,show:isManager},{id:"history",label:`📜 History (${reviewed.length})`,show:isManager}];return(<div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}><SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}><div style={{fontSize:32}}>🚀</div><div style={{color:S.text,fontWeight:800,fontSize:18}}>Innovation & AI Projects</div><div style={{color:S.muted,fontSize:12,marginTop:4}}>Submit projects to earn bonus points</div></SCard><div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>{tabs.filter(t=>t.show).map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",borderRadius:9,border:`1px solid ${tab===t.id?S.accent:S.border}`,background:tab===t.id?`${S.accent}22`:S.bgCard,color:tab===t.id?S.accent:S.muted,fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{t.label}</button>)}</div>{tab==="my"&&(<div>{myInnovations.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>💡</div><div style={{color:S.muted}}>No submissions yet.</div></SCard>}{myInnovations.map((inn,i)=>{const cat=INNOVATION_CATS[inn.category]||{};return(<SCard key={i} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}><div style={{display:"flex",gap:8,alignItems:"center"}}><div style={{fontSize:22}}>{cat.emoji||"💡"}</div><div><div style={{color:S.text,fontWeight:700}}>{inn.title}</div><div style={{color:S.muted,fontSize:11}}>{cat.label}</div></div></div><div style={{padding:"3px 10px",borderRadius:20,background:inn.status==="approved"?`${S.green}22`:inn.status==="rejected"?`${S.red}22`:`${S.yellow}22`,color:inn.status==="approved"?S.green:inn.status==="rejected"?S.red:S.yellow,fontSize:11,fontWeight:700}}>{inn.status.toUpperCase()}</div></div>{inn.status==="approved"&&<div style={{color:S.green,fontWeight:700,fontSize:13}}>+{inn.points_awarded} pts earned</div>}</SCard>);})}</div>)}{tab==="submit"&&(<SCard><div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:14}}>NEW SUBMISSION</div><div style={{marginBottom:12}}><div style={{color:S.muted,fontSize:11,marginBottom:5}}>CATEGORY</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{Object.entries(INNOVATION_CATS).filter(([k,v])=>!v.adminOnly||isSuperAdmin).map(([k,v])=>(<div key={k} onClick={()=>setForm(p=>({...p,category:k}))} style={{padding:10,borderRadius:9,border:`1.5px solid ${form.category===k?S.accent:S.border}`,background:form.category===k?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:20}}>{v.emoji}</div><div style={{color:S.text,fontSize:11,fontWeight:700,marginTop:3}}>{v.label}</div><div style={{color:S.accent,fontSize:10}}>+{v.pts} pts</div></div>))}</div></div><div style={{marginBottom:10}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TITLE</div><input value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} style={inp} placeholder="Project name"/></div><div style={{marginBottom:10}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>DESCRIPTION</div><textarea value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} rows={4} style={{...inp,resize:"vertical"}} placeholder="Describe what you did..."/></div>{(form.category==="ai_project"||form.category==="process_improvement")&&(<div style={{marginBottom:14}}><div style={{color:S.muted,fontSize:11,marginBottom:4}}>TOOL USED</div><input value={form.tool_used} onChange={e=>setForm(p=>({...p,tool_used:e.target.value}))} style={inp} placeholder="e.g. ChatGPT, Claude..."/></div>)}<SBtn onClick={submit} disabled={submitting||!form.title.trim()||!form.description.trim()} style={{width:"100%",padding:11}}>{submitting?"Submitting...":"SUBMIT"}</SBtn></SCard>)}{tab==="pending"&&isManager&&(<div>{pending.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>✅</div><div style={{color:S.muted}}>No pending.</div></SCard>}{pending.map((inn,i)=>{const cat=INNOVATION_CATS[inn.category]||{};const canApprove=inn.category==="ai_project"?isSuperAdmin:true;return(<SCard key={i} style={{marginBottom:12}}><div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}><div style={{fontSize:22}}>{cat.emoji||"💡"}</div><div><div style={{color:S.text,fontWeight:700}}>{inn.title}</div><div style={{color:S.muted,fontSize:11}}>{cat.label} · +{inn.points_awarded} pts</div></div></div><div style={{color:S.muted,fontSize:12,marginBottom:8}}>{inn.description}</div>{!canApprove&&<div style={{color:S.yellow,fontSize:12,padding:"8px 12px",background:`${S.yellow}18`,borderRadius:8,marginBottom:8}}>⚠️ Only Super Admin can approve AI Projects</div>}{canApprove&&(<div style={{display:"flex",gap:8}}><SBtn onClick={()=>onApprove(inn.id,true,"")} color={S.green} style={{flex:1}}>✓ Approve</SBtn><SBtn onClick={()=>onApprove(inn.id,false,"Not meeting criteria")} color={S.red} style={{flex:1}}>✗ Reject</SBtn></div>)}</SCard>);})}</div>)}{tab==="history"&&isManager&&(<div><div style={{color:S.muted,fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:10}}>HISTORIAL DE PROYECTOS</div>{reviewed.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>📜</div><div style={{color:S.muted}}>No hay proyectos revisados aún.</div></SCard>}{[...reviewed].sort((a,b)=>new Date(b.reviewed_at||b.created_at).getTime()-new Date(a.reviewed_at||a.created_at).getTime()).map((inn,i)=>{const cat=INNOVATION_CATS[inn.category]||{};return(<SCard key={i} style={{marginBottom:10,borderLeft:`3px solid ${inn.status==="approved"?S.green:S.red}`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}><div style={{display:"flex",gap:8,alignItems:"center"}}><div style={{fontSize:20}}>{cat.emoji||"💡"}</div><div><div style={{color:S.text,fontWeight:700,fontSize:13}}>{inn.title}</div><div style={{color:S.muted,fontSize:11}}>{cat.label}</div></div></div><div style={{padding:"3px 10px",borderRadius:20,background:inn.status==="approved"?`${S.green}22`:`${S.red}22`,color:inn.status==="approved"?S.green:S.red,fontSize:11,fontWeight:700}}>{inn.status==="approved"?"✅ APROBADO":"❌ RECHAZADO"}</div></div>{inn.description&&<div style={{color:S.muted,fontSize:12,marginBottom:6,lineHeight:1.5}}>{inn.description.substring(0,120)}{inn.description.length>120?"...":""}</div>}{inn.review_notes&&<div style={{color:S.muted,fontSize:11,fontStyle:"italic",padding:"6px 10px",background:`${S.border}44`,borderRadius:6,marginBottom:6}}>📝 {inn.review_notes}</div>}<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}><div style={{color:S.muted,fontSize:10}}>{inn.reviewed_at?new Date(inn.reviewed_at).toLocaleDateString("es-MX"):new Date(inn.created_at).toLocaleDateString("es-MX")}</div>{inn.status==="approved"&&<div style={{color:S.green,fontWeight:800,fontSize:13}}>+{inn.points_awarded} pts</div>}</div></SCard>);})}</div>)}</div>);}
 
 function StaffKudos({user,allStaff,kudos,onSendKudo,onApproveKudo,isManager,allAgents}){const [tab,setTab]=useState("received");const [sendTab,setSendTab]=useState("staff");const [form,setForm]=useState({toId:"",type:"regular",reason:""});const [sending,setSending]=useState(false);const received=(kudos||[]).filter(k=>k.status==="approved");const pending=(kudos||[]).filter(k=>k.status==="pending");const peers=allStaff.filter(u=>u.active&&u.id!==user.id);const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};const send=async()=>{if(!form.toId||!form.reason.trim())return;setSending(true);await onSendKudo({recipient_id:form.toId,given_by:user.id,kudo_type:form.type,reason:form.reason,points_awarded:form.type==="gold"?5:1,status:"pending"});setForm({toId:"",type:"regular",reason:""});setSending(false);};const tabs=[{id:"received",label:"Received",show:true},{id:"send",label:"Send Kudo",show:true},{id:"pending",label:`Pending (${pending.length})`,show:isManager}];return(<div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}><SCard style={{marginBottom:14,background:`linear-gradient(135deg,${S.accentDk},${S.purple})`,border:"none"}}><div style={{fontSize:32}}>👏</div><div style={{color:S.text,fontWeight:800,fontSize:18}}>Kudos</div><div style={{display:"flex",gap:16,marginTop:10}}><div style={{textAlign:"center"}}><div style={{color:S.yellow,fontWeight:900,fontSize:20}}>{received.filter(k=>k.kudo_type==="gold").length}</div><div style={{color:S.muted,fontSize:10}}>GOLD</div></div><div style={{textAlign:"center"}}><div style={{color:S.accent,fontWeight:900,fontSize:20}}>{received.filter(k=>k.kudo_type==="regular").length}</div><div style={{color:S.muted,fontSize:10}}>REGULAR</div></div></div></SCard><div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>{tabs.filter(t=>t.show).map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",borderRadius:9,border:`1px solid ${tab===t.id?S.accent:S.border}`,background:tab===t.id?`${S.accent}22`:S.bgCard,color:tab===t.id?S.accent:S.muted,fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>{t.label}</button>)}</div>{tab==="received"&&(<div>{received.length===0&&<SCard style={{textAlign:"center",padding:32}}><div style={{fontSize:40,marginBottom:8}}>👏</div><div style={{color:S.muted}}>No kudos yet.</div></SCard>}{received.map((k,i)=>(<SCard key={i} style={{marginBottom:10}}><div style={{display:"flex",gap:10,alignItems:"center"}}><div style={{fontSize:28}}>{k.kudo_type==="gold"?"🌟":"👏"}</div><div style={{flex:1}}><div style={{color:k.kudo_type==="gold"?S.yellow:S.accent,fontWeight:700}}>{k.kudo_type==="gold"?"Gold Kudo":"Kudo"} · +{k.points_awarded} pts</div><div style={{color:S.muted,fontSize:12,fontStyle:"italic",marginTop:2}}>"{k.reason}"</div></div></div></SCard>))}</div>)}{tab==="send"&&(<SCard>
         <div style={{color:S.muted,fontSize:11,letterSpacing:2,marginBottom:10}}>SEND A KUDO</div>
@@ -1799,7 +1833,7 @@ export default function App(){
     if(loggedIn?.appType==="agents"){
       loadNotifs(loggedIn.id);
       loadAgentScoreData(loggedIn);
-      const i=setInterval(()=>loadNotifs(loggedIn.id),30000);
+      const i=setInterval(()=>{loadNotifs(loggedIn.id);loadAgentScoreData(loggedIn);},30000);
       return()=>clearInterval(i);
     }
   },[loggedIn?.id]);

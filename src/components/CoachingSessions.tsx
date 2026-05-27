@@ -391,8 +391,8 @@ function ManagerVerifyView({ user, staffProfile }) {
           { ...session, manager_confirmed: true },
           user.gameId
         );
-        // FIX 1: notify coach after points awarded
         if (awarded) {
+          // Notify coach
           try {
             const coachStaff = await db.getStaffByGameId(session.coach_game_id);
             if (coachStaff?.[0]) {
@@ -406,11 +406,38 @@ function ManagerVerifyView({ user, staffProfile }) {
               });
             }
           } catch(e) {}
+          // Notify agent
+          try {
+            const agentProfile = await db.getAgentByGameId(session.agent_game_id);
+            if (agentProfile?.[0]?.id) {
+              await db.createNotif({
+                recipient_id: agentProfile[0].id,
+                sender_id: user.id,
+                title: "✅ Sesión de Coaching completada",
+                message: `Tu coaching session con ${session.coach_game_id} fue verificada y completada. ¡Buen trabajo! 🎉`,
+                type: "coaching_complete",
+                is_read: false,
+              });
+            }
+          } catch(e) {}
         }
         showToast(awarded ? `✅ Sesión verificada — +${POINTS_PER_SESSION} pts para ${session.coach_game_id}` : "Sesión verificada.");
       } else if (!agentAlsoConfirmed) {
-        // FIX 1: also notify agent that manager already verified, waiting for them
-        showToast("Verificado. Esperando respuesta del agente para liberar puntos.");
+        // Manager confirmed first — notify agent to respond so points can be released
+        try {
+          const agentProfile = await db.getAgentByGameId(session.agent_game_id);
+          if (agentProfile?.[0]?.id) {
+            await db.createNotif({
+              recipient_id: agentProfile[0].id,
+              sender_id: user.id,
+              title: "📋 Evaluación de Coaching Session pendiente",
+              message: `Tu manager verificó la sesión con coach ${session.coach_game_id}. Por favor responde las preguntas en tu 🔔 para liberar los puntos.`,
+              type: "coaching_session",
+              is_read: false,
+            });
+          }
+        } catch(e) {}
+        showToast("Verificado. Notificación enviada al agente para que responda.");
       } else {
         showToast("Sesión ya tenía puntos acreditados.");
       }

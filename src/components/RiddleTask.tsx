@@ -159,6 +159,18 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
       } else {
         // Delete so agent can retry
         await sbFetch(`agent_riddle_answers?id=eq.${ans.id}`, { method:"DELETE" })
+        // Notify agent their answer was incorrect
+        try {
+          const agentProfiles = await sbFetch(`profiles?game_id=eq.${encodeURIComponent(ans.game_id)}&select=id`).catch(()=>[])
+          if (agentProfiles?.[0]?.id) {
+            await sbFetch('notifications', { method:"POST", prefer:"return=minimal", body: JSON.stringify({
+              recipient_id: agentProfiles[0].id,
+              title: "❌ Respuesta de Riddle incorrecta",
+              message: `Tu respuesta al Riddle "${activeRiddle?.question?.substring(0,60) || 'de esta semana'}" no fue correcta. ¡Puedes volver a intentarlo! 💪`,
+              type: "info", is_read: false,
+            })})
+          }
+        } catch(e) {}
         showToast(`🔄 Rechazado — el agente puede volver a intentar`)
       }
       fetchAll()
@@ -440,6 +452,18 @@ function TaskSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) 
       } else {
         // Delete so agent can retry
         await sbFetch(`agent_task_submissions?id=eq.${sub.id}`, { method:"DELETE" })
+        // Notify agent their submission was rejected
+        try {
+          const agentProfiles = await sbFetch(`profiles?game_id=eq.${encodeURIComponent(sub.game_id)}&select=id`).catch(()=>[])
+          if (agentProfiles?.[0]?.id) {
+            await sbFetch('notifications', { method:"POST", prefer:"return=minimal", body: JSON.stringify({
+              recipient_id: agentProfiles[0].id,
+              title: "❌ Entrega de Task rechazada",
+              message: `Tu entrega para la Task "${activeTask?.title || 'de esta semana'}" no fue aceptada. Revisa los requisitos y vuelve a intentarlo. 💪`,
+              type: "info", is_read: false,
+            })})
+          }
+        } catch(e) {}
         showToast(`🔄 Rechazado — el agente puede volver a entregar`)
       }
       fetchAll()
