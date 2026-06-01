@@ -113,10 +113,11 @@ export function calcScoreCoins(weeklyMetrics, riddleAnswers, taskSubmissions, ku
   const weekCount = (weeklyMetrics || []).length;
 
   // Riddle points: riddleCoins per approved riddle answer
-  const riddleScore = (riddleAnswers || []).filter(r => r.status === "approved").length * riddleCoins;
+  // DB stores approved:true (boolean); also accept status:"approved" for forward-compat
+  const riddleScore = (riddleAnswers || []).filter(r => r.approved === true || r.status === "approved").length * riddleCoins;
 
   // Task points: taskCoins per approved task submission
-  const taskScore = (taskSubmissions || []).filter(t => t.status === "approved").length * taskCoins;
+  const taskScore = (taskSubmissions || []).filter(t => t.approved === true || t.status === "approved").length * taskCoins;
 
   // Total score (for level)
   const score = kpiScore + riddleScore + taskScore;
@@ -2038,7 +2039,7 @@ export default function App(){
       {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle" coinSettings={coinSettings}/>}
       {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task" coinSettings={coinSettings}/>}
       {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop}/>}
-      {screen==="rewards"&&<Rewards user={cu} prizes={prizes} {...scoreProps} onRedeem={async p=>{
+      {screen==="rewards"&&<Rewards user={cu} prizes={prizes} {...scoreProps} weeklyMetrics={agentWeeklyMetrics} onRedeem={async p=>{
         const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals,coinSettings);
         const cost=p.points_cost||p.pts||0;
         const stock=p.stock||p.stock_remaining||0;
@@ -2059,7 +2060,7 @@ export default function App(){
       {screen==="report"&&isSA&&<GeneralReport/>}
       {screen==="info"&&<Info/>}
       {screen==="notifs"&&<Notifs user={cu} notifs={notifs} onMarkRead={markNotifRead} onMarkAll={markAllRead} onRefresh={()=>loadNotifs(cu.id)}/>}
-      {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps}/>}
+      {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps} weeklyMetrics={agentWeeklyMetrics}/>}
       {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount} bulletin={bulletin} setBulletin={setBulletin} allStaff={allStaff} coinSettings={coinSettings} onSaveCoinSettings={async(s)=>{try{await Promise.all([sbFetch("app_config?on_conflict=key",{method:"POST",prefer:"resolution=merge-duplicates,return=minimal",body:JSON.stringify({key:"riddle_coins",value:String(s.riddle_coins)})}),sbFetch("app_config?on_conflict=key",{method:"POST",prefer:"resolution=merge-duplicates,return=minimal",body:JSON.stringify({key:"task_coins",value:String(s.task_coins)})})]);setCoinSettings(s);toast("Configuración guardada ✓");}catch(e){console.error("[CoinSettings] save error:",e?.message||e);toast("Error: "+(e?.message||"ver consola para detalles"));}}}/>}
     </div>
     <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:C.card,borderTop:`1.5px solid ${C.border}`,display:"flex",padding:"6px 0 10px",boxShadow:`0 -2px 10px ${C.blue}10`,overflowX:"auto"}}>
