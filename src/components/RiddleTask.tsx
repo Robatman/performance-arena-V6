@@ -37,9 +37,10 @@ interface Props {
   gameId: string
   isAdmin: boolean
   defaultTab?: 'riddle' | 'task'
+  coinSettings?: { riddle_coins?: number; task_coins?: number }
 }
 
-export default function RiddleTask({ gameId, isAdmin, defaultTab = 'riddle' }: Props) {
+export default function RiddleTask({ gameId, isAdmin, defaultTab = 'riddle', coinSettings = {} }: Props) {
   const [tab, setTab] = useState<'riddle' | 'task'>(defaultTab)
 
   return (
@@ -52,14 +53,14 @@ export default function RiddleTask({ gameId, isAdmin, defaultTab = 'riddle' }: P
           📋 Task
         </button>
       </div>
-      {tab === 'riddle' && <RiddleSection gameId={gameId} isAdmin={isAdmin} />}
-      {tab === 'task' && <TaskSection gameId={gameId} isAdmin={isAdmin} />}
+      {tab === 'riddle' && <RiddleSection gameId={gameId} isAdmin={isAdmin} coinSettings={coinSettings} />}
+      {tab === 'task' && <TaskSection gameId={gameId} isAdmin={isAdmin} coinSettings={coinSettings} />}
     </div>
   )
 }
 
 // ─── RIDDLE ───────────────────────────────────────────────
-function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) {
+function RiddleSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; isAdmin: boolean; coinSettings?: any }) {
   const [riddles, setRiddles] = useState<any[]>([])
   const [activeRiddle, setActiveRiddle] = useState<any>(null)
   const [myAnswer, setMyAnswer] = useState<any>(null)
@@ -146,7 +147,7 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
   async function approveAnswer(ans: any, approve: boolean) {
     try {
       if (approve) {
-        const points = activeRiddle?.points || 2
+        const points = activeRiddle?.points || coinSettings?.riddle_coins || 2
         await sbFetch(`agent_riddle_answers?id=eq.${ans.id}`, {
           method:"PATCH", body: JSON.stringify({ approved: true, correct: true, points_awarded: points })
         })
@@ -358,7 +359,7 @@ function RiddleSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }
 }
 
 // ─── TASK ───────────────────────────────────────────────
-function TaskSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) {
+function TaskSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; isAdmin: boolean; coinSettings?: any }) {
   const [tasks, setTasks] = useState<any[]>([])
   const [activeTask, setActiveTask] = useState<any>(null)
   const [mySubmission, setMySubmission] = useState<any>(null)
@@ -439,7 +440,7 @@ function TaskSection({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) 
   async function approveSubmission(sub: any, approve: boolean) {
     try {
       if (approve) {
-        const points = 2
+        const points = coinSettings?.task_coins || 2
         await sbFetch(`agent_task_submissions?id=eq.${sub.id}`, {
           method:"PATCH", body: JSON.stringify({ approved: true, points_awarded: points })
         })

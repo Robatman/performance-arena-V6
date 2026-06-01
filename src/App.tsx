@@ -99,7 +99,11 @@ const staffDb = {
 // Max    = (weeks × 15) + (riddles_this_month × 2) + (tasks_this_month × 2)
 // Level  = 100% → 4 | ≥90% → 3 | ≥80% → 2 | <80% → 1
 
-export function calcScoreCoins(weeklyMetrics, riddleAnswers, taskSubmissions, kudos, goldKudos, referrals) {
+export function calcScoreCoins(weeklyMetrics, riddleAnswers, taskSubmissions, kudos, goldKudos, referrals, coinSettings: any = {}) {
+  // Configurable coin values (admin-editable, defaults if not set)
+  const riddleCoins = coinSettings?.riddle_coins ?? 2;
+  const taskCoins   = coinSettings?.task_coins   ?? 2;
+
   // Score from weekly metrics (QA + AHT + Attendance per week)
   const kpiScore = (weeklyMetrics || []).reduce((sum, w) => {
     return sum + (w.qa_pts || 0) + (w.aht_pts || 0) + (w.attendance_pts || 0);
@@ -108,11 +112,11 @@ export function calcScoreCoins(weeklyMetrics, riddleAnswers, taskSubmissions, ku
   // Weeks in current data
   const weekCount = (weeklyMetrics || []).length;
 
-  // Riddle points: 2 per approved riddle answer
-  const riddleScore = (riddleAnswers || []).filter(r => r.status === "approved").length * 2;
+  // Riddle points: riddleCoins per approved riddle answer
+  const riddleScore = (riddleAnswers || []).filter(r => r.status === "approved").length * riddleCoins;
 
-  // Task points: 2 per approved task submission
-  const taskScore = (taskSubmissions || []).filter(t => t.status === "approved").length * 2;
+  // Task points: taskCoins per approved task submission
+  const taskScore = (taskSubmissions || []).filter(t => t.status === "approved").length * taskCoins;
 
   // Total score (for level)
   const score = kpiScore + riddleScore + taskScore;
@@ -445,14 +449,15 @@ function BulletinCard({bulletin}){
   );
 }
 
-function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin}){
+function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, coinSettings={}}){
   const sc = calcScoreCoins(
     weeklyMetrics,
     riddleAnswers,
     taskSubmissions,
     user.kudos,
     user.gold_kudos,
-    user.referrals
+    user.referrals,
+    coinSettings
   );
   const maxScore = calcMaxScore(sc.weekCount, riddleCount, taskCount);
   const level = calcLevel(sc.score, maxScore);
@@ -654,13 +659,13 @@ function PrizeCard({p,coins,onRedeem,locked=false,userLevel=1}){
   );
 }
 
-function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount}){
+function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,coinSettings={}}){
   const [tab,setTab]=useState("store");
   const [myRedemptions,setMyRedemptions]=useState([]);
   useEffect(()=>{
     db.getMyRedemptions(user.id).then(d=>setMyRedemptions(d||[])).catch(()=>{});
   },[user.id]);
-  const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals);
+  const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
   const maxScore=calcMaxScore(sc.weekCount,riddleCount,taskCount);
   const level=calcLevel(sc.score,maxScore);
   const coins=sc.coins;
@@ -944,10 +949,10 @@ function Info(){
   );
 }
 
-function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount}){
+function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,coinSettings={}}){
   const [av,setAv]=useState(user.avatar||{base:"b1",hair:null,accessory:null,outfit:null,background:null});
   const [tab,setTab]=useState("edit");const [saving,setSaving]=useState(false);
-  const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals);
+  const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
   const maxScore=calcMaxScore(sc.weekCount,riddleCount,taskCount);
   const level=calcLevel(sc.score,maxScore);
   const coins=sc.coins;
@@ -1058,7 +1063,40 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
   );
 }
 
-function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNotifs,toast,reloadUsers,riddleCount,taskCount,bulletin,setBulletin,allStaff=[]}){
+function CoinSettingsCard({coinSettings,onSave,inp}){
+  const [rc,setRc]=useState(coinSettings?.riddle_coins??2);
+  const [tc,setTc]=useState(coinSettings?.task_coins??2);
+  const [saving,setSaving]=useState(false);
+  const [saved,setSaved]=useState(false);
+  const save=async()=>{
+    if(!onSave)return;
+    setSaving(true);
+    await onSave({riddle_coins:Number(rc)||2,task_coins:Number(tc)||2});
+    setSaved(true);setTimeout(()=>setSaved(false),2500);
+    setSaving(false);
+  };
+  return(
+    <Card style={{marginBottom:14,background:`${C.blue}06`,border:`1.5px solid ${C.blue}22`}}>
+      <div style={{color:C.blue,fontWeight:800,fontSize:15,marginBottom:4}}>⚙️ Configuración de Coins</div>
+      <div style={{color:C.muted,fontSize:12,marginBottom:14}}>Define cuántos coins gana un agente por cada actividad aprobada.</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+        <div>
+          <div style={{color:C.muted,fontSize:11,fontWeight:700,marginBottom:5}}>🧩 COINS POR RIDDLE</div>
+          <input type="number" min={0} max={50} value={rc} onChange={e=>setRc(e.target.value)} style={{...inp,fontWeight:700,fontSize:16,textAlign:"center"}}/>
+        </div>
+        <div>
+          <div style={{color:C.muted,fontSize:11,fontWeight:700,marginBottom:5}}>📋 COINS POR TASK</div>
+          <input type="number" min={0} max={50} value={tc} onChange={e=>setTc(e.target.value)} style={{...inp,fontWeight:700,fontSize:16,textAlign:"center"}}/>
+        </div>
+      </div>
+      <Btn onClick={save} disabled={saving} color={saved?C.green:C.blue} style={{width:"100%",padding:11}}>
+        {saving?"Guardando...":(saved?"✓ Guardado":"Guardar configuración")}
+      </Btn>
+    </Card>
+  );
+}
+
+function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNotifs,toast,reloadUsers,riddleCount,taskCount,bulletin,setBulletin,allStaff=[],coinSettings={},onSaveCoinSettings}){
   const [tab,setTab]=useState("users");const isSA=cu.role==="superadmin";
   const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:C.bg,color:C.text};
   const blank={name:"",password:"",role:"user",project:"Campaign K",gameId:""};
@@ -1321,6 +1359,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
       </div>)}
 
       {tab==="coins"&&(<div>
+        <CoinSettingsCard coinSettings={coinSettings} onSave={onSaveCoinSettings} inp={inp}/>
         <Card style={{marginBottom:14,background:`${C.gold}08`,border:`1.5px solid ${C.gold}30`}}>
           <div style={{fontSize:24,marginBottom:8}}>🪙</div>
           <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:4}}>Gestión de Coins</div>
@@ -1694,9 +1733,9 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
 }
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
-function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,user}){
+function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,user,coinSettings={}}){
   if(!user||!weeklyMetrics||weeklyMetrics.length===0)return null;
-  const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals);
+  const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
   const maxScore=calcMaxScore(sc.weekCount,riddleCount,taskCount);
   const level=calcLevel(sc.score,maxScore);
   return(
@@ -1778,6 +1817,7 @@ export default function App(){
   const [shop]=useState(DEFAULT_SHOP);const [notifs,setNotifs]=useState([]);
   const [loggedIn,setLoggedIn]=useState(null);const [screen,setScreen]=useState("dashboard");
   const [toastMsg,setToastMsg]=useState("");const [appLoading,setAppLoading]=useState(true);
+  const [coinSettings,setCoinSettings]=useState<any>({riddle_coins:2,task_coins:2});
   const [allStaff,setAllStaff]=useState([]);const [staffMetrics,setStaffMetrics]=useState([]);
   const [staffPoints,setStaffPoints]=useState(null);const [staffBadges,setStaffBadges]=useState([]);
   const [staffKudos,setStaffKudos]=useState([]);
@@ -1797,7 +1837,7 @@ export default function App(){
   const [monthTaskCount,setMonthTaskCount]=useState(0);
 
   const loadInitialData=async()=>{
-    try{const [usersData,prizesData,bulletinData]=await Promise.all([db.getUsers(),db.getPrizes(),db.getBulletin()]);setUsers((usersData||[]).map(adaptProfile));setPrizes(prizesData||[]);if(bulletinData&&bulletinData[0])setBulletin(bulletinData[0]);}catch(e){console.error(e);}
+    try{const [usersData,prizesData,bulletinData,csData]=await Promise.all([db.getUsers(),db.getPrizes(),db.getBulletin(),sbFetch("coin_settings?limit=1").catch(()=>null)]);setUsers((usersData||[]).map(adaptProfile));setPrizes(prizesData||[]);if(bulletinData&&bulletinData[0])setBulletin(bulletinData[0]);if(csData?.[0])setCoinSettings(csData[0]);}catch(e){console.error(e);}
     setAppLoading(false);
   };
   useEffect(()=>{loadInitialData();},[]);
@@ -1903,7 +1943,7 @@ export default function App(){
 
   // Score props - agents see only last evaluated week, SA sees selected week
   const agentMetricsFiltered=isSA?(selectedWeek?agentWeeklyMetrics.filter((w)=>w.week===selectedWeek):agentWeeklyMetrics):agentWeeklyMetrics.filter((w)=>w.week===lastEvaluatedWeek);
-  const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount};
+  const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount,coinSettings};
 
   if(appLoading){return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><Logo sz={64}/><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,letterSpacing:2}}>PERFORMANCE ARENA</div><div style={{color:C.muted,fontSize:14,marginTop:8}}>Loading...</div></div>);}
 
@@ -1982,11 +2022,11 @@ export default function App(){
     </div>
     <div style={{padding:"14px 14px 0",animation:"fadeIn 0.25s ease"}}>
       {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps} isSA={isSA} availableWeeks={availableWeeks} selectedWeek={selectedWeek} lastEvaluatedWeek={lastEvaluatedWeek} onWeekChange={setSelectedWeek} bulletin={bulletin}/>}
-      {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle"/>}
-      {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task"/>}
+      {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle" coinSettings={coinSettings}/>}
+      {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task" coinSettings={coinSettings}/>}
       {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop}/>}
       {screen==="rewards"&&<Rewards user={cu} prizes={prizes} {...scoreProps} onRedeem={async p=>{
-        const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals);
+        const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals,coinSettings);
         const cost=p.points_cost||p.pts||0;
         const stock=p.stock||p.stock_remaining||0;
         if(stock<=0){toast("Sin stock");return;}
@@ -2007,7 +2047,7 @@ export default function App(){
       {screen==="info"&&<Info/>}
       {screen==="notifs"&&<Notifs user={cu} notifs={notifs} onMarkRead={markNotifRead} onMarkAll={markAllRead} onRefresh={()=>loadNotifs(cu.id)}/>}
       {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps}/>}
-      {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount} bulletin={bulletin} setBulletin={setBulletin} allStaff={allStaff}/>}
+      {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount} bulletin={bulletin} setBulletin={setBulletin} allStaff={allStaff} coinSettings={coinSettings} onSaveCoinSettings={async(s)=>{try{await sbFetch("coin_settings",{method:"POST",headers:{"Prefer":"resolution=merge-duplicates,return=minimal"},body:JSON.stringify({id:1,...s,updated_at:new Date().toISOString()})});setCoinSettings(s);toast("Configuración guardada ✓");}catch(e){toast("Error al guardar configuración");}}}/>}
     </div>
     <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:C.card,borderTop:`1.5px solid ${C.border}`,display:"flex",padding:"6px 0 10px",boxShadow:`0 -2px 10px ${C.blue}10`,overflowX:"auto"}}>
       {nav.map(item=>{const active=screen===item.id;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{item.badge>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{item.badge}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(55%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?C.blue:C.muted,transition:"color 0.18s",whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:C.blue}}/>}</button>);})}
