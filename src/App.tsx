@@ -1837,7 +1837,20 @@ export default function App(){
   const [monthTaskCount,setMonthTaskCount]=useState(0);
 
   const loadInitialData=async()=>{
-    try{const [usersData,prizesData,bulletinData,csData]=await Promise.all([db.getUsers(),db.getPrizes(),db.getBulletin(),sbFetch("coin_settings?limit=1").catch(()=>null)]);setUsers((usersData||[]).map(adaptProfile));setPrizes(prizesData||[]);if(bulletinData&&bulletinData[0])setBulletin(bulletinData[0]);if(csData?.[0])setCoinSettings(csData[0]);}catch(e){console.error(e);}
+    try{
+      const [usersData,prizesData,bulletinData,cfgData]=await Promise.all([
+        db.getUsers(),db.getPrizes(),db.getBulletin(),
+        sbFetch("app_config?key=in.(riddle_coins,task_coins)&select=key,value").catch(()=>[]),
+      ]);
+      setUsers((usersData||[]).map(adaptProfile));
+      setPrizes(prizesData||[]);
+      if(bulletinData&&bulletinData[0])setBulletin(bulletinData[0]);
+      if(cfgData?.length){
+        const rc=cfgData.find(r=>r.key==="riddle_coins");
+        const tc=cfgData.find(r=>r.key==="task_coins");
+        setCoinSettings({riddle_coins:rc?Number(rc.value):2,task_coins:tc?Number(tc.value):2});
+      }
+    }catch(e){console.error(e);}
     setAppLoading(false);
   };
   useEffect(()=>{loadInitialData();},[]);
@@ -2047,7 +2060,7 @@ export default function App(){
       {screen==="info"&&<Info/>}
       {screen==="notifs"&&<Notifs user={cu} notifs={notifs} onMarkRead={markNotifRead} onMarkAll={markAllRead} onRefresh={()=>loadNotifs(cu.id)}/>}
       {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps}/>}
-      {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount} bulletin={bulletin} setBulletin={setBulletin} allStaff={allStaff} coinSettings={coinSettings} onSaveCoinSettings={async(s)=>{try{await sbFetch("coin_settings",{method:"POST",headers:{"Prefer":"resolution=merge-duplicates,return=minimal"},body:JSON.stringify({id:1,...s,updated_at:new Date().toISOString()})});setCoinSettings(s);toast("Configuración guardada ✓");}catch(e){toast("Error al guardar configuración");}}}/>}
+      {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount} bulletin={bulletin} setBulletin={setBulletin} allStaff={allStaff} coinSettings={coinSettings} onSaveCoinSettings={async(s)=>{try{await Promise.all([sbFetch("app_config?on_conflict=key",{method:"POST",prefer:"resolution=merge-duplicates,return=minimal",body:JSON.stringify({key:"riddle_coins",value:String(s.riddle_coins)})}),sbFetch("app_config?on_conflict=key",{method:"POST",prefer:"resolution=merge-duplicates,return=minimal",body:JSON.stringify({key:"task_coins",value:String(s.task_coins)})})]);setCoinSettings(s);toast("Configuración guardada ✓");}catch(e){toast("Error al guardar configuración");}}}/>}
     </div>
     <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:C.card,borderTop:`1.5px solid ${C.border}`,display:"flex",padding:"6px 0 10px",boxShadow:`0 -2px 10px ${C.blue}10`,overflowX:"auto"}}>
       {nav.map(item=>{const active=screen===item.id;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{item.badge>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{item.badge}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(55%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?C.blue:C.muted,transition:"color 0.18s",whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:C.blue}}/>}</button>);})}
