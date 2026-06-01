@@ -1064,6 +1064,97 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
   );
 }
 
+function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllCoins,reloadUsers,toast,inp}){
+  const [calcCoins,setCalcCoins]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [syncing,setSyncing]=useState(false);
+
+  const loadCalcCoins=async()=>{
+    setLoading(true);
+    try{
+      const [kpiData,riddleData,taskData]=await Promise.all([
+        sbFetch("weekly_metrics?select=game_id,qa_pts,aht_pts,attendance_pts").catch(()=>[]),
+        sbFetch("agent_riddle_answers?approved=eq.true&select=game_id").catch(()=>[]),
+        sbFetch("agent_task_submissions?approved=eq.true&select=game_id").catch(()=>[]),
+      ]);
+      const kpiMap={};
+      (kpiData||[]).forEach(r=>{kpiMap[r.game_id]=(kpiMap[r.game_id]||0)+(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);});
+      const riddleMap={};
+      (riddleData||[]).forEach(r=>{riddleMap[r.game_id]=(riddleMap[r.game_id]||0)+1;});
+      const taskMap={};
+      (taskData||[]).forEach(t=>{taskMap[t.game_id]=(taskMap[t.game_id]||0)+1;});
+      const rc=coinSettings?.riddle_coins??2;
+      const tc=coinSettings?.task_coins??2;
+      const map={};
+      allUsers.filter(u=>u.active).forEach(u=>{
+        const kpi=kpiMap[u.game_id]||0;
+        const kudosCoins=(u.kudos||0)+(u.gold_kudos||0)*5;
+        const refCoins=(u.referrals||[]).reduce((s,r)=>s+(r.approved?5:1),0);
+        map[u.game_id]=kpi+(riddleMap[u.game_id]||0)*rc+(taskMap[u.game_id]||0)*tc+kudosCoins+refCoins;
+      });
+      setCalcCoins(map);
+    }catch(e){console.error(e);}
+    setLoading(false);
+  };
+
+  const syncAll=async()=>{
+    if(!calcCoins)return;
+    if(!window.confirm("Esto actualizará los coins de TODOS los agentes al valor calculado basado en su desempeño. ¿Continuar?"))return;
+    setSyncing(true);
+    try{
+      const active=allUsers.filter(u=>u.active&&calcCoins[u.game_id]!==undefined);
+      for(const u of active){
+        await sbFetch(`profiles?id=eq.${u.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({coins:calcCoins[u.game_id]})});
+      }
+      await reloadUsers();
+      toast("✓ Coins sincronizados para todos los agentes");
+    }catch(e){toast("Error al sincronizar coins");}
+    setSyncing(false);
+  };
+
+  const sorted=(calcCoins
+    ?allUsers.filter(u=>u.active).map(u=>({...u,displayCoins:calcCoins[u.game_id]??u.coins??0})).sort((a,b)=>b.displayCoins-a.displayCoins)
+    :allUsers.filter(u=>u.active).map(u=>({...u,displayCoins:u.coins||0})).sort((a,b)=>b.displayCoins-a.displayCoins)
+  );
+
+  return(<div>
+    <CoinSettingsCard coinSettings={coinSettings} onSave={onSaveCoinSettings} inp={inp}/>
+    <Card style={{marginBottom:14,background:`${C.gold}08`,border:`1.5px solid ${C.gold}30`}}>
+      <div style={{fontSize:24,marginBottom:8}}>🪙</div>
+      <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:4}}>Gestión de Coins</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>
+        Los coins se reinician cada trimestre (Ene-Mar / Abr-Jun / Jul-Sep / Oct-Dic).<br/>
+        Esta acción pondrá los coins de TODOS los agentes activos en 0.
+      </div>
+      <Btn onClick={resetAllCoins} color={C.red} style={{width:"100%",padding:12}}>🔄 REINICIAR COINS (TRIMESTRAL)</Btn>
+    </Card>
+    <Card>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{color:C.muted,fontSize:11,letterSpacing:2,fontWeight:700}}>COINS POR AGENTE {calcCoins?"(CALCULADO)":"(GUARDADO EN DB)"}</div>
+        <div style={{display:"flex",gap:6}}>
+          <Btn onClick={loadCalcCoins} disabled={loading} color={C.blue} sm>{loading?"Calculando...":"🔄 Calcular"}</Btn>
+          {calcCoins&&<Btn onClick={syncAll} disabled={syncing} color={C.green} sm>{syncing?"Sync...":"💾 Sincronizar DB"}</Btn>}
+        </div>
+      </div>
+      {!calcCoins&&<div style={{color:C.muted,fontSize:12,marginBottom:12}}>Presiona "Calcular" para ver el total real de cada agente (KPI + Riddles + Tasks + Kudos).</div>}
+      {sorted.slice(0,30).map(u=>(
+        <div key={u.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,paddingBottom:10,borderBottom:`1px solid ${C.border}`}}>
+          <Av av={u.avatar} sz={36} shop={DEFAULT_SHOP}/>
+          <div style={{flex:1}}>
+            <div style={{color:C.text,fontWeight:700,fontSize:13}}>{u.name}</div>
+            <div style={{color:C.muted,fontSize:11}}>{u.game_id}</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:4}}>
+            <span style={{fontSize:14}}>🪙</span>
+            <span style={{color:C.gold,fontWeight:900,fontSize:16}}>{u.displayCoins}</span>
+            {calcCoins&&u.coins!==u.displayCoins&&<span style={{fontSize:10,color:C.muted}}>(DB:{u.coins||0})</span>}
+          </div>
+        </div>
+      ))}
+    </Card>
+  </div>);
+}
+
 function CoinSettingsCard({coinSettings,onSave,inp}){
   const [rc,setRc]=useState(coinSettings?.riddle_coins??2);
   const [tc,setTc]=useState(coinSettings?.task_coins??2);
@@ -1359,37 +1450,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
         ))}
       </div>)}
 
-      {tab==="coins"&&(<div>
-        <CoinSettingsCard coinSettings={coinSettings} onSave={onSaveCoinSettings} inp={inp}/>
-        <Card style={{marginBottom:14,background:`${C.gold}08`,border:`1.5px solid ${C.gold}30`}}>
-          <div style={{fontSize:24,marginBottom:8}}>🪙</div>
-          <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:4}}>Gestión de Coins</div>
-          <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>
-            Los coins se reinician cada trimestre (Ene-Mar / Abr-Jun / Jul-Sep / Oct-Dic).<br/>
-            Esta acción pondrá los coins de TODOS los agentes activos en 0.
-          </div>
-          <Btn onClick={resetAllCoins} color={C.red} style={{width:"100%",padding:12}}>
-            🔄 REINICIAR COINS (TRIMESTRAL)
-          </Btn>
-        </Card>
-        {/* Coins per agent overview */}
-        <Card>
-          <div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:12}}>COINS POR AGENTE</div>
-          {allUsers.filter(u=>u.active).sort((a,b)=>(b.coins||0)-(a.coins||0)).slice(0,20).map(u=>(
-            <div key={u.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,paddingBottom:10,borderBottom:`1px solid ${C.border}`}}>
-              <Av av={u.avatar} sz={36} shop={DEFAULT_SHOP}/>
-              <div style={{flex:1}}>
-                <div style={{color:C.text,fontWeight:700,fontSize:13}}>{u.name}</div>
-                <div style={{color:C.muted,fontSize:11}}>{u.project}</div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:4}}>
-                <span style={{fontSize:14}}>🪙</span>
-                <span style={{color:C.gold,fontWeight:900,fontSize:16}}>{u.coins||0}</span>
-              </div>
-            </div>
-          ))}
-        </Card>
-      </div>)}
+      {tab==="coins"&&(<CoinsTab allUsers={allUsers} coinSettings={coinSettings} onSaveCoinSettings={onSaveCoinSettings} resetAllCoins={resetAllCoins} reloadUsers={reloadUsers} toast={toast} inp={inp}/>)}
 
       {tab==="kudosHistory"&&(
         <div>

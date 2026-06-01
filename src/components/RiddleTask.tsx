@@ -156,6 +156,13 @@ function RiddleSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string;
           headers: { apikey: SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json" },
           body: JSON.stringify({ p_game_id: ans.game_id, p_points: points })
         })
+        // Keep profiles.coins in sync so admin panel stays accurate
+        try {
+          const agentProf = await sbFetch(`profiles?game_id=eq.${encodeURIComponent(ans.game_id)}&select=id,coins`).catch(()=>[])
+          if (agentProf?.[0]) {
+            await sbFetch(`profiles?id=eq.${agentProf[0].id}`, { method:"PATCH", prefer:"return=minimal", body: JSON.stringify({ coins: (agentProf[0].coins||0) + points }) })
+          }
+        } catch(e) {}
         showToast(`✅ Aprobado! +${points}pts a ${ans.game_id}`)
       } else {
         // Delete so agent can retry
@@ -449,6 +456,13 @@ function TaskSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; i
           headers: { apikey: SUPABASE_KEY, Authorization:`Bearer ${SUPABASE_KEY}`, "Content-Type":"application/json" },
           body: JSON.stringify({ p_game_id: sub.game_id, p_points: points })
         })
+        // Keep profiles.coins in sync so admin panel stays accurate
+        try {
+          const agentProf = await sbFetch(`profiles?game_id=eq.${encodeURIComponent(sub.game_id)}&select=id,coins`).catch(()=>[])
+          if (agentProf?.[0]) {
+            await sbFetch(`profiles?id=eq.${agentProf[0].id}`, { method:"PATCH", prefer:"return=minimal", body: JSON.stringify({ coins: (agentProf[0].coins||0) + points }) })
+          }
+        } catch(e) {}
         showToast(`✅ Aprobado! +${points}pts a ${sub.game_id}`)
       } else {
         // Delete so agent can retry
