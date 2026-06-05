@@ -626,8 +626,8 @@ function TaskScreen(){const [desc,setDesc]=useState("");const [file,setFile]=use
 function PrizeCard({p,coins,onRedeem,locked=false,userLevel=1}){
   const cost=p.pts||p.points_cost||0;
   const canBuy=!locked&&coins>=cost;
-  const stock=p.stock===undefined?(p.stock_remaining||0):(p.stock||0);
-  const noStock=stock<=0;
+  const stock=p.stock!==undefined?p.stock:(p.stock_remaining??0);
+  const noStock=stock!==-1&&stock<=0; // -1 means unlimited
   const minLv=p.minLevel||p.min_level||1;
   const lvColors={1:C.muted,2:C.blue,3:C.purple,4:C.red};
   const lvColor=lvColors[minLv]||C.muted;
@@ -1346,12 +1346,13 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
     }
   },[isSA]);
   const [allStaffRed,setAllStaffRed]=useState([]);
-  useEffect(()=>{
-    if(isSA){
-      db.getAllRedemptions().then(d=>setAllRedemptions(d||[])).catch(()=>{});
-      sbFetch("staff_redemptions?order=created_at.desc&limit=200").then(d=>setAllStaffRed(d||[])).catch(()=>{});
-    }
-  },[isSA]);
+  const reloadCanjes=()=>{
+    db.getAllRedemptions().then(d=>setAllRedemptions(d||[])).catch(()=>{});
+    sbFetch("staff_redemptions?order=created_at.desc&limit=200").then(d=>setAllStaffRed(d||[])).catch(()=>{});
+  };
+  useEffect(()=>{if(isSA)reloadCanjes();},[isSA]);
+  // Reload canjes every time the admin navigates to that tab
+  useEffect(()=>{if(tab==="canjes"&&isSA)reloadCanjes();},[tab]);
   const addPrize=async()=>{if(!pf.name.trim()){toast("Escribe el nombre");return;}try{await db.createPrize({name:pf.name,emoji:pf.emoji||"🎁",points_cost:pf.pts,coins_cost:pf.pts,stock:pf.stock,category:"general",is_active:true,min_level:pf.minLevel});const updated=await db.getPrizes();setPrizes(updated||[]);setPf({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1});toast("Premio anadido");}catch(e){toast("Error al crear premio");}};
   const updPz=async(id,field,val)=>{const dbField=field==="pts"?"points_cost":field==="stock"?"stock":field==="minLevel"?"min_level":field;try{await db.updatePrize(id,{[dbField]:val});const updated=await db.getPrizes();setPrizes(updated||[]);}catch(e){toast("Error");}};
 
@@ -1544,8 +1545,13 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
       {tab==="canjes"&&(
         <div>
           <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
-            <div style={{color:C.blue,fontWeight:800,fontSize:14,marginBottom:4}}>📦 Historial de Canjes</div>
-            <div style={{color:C.muted,fontSize:12}}>Todos los canjes de agentes y staff · Cancelar devuelve coins y repone stock</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{color:C.blue,fontWeight:800,fontSize:14,marginBottom:4}}>📦 Historial de Canjes</div>
+                <div style={{color:C.muted,fontSize:12}}>Todos los canjes · Cancelar devuelve coins y repone stock</div>
+              </div>
+              <Btn onClick={reloadCanjes} color={C.blue} sm>🔄 Actualizar</Btn>
+            </div>
           </Card>
           {/* Agentes */}
           <div style={{color:C.text,fontWeight:700,fontSize:13,marginBottom:8}}>🏆 Agentes ({allRedemptions.length})</div>
@@ -2195,12 +2201,12 @@ export default function App(){
       {screen==="rewards"&&<Rewards user={cu} prizes={prizes} {...scoreProps} weeklyMetrics={agentWeeklyMetrics} onRedeem={async p=>{
         const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals,coinSettings);
         const cost=p.points_cost||p.pts||0;
-        const stock=p.stock||p.stock_remaining||0;
-        if(stock<=0){toast("Sin stock");return;}
+        const stock=p.stock!==undefined?p.stock:(p.stock_remaining??0);
+        if(stock!==-1&&stock<=0){toast("Sin stock");return;}
         if(sc.coins<cost){toast(`Necesitas ${cost} 🪙 coins, tienes ${sc.coins}`);return;}
         try{
           await db.createRedemption({user_id:cu.id,reward_id:p.id,points_spent:cost,status:"pending"});
-          await db.updatePrize(p.id,{stock:stock-1});
+          if(stock!==-1)await db.updatePrize(p.id,{stock:stock-1});
           // Deduct coins from profile
           const newCoins=Math.max(0,(cu.coins||0)-cost);
           await db.updateUser(cu.id,{coins:newCoins});
