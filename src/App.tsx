@@ -52,7 +52,7 @@ const db = {
   }),
   clearBulletin: (id) => sbFetch(`weekly_bulletin?id=eq.${id}`, {method:"PATCH", body:JSON.stringify({activities:[]})}),
   getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&select=id,user_id,reward_id,points_spent,status,redeemed_at&order=redeemed_at.desc`),
-  getAllRedemptions: () => sbFetch(`reward_redemptions?select=id,user_id,reward_id,points_spent,status,redeemed_at&order=redeemed_at.desc&limit=500`),
+  getAllRedemptions: () => sbFetch(`reward_redemptions?select=id,user_id,reward_id,points_spent,coins_spent,status,redeemed_at,created_at,reward_name&order=redeemed_at.desc&limit=500`),
   // Coins history
   addCoinsTransaction: (d) => sbFetch("coins_transactions", { method: "POST", body: JSON.stringify(d) }),
   getCoinsHistory: (uid) => sbFetch(`coins_transactions?agent_id=eq.${uid}&order=created_at.desc&limit=50`),
@@ -1488,27 +1488,55 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
         <div>
           <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
             <div style={{color:C.blue,fontWeight:800,fontSize:14,marginBottom:4}}>📦 Historial de Canjes</div>
-            <div style={{color:C.muted,fontSize:12}}>Todos los canjes de agentes y staff</div>
+            <div style={{color:C.muted,fontSize:12}}>Todos los canjes de agentes y staff · Cancelar devuelve coins y repone stock</div>
           </Card>
           {/* Agentes */}
           <div style={{color:C.text,fontWeight:700,fontSize:13,marginBottom:8}}>🏆 Agentes ({allRedemptions.length})</div>
           {allRedemptions.length===0?<Card style={{marginBottom:14,textAlign:"center",color:C.muted,padding:20}}>Sin canjes de agentes aún.</Card>:allRedemptions.map((r,i)=>{
             const u=allUsers.find(x=>x.id===r.user_id);
+            const prize=prizes.find(p=>p.id===r.reward_id);
+            const prizeName=prize?.name||r.reward_name||"Premio eliminado";
+            const prizeEmoji=prize?.emoji||"🎁";
             const statusColor={pending:C.yellow,approved:C.green,delivered:C.blue,cancelled:C.red};
             const statusLabel={pending:"Pendiente",approved:"Aprobado",delivered:"Entregado",cancelled:"Cancelado"};
+            const cancelRedemption=async()=>{
+              if(!window.confirm(`¿Cancelar este canje y devolver ${r.points_spent||0} 🪙 a ${u?.name||"el agente"}?`))return;
+              try{
+                await sbFetch(`reward_redemptions?id=eq.${r.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({status:"cancelled"})});
+                if(u){
+                  const fresh=await sbFetch(`profiles?id=eq.${u.id}&select=coins`).catch(()=>[]);
+                  const cur=fresh?.[0]?.coins||0;
+                  await sbFetch(`profiles?id=eq.${u.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({coins:cur+(r.points_spent||0)})});
+                }
+                if(prize&&prize.stock>=0){
+                  await db.updatePrize(r.reward_id,{stock:(prize.stock||0)+1});
+                  const updated=await db.getPrizes();setPrizes(updated||[]);
+                }
+                await reloadUsers();
+                setAllRedemptions(prev=>prev.map(x=>x.id===r.id?{...x,status:"cancelled"}:x));
+                toast(`Canje cancelado — ${r.points_spent||0} 🪙 devueltos a ${u?.name||"agente"}`);
+              }catch(e){toast("Error al cancelar canje");console.error(e);}
+            };
             return(
-              <Card key={r.id||i} style={{marginBottom:8}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div>
+              <Card key={r.id||i} style={{marginBottom:8,borderLeft:r.status==="cancelled"?`3px solid ${C.red}`:undefined}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                  <div style={{flex:1,minWidth:0}}>
                     <div style={{color:C.text,fontWeight:700,fontSize:13}}>{u?.name||r.user_id}</div>
-                    <div style={{color:C.muted,fontSize:12,marginTop:2}}>{r.reward_name||"Premio"} · {new Date(r.created_at).toLocaleDateString("es-MX")}</div>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
-                      <span>🪙</span>
-                      <span style={{color:C.red,fontWeight:700}}>{r.points_spent||0}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginTop:3}}>
+                      <span style={{fontSize:16}}>{prizeEmoji}</span>
+                      <span style={{color:C.text,fontSize:13,fontWeight:600}}>{prizeName}</span>
                     </div>
-                    <span style={{padding:"2px 8px",borderRadius:6,background:`${statusColor[r.status]||C.muted}18`,color:statusColor[r.status]||C.muted,fontSize:11,fontWeight:700}}>{statusLabel[r.status]||r.status}</span>
+                    <div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at||r.created_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:6,justifyContent:"flex-end"}}>
+                      <span>🪙</span>
+                      <span style={{color:C.red,fontWeight:800,fontSize:15}}>{r.points_spent||0}</span>
+                    </div>
+                    <div style={{marginBottom:6}}>
+                      <span style={{padding:"2px 8px",borderRadius:6,background:`${statusColor[r.status]||C.muted}18`,color:statusColor[r.status]||C.muted,fontSize:11,fontWeight:700}}>{statusLabel[r.status]||r.status}</span>
+                    </div>
+                    {r.status!=="cancelled"&&<Btn onClick={cancelRedemption} color={C.red} sm>✗ Cancelar</Btn>}
                   </div>
                 </div>
               </Card>
@@ -1519,17 +1547,24 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
           {allStaffRed.length===0?<Card style={{textAlign:"center",color:C.muted,padding:20}}>Sin canjes de staff aún.</Card>:allStaffRed.map((r,i)=>{
             const statusColor={pending:C.yellow,approved:C.green,delivered:C.blue,cancelled:C.red};
             const statusLabel={pending:"Pendiente",approved:"Aprobado",delivered:"Entregado",cancelled:"Cancelado"};
+            const prize=prizes.find(p=>p.id===r.reward_id);
+            const prizeName=prize?.name||r.reward_name||"Premio";
+            const prizeEmoji=prize?.emoji||"🎁";
             return(
-              <Card key={r.id||i} style={{marginBottom:8}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div>
+              <Card key={r.id||i} style={{marginBottom:8,borderLeft:r.status==="cancelled"?`3px solid ${C.red}`:undefined}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                  <div style={{flex:1,minWidth:0}}>
                     <div style={{color:C.text,fontWeight:700,fontSize:13}}>{r.staff_game_id}</div>
-                    <div style={{color:C.muted,fontSize:12,marginTop:2}}>{r.reward_name||"Premio"} · {new Date(r.created_at).toLocaleDateString("es-MX")}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginTop:3}}>
+                      <span style={{fontSize:16}}>{prizeEmoji}</span>
+                      <span style={{color:C.text,fontSize:13,fontWeight:600}}>{prizeName}</span>
+                    </div>
+                    <div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at||r.created_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>
                   </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:6,justifyContent:"flex-end"}}>
                       <span>🪙</span>
-                      <span style={{color:C.red,fontWeight:700}}>{r.coins_spent||0}</span>
+                      <span style={{color:C.red,fontWeight:800,fontSize:15}}>{r.coins_spent||r.points_spent||0}</span>
                     </div>
                     <span style={{padding:"2px 8px",borderRadius:6,background:`${statusColor[r.status]||C.muted}18`,color:statusColor[r.status]||C.muted,fontSize:11,fontWeight:700}}>{statusLabel[r.status]||r.status}</span>
                   </div>
