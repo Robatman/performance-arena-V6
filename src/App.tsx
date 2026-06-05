@@ -1064,6 +1064,96 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
   );
 }
 
+function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
+  const [editingId,setEditingId]=useState(null);
+  const [ef,setEf]=useState({name:"",emoji:"",pts:0,stock:0,minLevel:1});
+
+  const startEdit=(p)=>{
+    setEditingId(p.id);
+    setEf({name:p.name||"",emoji:p.emoji||"🎁",pts:p.points_cost||p.pts||0,stock:p.stock??0,minLevel:p.min_level||1});
+  };
+  const saveEdit=async(id)=>{
+    try{
+      await sbFetch(`reward_catalog?id=eq.${id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({name:ef.name.trim(),emoji:ef.emoji,points_cost:Number(ef.pts)||0,coins_cost:Number(ef.pts)||0,stock:Number(ef.stock),min_level:Number(ef.minLevel)||1})});
+      const updated=await sbFetch("reward_catalog?is_active=eq.true&order=created_at.desc").catch(()=>[]);
+      setPrizes(updated||[]);
+      setEditingId(null);
+      toast("Premio actualizado ✓");
+    }catch(e){toast("Error al guardar");}
+  };
+  const deletePrize=async(id,name)=>{
+    if(!window.confirm(`¿Eliminar "${name}" permanentemente? Esta acción no se puede deshacer.`))return;
+    try{
+      await sbFetch(`reward_catalog?id=eq.${id}`,{method:"DELETE",prefer:"return=minimal"});
+      const updated=await sbFetch("reward_catalog?is_active=eq.true&order=created_at.desc").catch(()=>[]);
+      setPrizes(updated||[]);
+      toast("Premio eliminado");
+    }catch(e){toast("Error al eliminar");}
+  };
+
+  return(<div>
+    <Card style={{marginBottom:14,border:`1.5px solid ${C.blue}33`}}>
+      <div style={{color:C.blue,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:12}}>NUEVO PREMIO</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+        <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NOMBRE</div><input value={pf.name} onChange={e=>setPf(p=>({...p,name:e.target.value}))} style={inp} placeholder="Nombre del premio"/></div>
+        <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>EMOJI</div><input value={pf.emoji} onChange={e=>setPf(p=>({...p,emoji:e.target.value}))} style={inp}/></div>
+        <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>COINS 🪙</div><input type="number" value={pf.pts} onChange={e=>setPf(p=>({...p,pts:+e.target.value}))} style={inp}/></div>
+        <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>STOCK (-1 = ilimitado)</div><input type="number" value={pf.stock} onChange={e=>setPf(p=>({...p,stock:+e.target.value}))} style={inp}/></div>
+        <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NIVEL MÍNIMO</div><select value={pf.minLevel} onChange={e=>setPf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Nivel 1 - Todos</option><option value={2}>Nivel 2+</option><option value={3}>Nivel 3+</option><option value={4}>Solo Nivel 4</option></select></div>
+      </div>
+      <Btn onClick={addPrize} color={C.blue} style={{width:"100%",padding:11}}>AÑADIR PREMIO</Btn>
+    </Card>
+
+    {prizes.map(p=>(
+      <Card key={p.id} style={{marginBottom:10,border:editingId===p.id?`1.5px solid ${C.blue}`:undefined}}>
+        {editingId===p.id?(
+          <div>
+            <div style={{color:C.blue,fontSize:11,fontWeight:700,letterSpacing:1,marginBottom:10}}>EDITAR PREMIO</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+              <div style={{gridColumn:"1/-1"}}><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NOMBRE</div><input value={ef.name} onChange={e=>setEf(p=>({...p,name:e.target.value}))} style={inp}/></div>
+              <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>EMOJI</div><input value={ef.emoji} onChange={e=>setEf(p=>({...p,emoji:e.target.value}))} style={{...inp,textAlign:"center",fontSize:18}}/></div>
+              <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>COINS 🪙</div><input type="number" value={ef.pts} onChange={e=>setEf(p=>({...p,pts:e.target.value}))} style={inp}/></div>
+              <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>STOCK (-1 = ilimitado)</div><input type="number" value={ef.stock} onChange={e=>setEf(p=>({...p,stock:e.target.value}))} style={inp}/></div>
+              <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NIVEL MÍNIMO</div><select value={ef.minLevel} onChange={e=>setEf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Nivel 1 - Todos</option><option value={2}>Nivel 2+</option><option value={3}>Nivel 3+</option><option value={4}>Solo Nivel 4</option></select></div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <Btn onClick={()=>saveEdit(p.id)} color={C.green} style={{flex:1,padding:10}}>💾 Guardar</Btn>
+              <Btn onClick={()=>setEditingId(null)} color={C.muted} style={{flex:1,padding:10}}>Cancelar</Btn>
+            </div>
+          </div>
+        ):(
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{fontSize:30,flexShrink:0}}>{p.emoji||"🎁"}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:C.text,fontWeight:700}}>{p.name}</div>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4,flexWrap:"wrap"}}>
+                <span style={{fontSize:12}}>🪙</span>
+                <span style={{color:C.gold,fontWeight:700,fontSize:13}}>{p.points_cost||p.pts} coins</span>
+                <Tag color={C.purple}>Nivel {p.min_level||1}+</Tag>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6}}>
+                <span style={{color:C.muted,fontSize:11,flexShrink:0}}>Stock:</span>
+                <input
+                  type="number"
+                  defaultValue={p.stock}
+                  onBlur={e=>{const v=Number(e.target.value);if(v!==p.stock)updPz(p.id,"stock",v);}}
+                  onKeyDown={e=>{if(e.key==="Enter"){const v=Number(e.target.value);if(v!==p.stock)updPz(p.id,"stock",v);e.target.blur();}}}
+                  style={{width:70,border:`1.5px solid ${C.border}`,borderRadius:7,padding:"4px 8px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,textAlign:"center"}}
+                />
+                <span style={{color:C.muted,fontSize:10}}>{p.stock===-1?"(ilimitado)":""}</span>
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
+              <Btn onClick={()=>startEdit(p)} color={C.blue} sm>✏️ Editar</Btn>
+              <Btn onClick={()=>deletePrize(p.id,p.name)} color={C.red} sm>🗑️ Eliminar</Btn>
+            </div>
+          </div>
+        )}
+      </Card>
+    ))}
+  </div>);
+}
+
 function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllCoins,reloadUsers,toast,inp}){
   const [calcCoins,setCalcCoins]=useState(null);
   const [loading,setLoading]=useState(false);
@@ -1415,40 +1505,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
         <Btn onClick={sendNotif} color={C.blue} style={{width:"100%",padding:11}} disabled={!nf.title.trim()||!nf.body.trim()}>ENVIAR NOTIFICACION</Btn>
       </Card>)}
 
-      {tab==="prizes"&&(<div>
-        <Card style={{marginBottom:14,border:`1.5px solid ${C.blue}33`}}>
-          <div style={{color:C.blue,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:12}}>NUEVO PREMIO</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-            <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NOMBRE</div><input value={pf.name} onChange={e=>setPf(p=>({...p,name:e.target.value}))} style={inp} placeholder="Nombre del premio"/></div>
-            <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>EMOJI</div><input value={pf.emoji} onChange={e=>setPf(p=>({...p,emoji:e.target.value}))} style={inp}/></div>
-            <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>COINS 🪙</div><input type="number" value={pf.pts} onChange={e=>setPf(p=>({...p,pts:+e.target.value}))} style={inp}/></div>
-            <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>STOCK</div><input type="number" value={pf.stock} onChange={e=>setPf(p=>({...p,stock:+e.target.value}))} style={inp}/></div>
-            <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NIVEL MÍNIMO</div><select value={pf.minLevel} onChange={e=>setPf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Nivel 1 - Todos</option><option value={2}>Nivel 2+</option><option value={3}>Nivel 3+</option><option value={4}>Solo Nivel 4</option></select></div>
-          </div>
-          <Btn onClick={addPrize} color={C.blue} style={{width:"100%",padding:11}}>ANADIR PREMIO</Btn>
-        </Card>
-        {prizes.map(p=>(
-          <Card key={p.id} style={{marginBottom:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <div style={{fontSize:30,flexShrink:0}}>{p.emoji||"🎁"}</div>
-              <div style={{flex:1}}>
-                <div style={{color:C.text,fontWeight:700}}>{p.name}</div>
-                <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
-                  <span style={{fontSize:12}}>🪙</span>
-                  <span style={{color:C.gold,fontWeight:700,fontSize:13}}>{p.points_cost||p.pts} coins</span>
-                  <Tag color={C.muted}>Stock: {p.stock}</Tag>
-                  <Tag color={C.purple}>Nivel {p.min_level||1}+</Tag>
-                </div>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                <Btn onClick={()=>updPz(p.id,"stock",Math.max(0,(p.stock||0)-1))} color={C.red} sm>-1</Btn>
-                <Btn onClick={()=>updPz(p.id,"stock",(p.stock||0)+5)} color={C.green} sm>+5</Btn>
-                <Btn onClick={async()=>{await db.updatePrize(p.id,{is_active:false});const u=await db.getPrizes();setPrizes(u||[]);toast("Premio ocultado");}} color={C.muted} sm>Ocultar</Btn>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>)}
+      {tab==="prizes"&&(<PrizesTab prizes={prizes} setPrizes={setPrizes} pf={pf} setPf={setPf} addPrize={addPrize} updPz={updPz} toast={toast} inp={inp}/>)}
 
       {tab==="coins"&&(<CoinsTab allUsers={allUsers} coinSettings={coinSettings} onSaveCoinSettings={onSaveCoinSettings} resetAllCoins={resetAllCoins} reloadUsers={reloadUsers} toast={toast} inp={inp}/>)}
 
