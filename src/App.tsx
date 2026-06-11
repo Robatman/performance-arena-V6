@@ -51,8 +51,8 @@ const db = {
     body:JSON.stringify({week, activities, published_by:publishedBy, updated_at:new Date().toISOString()})
   }),
   clearBulletin: (id) => sbFetch(`weekly_bulletin?id=eq.${id}`, {method:"PATCH", body:JSON.stringify({activities:[]})}),
-  getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&select=id,user_id,reward_id,points_spent,status,redeemed_at&order=redeemed_at.desc`),
-  getAllRedemptions: () => sbFetch(`reward_redemptions?select=id,user_id,reward_id,points_spent,coins_spent,status,redeemed_at,created_at,reward_name&order=redeemed_at.desc&limit=500`),
+  getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&select=id,user_id,reward_id,points_spent,status,created_at&order=created_at.desc`),
+  getAllRedemptions: () => sbFetch(`reward_redemptions?select=id,user_id,reward_id,points_spent,status,created_at&order=created_at.desc&limit=500`),
   // Coins history
   addCoinsTransaction: (d) => sbFetch("coins_transactions", { method: "POST", body: JSON.stringify(d) }),
   getCoinsHistory: (uid) => sbFetch(`coins_transactions?agent_id=eq.${uid}&order=created_at.desc&limit=50`),
@@ -695,12 +695,16 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
           ):myRedemptions.map((r,i)=>{
             const statusColor={pending:C.yellow,approved:C.green,delivered:C.blue,cancelled:C.red};
             const statusLabel={pending:"Pendiente",approved:"Aprobado",delivered:"Entregado",cancelled:"Cancelado"};
+            const prizeLookup=prizes?.find(px=>px.id===r.reward_id);
+            const rName=prizeLookup?.name||r.reward_name||"Premio";
+            const rEmoji=prizeLookup?.emoji||"🎁";
+            const rDate=r.created_at||r.redeemed_at;
             return(
               <Card key={r.id||i} style={{marginBottom:10}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                   <div style={{flex:1}}>
-                    <div style={{color:C.text,fontWeight:700,fontSize:14,marginBottom:4}}>{r.reward_name||"Premio"}</div>
-                    <div style={{color:C.muted,fontSize:12}}>{new Date(r.created_at).toLocaleDateString("es-MX")}</div>
+                    <div style={{color:C.text,fontWeight:700,fontSize:14,marginBottom:4}}>{rEmoji} {rName}</div>
+                    <div style={{color:C.muted,fontSize:12}}>{rDate?new Date(rDate).toLocaleDateString("es-MX"):"—"}</div>
                   </div>
                   <div style={{textAlign:"right"}}>
                     <div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end",marginBottom:4}}>
@@ -1589,7 +1593,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                       <span style={{fontSize:16}}>{prizeEmoji}</span>
                       <span style={{color:C.text,fontSize:13,fontWeight:600}}>{prizeName}</span>
                     </div>
-                    <div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at||r.created_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>
+                    {(r.redeemed_at||r.created_at)&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at||r.created_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"})}</div>}
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:6,justifyContent:"flex-end"}}>
@@ -1622,12 +1626,12 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                       <span style={{fontSize:16}}>{prizeEmoji}</span>
                       <span style={{color:C.text,fontSize:13,fontWeight:600}}>{prizeName}</span>
                     </div>
-                    <div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at||r.created_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>
+                    {(r.redeemed_at||r.created_at)&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at||r.created_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"})}</div>}
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:6,justifyContent:"flex-end"}}>
                       <span>🪙</span>
-                      <span style={{color:C.red,fontWeight:800,fontSize:15}}>{r.coins_spent||r.points_spent||0}</span>
+                      <span style={{color:C.red,fontWeight:800,fontSize:15}}>{r.points_spent||0}</span>
                     </div>
                     <span style={{padding:"2px 8px",borderRadius:6,background:`${statusColor[r.status]||C.muted}18`,color:statusColor[r.status]||C.muted,fontSize:11,fontWeight:700}}>{statusLabel[r.status]||r.status}</span>
                   </div>
