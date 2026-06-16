@@ -51,8 +51,8 @@ const db = {
     body:JSON.stringify({week, activities, published_by:publishedBy, updated_at:new Date().toISOString()})
   }),
   clearBulletin: (id) => sbFetch(`weekly_bulletin?id=eq.${id}`, {method:"PATCH", body:JSON.stringify({activities:[]})}),
-  getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&select=id,user_id,reward_id,points_spent,status,created_at&order=created_at.desc`),
-  getAllRedemptions: () => sbFetch(`reward_redemptions?select=id,user_id,reward_id,points_spent,status,created_at&order=created_at.desc&limit=500`),
+  getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&select=id,user_id,reward_id,points_spent,status,redeemed_at,reward_name&order=redeemed_at.desc`),
+  getAllRedemptions: () => sbFetch(`reward_redemptions?select=id,user_id,reward_id,points_spent,coins_spent,status,redeemed_at,reward_name&order=redeemed_at.desc&limit=500`),
   // Coins history
   addCoinsTransaction: (d) => sbFetch("coins_transactions", { method: "POST", body: JSON.stringify(d) }),
   getCoinsHistory: (uid) => sbFetch(`coins_transactions?agent_id=eq.${uid}&order=created_at.desc&limit=50`),
@@ -641,6 +641,7 @@ function PrizeCard({p,coins,onRedeem,locked=false,userLevel=1}){
       </div>
       <div style={{flex:1,minWidth:0}}>
         <div style={{color:locked?C.muted:C.text,fontWeight:700,fontSize:14,marginBottom:3}}>{p.name}</div>
+        {p.description&&<div style={{color:C.muted,fontSize:11,marginBottom:4,lineHeight:1.4}}>{p.description}</div>}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
           {minLv>1&&(<span style={{padding:"1px 7px",borderRadius:5,background:`${lvColor}18`,border:`1px solid ${lvColor}40`,color:lvColor,fontSize:10,fontWeight:800}}>LVL {minLv}+ requerido</span>)}
           <span style={{color:noStock?C.red:C.muted,fontSize:11}}>{noStock?"Sin stock":`Stock: ${stock}`}</span>
@@ -698,7 +699,7 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
             const prizeLookup=prizes?.find(px=>px.id===r.reward_id);
             const rName=prizeLookup?.name||r.reward_name||"Premio";
             const rEmoji=prizeLookup?.emoji||"🎁";
-            const rDate=r.created_at||r.redeemed_at;
+            const rDate=r.redeemed_at;
             return(
               <Card key={r.id||i} style={{marginBottom:10}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -1070,15 +1071,15 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
 
 function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
   const [editingId,setEditingId]=useState(null);
-  const [ef,setEf]=useState({name:"",emoji:"",pts:0,stock:0,minLevel:1});
+  const [ef,setEf]=useState({name:"",emoji:"",pts:0,stock:0,minLevel:1,description:""});
 
   const startEdit=(p)=>{
     setEditingId(p.id);
-    setEf({name:p.name||"",emoji:p.emoji||"🎁",pts:p.points_cost||p.pts||0,stock:p.stock??0,minLevel:p.min_level||1});
+    setEf({name:p.name||"",emoji:p.emoji||"🎁",pts:p.points_cost||p.pts||0,stock:p.stock??0,minLevel:p.min_level||1,description:p.description||""});
   };
   const saveEdit=async(id)=>{
     try{
-      await sbFetch(`reward_catalog?id=eq.${id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({name:ef.name.trim(),emoji:ef.emoji,points_cost:Number(ef.pts)||0,coins_cost:Number(ef.pts)||0,stock:Number(ef.stock),min_level:Number(ef.minLevel)||1})});
+      await sbFetch(`reward_catalog?id=eq.${id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({name:ef.name.trim(),emoji:ef.emoji,points_cost:Number(ef.pts)||0,coins_cost:Number(ef.pts)||0,stock:Number(ef.stock),min_level:Number(ef.minLevel)||1,description:ef.description.trim()||null})});
       const updated=await sbFetch("reward_catalog?is_active=eq.true&order=created_at.desc").catch(()=>[]);
       setPrizes(updated||[]);
       setEditingId(null);
@@ -1104,6 +1105,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
         <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>COINS 🪙</div><input type="number" value={pf.pts} onChange={e=>setPf(p=>({...p,pts:+e.target.value}))} style={inp}/></div>
         <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>STOCK (-1 = ilimitado)</div><input type="number" value={pf.stock} onChange={e=>setPf(p=>({...p,stock:+e.target.value}))} style={inp}/></div>
         <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NIVEL MÍNIMO</div><select value={pf.minLevel} onChange={e=>setPf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Nivel 1 - Todos</option><option value={2}>Nivel 2+</option><option value={3}>Nivel 3+</option><option value={4}>Solo Nivel 4</option></select></div>
+        <div style={{gridColumn:"1/-1"}}><div style={{color:C.muted,fontSize:10,marginBottom:3}}>TÉRMINOS Y CONDICIONES</div><textarea value={pf.description} onChange={e=>setPf(p=>({...p,description:e.target.value}))} rows={3} placeholder="Condiciones de uso, restricciones, vigencia..." style={{...inp,resize:"vertical",height:"auto",lineHeight:1.5}}/></div>
       </div>
       <Btn onClick={addPrize} color={C.blue} style={{width:"100%",padding:11}}>AÑADIR PREMIO</Btn>
     </Card>
@@ -1119,6 +1121,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
               <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>COINS 🪙</div><input type="number" value={ef.pts} onChange={e=>setEf(p=>({...p,pts:e.target.value}))} style={inp}/></div>
               <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>STOCK (-1 = ilimitado)</div><input type="number" value={ef.stock} onChange={e=>setEf(p=>({...p,stock:e.target.value}))} style={inp}/></div>
               <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NIVEL MÍNIMO</div><select value={ef.minLevel} onChange={e=>setEf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Nivel 1 - Todos</option><option value={2}>Nivel 2+</option><option value={3}>Nivel 3+</option><option value={4}>Solo Nivel 4</option></select></div>
+              <div style={{gridColumn:"1/-1"}}><div style={{color:C.muted,fontSize:10,marginBottom:3}}>TÉRMINOS Y CONDICIONES</div><textarea value={ef.description} onChange={e=>setEf(p=>({...p,description:e.target.value}))} rows={3} placeholder="Condiciones de uso, restricciones, vigencia..." style={{...inp,resize:"vertical",height:"auto",lineHeight:1.5}}/></div>
             </div>
             <div style={{display:"flex",gap:8}}>
               <Btn onClick={()=>saveEdit(p.id)} color={C.green} style={{flex:1,padding:10}}>💾 Guardar</Btn>
@@ -1130,6 +1133,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
             <div style={{fontSize:30,flexShrink:0}}>{p.emoji||"🎁"}</div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{color:C.text,fontWeight:700}}>{p.name}</div>
+              {p.description&&<div style={{color:C.muted,fontSize:11,marginTop:2,lineHeight:1.4}}>{p.description}</div>}
               <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4,flexWrap:"wrap"}}>
                 <span style={{fontSize:12}}>🪙</span>
                 <span style={{color:C.gold,fontWeight:700,fontSize:13}}>{p.points_cost||p.pts} coins</span>
@@ -1321,7 +1325,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const [nf,setNf]=useState({toId:"all",title:"",body:""});
   const sendNotif=async()=>{if(!nf.title.trim()||!nf.body.trim()){toast("Completa titulo y mensaje");return;}const targets=nf.toId==="all"?allUsers.filter(u=>u.active&&u.role==="user"):allUsers.filter(u=>u.id===nf.toId);try{await Promise.all(targets.map(u=>db.createNotif({recipient_id:u.id,sender_id:cu.id,title:nf.title,message:nf.body,type:"info"})));setNf({toId:"all",title:"",body:""});toast(`Notificacion enviada a ${targets.length} usuario(s)`);}catch(e){toast("Error");}};
 
-  const [pf,setPf]=useState({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1});
+  const [pf,setPf]=useState({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1,description:""});
   const [bulletinWeek,setBulletinWeek]=useState("");
   const [bulletinItems,setBulletinItems]=useState(["","","",""]);
   const [allRedemptions,setAllRedemptions]=useState([]);
@@ -1357,7 +1361,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   useEffect(()=>{if(isSA)reloadCanjes();},[isSA]);
   // Reload canjes every time the admin navigates to that tab
   useEffect(()=>{if(tab==="canjes"&&isSA)reloadCanjes();},[tab]);
-  const addPrize=async()=>{if(!pf.name.trim()){toast("Escribe el nombre");return;}try{await db.createPrize({name:pf.name,emoji:pf.emoji||"🎁",points_cost:pf.pts,coins_cost:pf.pts,stock:pf.stock,category:"general",is_active:true,min_level:pf.minLevel});const updated=await db.getPrizes();setPrizes(updated||[]);setPf({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1});toast("Premio anadido");}catch(e){toast("Error al crear premio");}};
+  const addPrize=async()=>{if(!pf.name.trim()){toast("Escribe el nombre");return;}try{await db.createPrize({name:pf.name,emoji:pf.emoji||"🎁",points_cost:pf.pts,coins_cost:pf.pts,stock:pf.stock,category:"general",is_active:true,min_level:pf.minLevel,description:pf.description.trim()||null});const updated=await db.getPrizes();setPrizes(updated||[]);setPf({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1,description:""});toast("Premio anadido");}catch(e){toast("Error al crear premio");}};
   const updPz=async(id,field,val)=>{const dbField=field==="pts"?"points_cost":field==="stock"?"stock":field==="minLevel"?"min_level":field;try{await db.updatePrize(id,{[dbField]:val});const updated=await db.getPrizes();setPrizes(updated||[]);}catch(e){toast("Error");}};
 
   // Coins reset (quarterly)
@@ -2209,7 +2213,7 @@ export default function App(){
         if(stock!==-1&&stock<=0){toast("Sin stock");return;}
         if(sc.coins<cost){toast(`Necesitas ${cost} 🪙 coins, tienes ${sc.coins}`);return;}
         try{
-          await db.createRedemption({user_id:cu.id,reward_id:p.id,points_spent:cost,status:"pending"});
+          await db.createRedemption({user_id:cu.id,reward_id:p.id,points_spent:cost,reward_name:p.name||"Premio",status:"pending"});
           if(stock!==-1)await db.updatePrize(p.id,{stock:stock-1});
           // Deduct coins from profile
           const newCoins=Math.max(0,(cu.coins||0)-cost);
