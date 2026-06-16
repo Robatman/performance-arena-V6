@@ -1570,26 +1570,42 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
             const prizeEmoji=prize?.emoji||"🎁";
             const statusColor={pending:C.yellow,approved:C.green,delivered:C.blue,cancelled:C.red};
             const statusLabel={pending:"Pendiente",approved:"Aprobado",delivered:"Entregado",cancelled:"Cancelado"};
+            const borderColor={pending:undefined,approved:`3px solid ${C.green}`,delivered:`3px solid ${C.blue}`,cancelled:`3px solid ${C.red}`};
+            const patchStatus=async(newStatus)=>{
+              await sbFetch(`reward_redemptions?id=eq.${r.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({status:newStatus})});
+              setAllRedemptions(prev=>prev.map(x=>x.id===r.id?{...x,status:newStatus}:x));
+            };
+            const approveRedemption=async()=>{
+              try{
+                await patchStatus("approved");
+                toast(`✅ Canje aprobado para ${u?.name||"agente"}`);
+              }catch(e){toast("Error al aprobar");console.error(e);}
+            };
+            const deliverRedemption=async()=>{
+              try{
+                await patchStatus("delivered");
+                toast(`📦 Marcado como entregado`);
+              }catch(e){toast("Error al marcar entregado");console.error(e);}
+            };
             const cancelRedemption=async()=>{
               if(!window.confirm(`¿Cancelar este canje y devolver ${r.points_spent||0} 🪙 a ${u?.name||"el agente"}?`))return;
               try{
-                await sbFetch(`reward_redemptions?id=eq.${r.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({status:"cancelled"})});
+                await patchStatus("cancelled");
                 if(u){
                   const fresh=await sbFetch(`profiles?id=eq.${u.id}&select=coins`).catch(()=>[]);
                   const cur=fresh?.[0]?.coins||0;
                   await sbFetch(`profiles?id=eq.${u.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({coins:cur+(r.points_spent||0)})});
                 }
-                if(prize&&prize.stock>=0){
+                if(prize&&prize.stock!==-1){
                   await db.updatePrize(r.reward_id,{stock:(prize.stock||0)+1});
                   const updated=await db.getPrizes();setPrizes(updated||[]);
                 }
                 await reloadUsers();
-                setAllRedemptions(prev=>prev.map(x=>x.id===r.id?{...x,status:"cancelled"}:x));
                 toast(`Canje cancelado — ${r.points_spent||0} 🪙 devueltos a ${u?.name||"agente"}`);
               }catch(e){toast("Error al cancelar canje");console.error(e);}
             };
             return(
-              <Card key={r.id||i} style={{marginBottom:8,borderLeft:r.status==="cancelled"?`3px solid ${C.red}`:undefined}}>
+              <Card key={r.id||i} style={{marginBottom:8,borderLeft:borderColor[r.status]}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{color:C.text,fontWeight:700,fontSize:13}}>{u?.name||r.user_id}</div>
@@ -1597,7 +1613,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                       <span style={{fontSize:16}}>{prizeEmoji}</span>
                       <span style={{color:C.text,fontSize:13,fontWeight:600}}>{prizeName}</span>
                     </div>
-                    {(r.redeemed_at||r.created_at)&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at||r.created_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"})}</div>}
+                    {r.redeemed_at&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"})}</div>}
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:6,justifyContent:"flex-end"}}>
@@ -1607,7 +1623,14 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                     <div style={{marginBottom:6}}>
                       <span style={{padding:"2px 8px",borderRadius:6,background:`${statusColor[r.status]||C.muted}18`,color:statusColor[r.status]||C.muted,fontSize:11,fontWeight:700}}>{statusLabel[r.status]||r.status}</span>
                     </div>
-                    {r.status!=="cancelled"&&<Btn onClick={cancelRedemption} color={C.red} sm>✗ Cancelar</Btn>}
+                    {r.status==="pending"&&<div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      <Btn onClick={approveRedemption} color={C.green} sm>✓ Aprobar</Btn>
+                      <Btn onClick={cancelRedemption} color={C.red} sm>✗ Cancelar</Btn>
+                    </div>}
+                    {r.status==="approved"&&<div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      <Btn onClick={deliverRedemption} color={C.blue} sm>📦 Entregado</Btn>
+                      <Btn onClick={cancelRedemption} color={C.red} sm>✗ Cancelar</Btn>
+                    </div>}
                   </div>
                 </div>
               </Card>
@@ -1618,11 +1641,35 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
           {allStaffRed.length===0?<Card style={{textAlign:"center",color:C.muted,padding:20}}>Sin canjes de staff aún.</Card>:allStaffRed.map((r,i)=>{
             const statusColor={pending:C.yellow,approved:C.green,delivered:C.blue,cancelled:C.red};
             const statusLabel={pending:"Pendiente",approved:"Aprobado",delivered:"Entregado",cancelled:"Cancelado"};
+            const borderColor={pending:undefined,approved:`3px solid ${C.green}`,delivered:`3px solid ${C.blue}`,cancelled:`3px solid ${C.red}`};
             const prize=prizes.find(p=>p.id===r.reward_id);
             const prizeName=prize?.name||r.reward_name||"Premio";
             const prizeEmoji=prize?.emoji||"🎁";
+            const patchStaffStatus=async(newStatus)=>{
+              await sbFetch(`staff_redemptions?id=eq.${r.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({status:newStatus})});
+              setAllStaffRed(prev=>prev.map(x=>x.id===r.id?{...x,status:newStatus}:x));
+            };
+            const approveStaff=async()=>{
+              try{await patchStaffStatus("approved");toast("✅ Canje de staff aprobado");}
+              catch(e){toast("Error al aprobar");console.error(e);}
+            };
+            const deliverStaff=async()=>{
+              try{await patchStaffStatus("delivered");toast("📦 Marcado como entregado");}
+              catch(e){toast("Error");console.error(e);}
+            };
+            const cancelStaff=async()=>{
+              if(!window.confirm(`¿Cancelar este canje de staff?`))return;
+              try{
+                await patchStaffStatus("cancelled");
+                if(prize&&prize.stock!==-1){
+                  await db.updatePrize(r.reward_id,{stock:(prize.stock||0)+1});
+                  const updated=await db.getPrizes();setPrizes(updated||[]);
+                }
+                toast("Canje cancelado");
+              }catch(e){toast("Error al cancelar");console.error(e);}
+            };
             return(
-              <Card key={r.id||i} style={{marginBottom:8,borderLeft:r.status==="cancelled"?`3px solid ${C.red}`:undefined}}>
+              <Card key={r.id||i} style={{marginBottom:8,borderLeft:borderColor[r.status]}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{color:C.text,fontWeight:700,fontSize:13}}>{r.staff_game_id}</div>
@@ -1630,14 +1677,24 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                       <span style={{fontSize:16}}>{prizeEmoji}</span>
                       <span style={{color:C.text,fontSize:13,fontWeight:600}}>{prizeName}</span>
                     </div>
-                    {(r.redeemed_at||r.created_at)&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at||r.created_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"})}</div>}
+                    {r.redeemed_at&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"})}</div>}
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:6,justifyContent:"flex-end"}}>
                       <span>🪙</span>
                       <span style={{color:C.red,fontWeight:800,fontSize:15}}>{r.points_spent||0}</span>
                     </div>
-                    <span style={{padding:"2px 8px",borderRadius:6,background:`${statusColor[r.status]||C.muted}18`,color:statusColor[r.status]||C.muted,fontSize:11,fontWeight:700}}>{statusLabel[r.status]||r.status}</span>
+                    <div style={{marginBottom:6}}>
+                      <span style={{padding:"2px 8px",borderRadius:6,background:`${statusColor[r.status]||C.muted}18`,color:statusColor[r.status]||C.muted,fontSize:11,fontWeight:700}}>{statusLabel[r.status]||r.status}</span>
+                    </div>
+                    {r.status==="pending"&&<div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      <Btn onClick={approveStaff} color={C.green} sm>✓ Aprobar</Btn>
+                      <Btn onClick={cancelStaff} color={C.red} sm>✗ Cancelar</Btn>
+                    </div>}
+                    {r.status==="approved"&&<div style={{display:"flex",flexDirection:"column",gap:5}}>
+                      <Btn onClick={deliverStaff} color={C.blue} sm>📦 Entregado</Btn>
+                      <Btn onClick={cancelStaff} color={C.red} sm>✗ Cancelar</Btn>
+                    </div>}
                   </div>
                 </div>
               </Card>
