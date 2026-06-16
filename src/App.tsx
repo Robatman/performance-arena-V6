@@ -1589,20 +1589,29 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
             };
             const cancelRedemption=async()=>{
               if(!window.confirm(`¿Cancelar este canje y devolver ${r.points_spent||0} 🪙 a ${u?.name||"el agente"}?`))return;
+              // Step 1: mark cancelled in DB
+              try{await patchStatus("cancelled");}
+              catch(e){toast("Error al actualizar estado");console.error("[cancel step1]",e);return;}
+              // Step 2: refund coins
               try{
-                await patchStatus("cancelled");
-                if(u){
-                  const fresh=await sbFetch(`profiles?id=eq.${u.id}&select=coins`).catch(()=>[]);
+                if(u?.id){
+                  const fresh=await sbFetch(`profiles?id=eq.${u.id}&select=coins`);
                   const cur=fresh?.[0]?.coins||0;
                   await sbFetch(`profiles?id=eq.${u.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({coins:cur+(r.points_spent||0)})});
                 }
-                if(prize&&prize.stock!==-1){
-                  await db.updatePrize(r.reward_id,{stock:(prize.stock||0)+1});
+              }catch(e){console.error("[cancel step2 coins]",e);}
+              // Step 3: restore stock (fetch fresh stock to avoid stale value)
+              try{
+                const freshPrize=await sbFetch(`reward_catalog?id=eq.${r.reward_id}&select=id,stock`).catch(()=>[]);
+                const currentStock=freshPrize?.[0]?.stock;
+                if(currentStock!=null&&currentStock!==-1){
+                  await sbFetch(`reward_catalog?id=eq.${r.reward_id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({stock:currentStock+1})});
                   const updated=await db.getPrizes();setPrizes(updated||[]);
                 }
-                await reloadUsers();
-                toast(`Canje cancelado — ${r.points_spent||0} 🪙 devueltos a ${u?.name||"agente"}`);
-              }catch(e){toast("Error al cancelar canje");console.error(e);}
+              }catch(e){console.error("[cancel step3 stock]",e);}
+              // Step 4: refresh users
+              try{await reloadUsers();}catch(e){console.error("[cancel step4]",e);}
+              toast(`Canje cancelado — ${r.points_spent||0} 🪙 devueltos a ${u?.name||"agente"}`);
             };
             return(
               <Card key={r.id||i} style={{marginBottom:8,borderLeft:borderColor[r.status]}}>
