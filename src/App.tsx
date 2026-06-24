@@ -855,7 +855,7 @@ function CoachingReplyCard({n, user, onDone}){
           // Notify manager that agent responded (session not yet complete)
           const mgStaff=await sbFetch(`staff_profiles?game_id=eq.${encodeURIComponent(s.manager_game_id)}&select=id`).catch(()=>[]);
           if(mgStaff?.[0]?.id){
-            await sbFetch("notifications",{method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({
+            await sbFetch("notifications",{method:"POST",prefer:"return=minimal",body:JSON.stringify({
               recipient_id:mgStaff[0].id,
               title:"👔 Verificación de Coaching Session",
               message:`El agente ${agentGameId} respondió la sesión del coach ${s.coach_game_id}. Verifica en Avisos 🔔.`,
@@ -1354,6 +1354,10 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
     }
   },[isSA]);
   const [allStaffRed,setAllStaffRed]=useState([]);
+  const [coaches,setCoaches]=useState([]);
+  const [groupEditId,setGroupEditId]=useState(null);
+  const [groupEdits,setGroupEdits]=useState({});
+  useEffect(()=>{if(tab==="grupos")sbFetch("staff_profiles?role=in.(team_coach,quality_coach)&select=game_id,full_name,role&order=role.asc,full_name.asc").then(d=>setCoaches(d||[])).catch(()=>{});},[tab]);
   const reloadCanjes=()=>{
     db.getAllRedemptions().then(d=>setAllRedemptions(d||[])).catch(()=>{});
     sbFetch("staff_redemptions?order=created_at.desc&limit=200").then(d=>setAllStaffRed(d||[])).catch(()=>{});
@@ -1374,7 +1378,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   };
 
   const filtered=allUsers.filter(u=>filter==="active"?u.active:!u.active);
-  const tabs=[{id:"bulletin",label:"📋 Boletín"},{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"kudosHistory",label:"👏 Historial Kudos"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"}];
+  const tabs=[{id:"bulletin",label:"📋 Boletín"},{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"kudosHistory",label:"👏 Historial Kudos"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"},{id:"grupos",label:"👥 Grupos"}];
 
   return(
     <div style={{paddingBottom:100}}>
@@ -1478,7 +1482,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                 <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
                   <Btn onClick={()=>toggleActive(u)} color={u.active?C.red:C.green} sm>{u.active?"Desactivar":"Activar"}</Btn>
                   <Btn onClick={()=>{setResetId(resetId===u.id?null:u.id);setNewPw("");}} color={resetId===u.id?"#6b7280":C.yellow} sm>{resetId===u.id?"Cancelar":"Contrasena"}</Btn>
-                  <Btn onClick={()=>setDelConfirm(u)} color={C.red} sm>Eliminar</Btn>
+                  <Btn onClick={()=>setDelConfirm(u)} color={C.red} sm>Desactivar</Btn>
                 </div>
               )}
             </div>
@@ -1670,8 +1674,10 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
               if(!window.confirm(`¿Cancelar este canje de staff?`))return;
               try{
                 await patchStaffStatus("cancelled");
-                if(prize&&prize.stock!==-1){
-                  await db.updatePrize(r.reward_id,{stock:(prize.stock||0)+1});
+                const freshPrize=await sbFetch(`reward_catalog?id=eq.${r.reward_id}&select=id,stock`).catch(()=>[]);
+                const currentStock=freshPrize?.[0]?.stock;
+                if(currentStock!=null&&currentStock!==-1){
+                  await db.updatePrize(r.reward_id,{stock:currentStock+1});
                   const updated=await db.getPrizes();setPrizes(updated||[]);
                 }
                 toast("Canje cancelado");
@@ -1712,6 +1718,40 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
         </div>
       )}
       {tab==="referrals"&&<ReferralsPanel isAdmin={true} currentUser={{game_id:cu.game_id||cu.username||"",username:cu.username||cu.name||""}}/>}
+      {tab==="grupos"&&(
+        <div>
+          <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
+            <div style={{color:C.blue,fontWeight:800,fontSize:14,marginBottom:2}}>👥 Administrar Grupos</div>
+            <div style={{color:C.muted,fontSize:12}}>Asigna Team Coach y QA Coach a cada agente</div>
+          </Card>
+          {allUsers.filter(u=>u.active).map(u=>{
+            const isEditing=groupEditId===u.id;
+            const e=groupEdits[u.id]||{coach_id:u.coach_id||"",qa_coach:u.qa_coach||"",project:u.project||""};
+            const teamCoaches=coaches.filter(c=>c.role==="team_coach");
+            const qaCoaches=coaches.filter(c=>c.role==="quality_coach");
+            return(
+              <Card key={u.id} style={{marginBottom:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:isEditing?10:0}}>
+                  <Av av={u.avatar} sz={36} shop={DEFAULT_SHOP}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{color:C.text,fontWeight:700,fontSize:13}}>{u.name}</div>
+                    <div style={{color:C.muted,fontSize:11}}>{u.project||"Sin proyecto"} · Coach: {u.coach_id||"—"} · QA: {u.qa_coach||"—"}</div>
+                  </div>
+                  {isSA&&<Btn onClick={()=>{if(isEditing){setGroupEditId(null);}else{setGroupEdits(p=>({...p,[u.id]:{coach_id:u.coach_id||"",qa_coach:u.qa_coach||"",project:u.project||""}}));setGroupEditId(u.id);}}} color={isEditing?C.muted:C.blue} sm>{isEditing?"Cerrar":"Editar"}</Btn>}
+                </div>
+                {isEditing&&(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>PROYECTO</div><input value={e.project} onChange={ev=>setGroupEdits(p=>({...p,[u.id]:{...e,project:ev.target.value}}))} style={inp} placeholder="ej. Campaign K"/></div>
+                    <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>TEAM COACH</div><select value={e.coach_id} onChange={ev=>setGroupEdits(p=>({...p,[u.id]:{...e,coach_id:ev.target.value}}))} style={inp}><option value="">Sin coach</option>{teamCoaches.map(c=><option key={c.game_id} value={c.game_id}>{c.full_name||c.game_id}</option>)}</select></div>
+                    <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>QA COACH</div><select value={e.qa_coach} onChange={ev=>setGroupEdits(p=>({...p,[u.id]:{...e,qa_coach:ev.target.value}}))} style={inp}><option value="">Sin QA coach</option>{qaCoaches.map(c=><option key={c.game_id} value={c.game_id}>{c.full_name||c.game_id}</option>)}</select></div>
+                    <div style={{display:"flex",alignItems:"flex-end"}}><Btn onClick={async()=>{try{await db.updateUser(u.id,{team:e.project||null,coach_id:e.coach_id||null,qa_coach:e.qa_coach||null});await reloadUsers();setGroupEditId(null);toast(`${u.name} actualizado`);}catch(ex){toast("Error al guardar");}}} color={C.green} style={{width:"100%",padding:9}}>💾 Guardar</Btn></div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

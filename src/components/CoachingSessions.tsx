@@ -29,7 +29,7 @@ async function sbFetch(path, opts: any = {}) {
 const db = {
   getSessions: (coachId) => sbFetch(`coaching_sessions?coach_game_id=eq.${encodeURIComponent(coachId)}&order=created_at.desc`),
   getSessionsForManager: (managerGameId) => sbFetch(`coaching_sessions?manager_game_id=eq.${encodeURIComponent(managerGameId)}&order=created_at.desc`),
-  getSessionsForAgent: (agentGameId) => sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(agentGameId)}&status=eq.pending&order=created_at.desc`),
+  getSessionsForAgent: (agentGameId) => sbFetch(`coaching_sessions?agent_game_id=eq.${encodeURIComponent(agentGameId)}&status=in.(pending,manager_responded)&order=created_at.desc`),
   getAllSessions: () => sbFetch(`coaching_sessions?order=created_at.desc&limit=500`),
   createSession: (d) => sbFetch("coaching_sessions", { method: "POST", body: JSON.stringify(d) }),
   updateSession: (id, d) => sbFetch(`coaching_sessions?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(d) }),
