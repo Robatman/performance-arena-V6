@@ -569,8 +569,12 @@ function Leaderboard({user,allUsers,shop,weeklyMetricsAll}){
           const kpi=(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);
           totals[r.game_id]=(totals[r.game_id]||0)+kpi;
         });
+        const findProfile=(gid)=>
+          allUsers.find(u=>u.game_id===gid)
+          ||allUsers.find(u=>(u.game_id||"").toLowerCase()===(gid||"").toLowerCase())
+          ||allUsers.find(u=>(u.username||"").toLowerCase()===(gid||"").toLowerCase());
         const ranked=Object.entries(totals)
-          .map(([game_id,pts])=>({game_id,pts,profile:allUsers.find(u=>u.game_id===game_id)}))
+          .map(([game_id,pts])=>({game_id,pts,profile:findProfile(game_id)}))
           .filter(r=>r.profile?.active)
           .sort((a,b)=>b.pts-a.pts);
         setRankings(ranked);
