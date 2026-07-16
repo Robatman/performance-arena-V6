@@ -589,59 +589,85 @@ function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
     {err&&<div style={{color:isStaff?S.red:C.red,fontSize:13,marginBottom:14,textAlign:"center",fontWeight:600,padding:"8px 12px",background:isStaff?`${S.red}22`:C.red2,borderRadius:8}}>{err}</div>}
     <button onClick={go} disabled={loading} style={{width:"100%",padding:14,fontSize:15,background:loading?(isStaff?S.border:"#c5cae9"):(isStaff?S.accent:C.blue),color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:1}}>{loading?"...":(isStaff?"SIGN IN":"ENTRAR")}</button>
   </div>;
+  const lgStyle=<style>{`
+    @keyframes lgUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes lgSlide{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes lgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+    .lg-layout{display:flex;flex-direction:row;min-height:100vh}
+    .lg-right{flex:0 1 460px;min-width:280px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:48px 40px;background:#fff}
+    @media(max-width:700px){
+      .lg-layout{flex-direction:column-reverse}
+      .lg-left{min-height:auto!important;padding:32px 24px!important}
+      .lg-right{flex:none;min-width:auto;padding:28px 20px}
+    }
+  `}</style>;
   if(isStaff){return(
+    <>{lgStyle}
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:S.bg}}>
-      <div style={{width:"100%",maxWidth:440}}>
+      <div style={{width:"100%",maxWidth:440,animation:"lgUp 0.45s ease both"}}>
         {tabBar}
         <div style={{textAlign:"center",marginBottom:28}}>
-          <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><StaffLogo sz={64}/></div>
-          <div style={{fontSize:28,fontWeight:900,color:S.text,letterSpacing:2}}>STAFF</div>
-          <div style={{fontSize:28,fontWeight:900,color:S.accent,letterSpacing:2}}>ARENA</div>
-          <div style={{color:S.muted,fontSize:12,marginTop:6}}>Staff Performance System</div>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:12,animation:"lgFloat 5s ease-in-out infinite"}}><StaffLogo sz={64}/></div>
+          <div style={{fontSize:28,fontWeight:900,color:S.text,letterSpacing:2,animation:"lgUp 0.45s ease 0.1s both"}}>STAFF</div>
+          <div style={{fontSize:28,fontWeight:900,color:S.accent,letterSpacing:2,animation:"lgUp 0.45s ease 0.15s both"}}>ARENA</div>
+          <div style={{color:S.muted,fontSize:12,marginTop:6,animation:"lgUp 0.45s ease 0.2s both"}}>Staff Performance System</div>
         </div>
-        {formCard}
+        <div style={{animation:"lgUp 0.45s ease 0.25s both"}}>{formCard}</div>
       </div>
     </div>
+    </>
   );}
   return(
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"40px 24px",background:`linear-gradient(150deg,${C.bg} 0%,${C.bgDk} 100%)`}}>
-      <div style={{width:"100%",maxWidth:920,display:"flex",gap:56,alignItems:"center",flexWrap:"wrap",justifyContent:"center"}}>
-        {/* Left: hero panel */}
-        <div style={{flex:"1 1 340px",maxWidth:440}}>
-          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20}}>
-            <Logo sz={56}/>
+    <>{lgStyle}
+    <div className="lg-layout" style={{background:"#fff"}}>
+      {/* LEFT: gradient hero panel */}
+      <div className="lg-left" style={{flex:"1 1 400px",background:"linear-gradient(155deg,#0a0a40 0%,#1a1aff 58%,#e8282a 100%)",padding:"56px 48px",display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",overflow:"hidden",minHeight:"100vh"}}>
+        <div style={{position:"absolute",top:-60,right:-60,width:240,height:240,borderRadius:"50%",background:"rgba(255,255,255,0.05)",animation:"lgFloat 5s ease-in-out infinite"}}/>
+        <div style={{position:"absolute",bottom:-80,left:-40,width:280,height:280,borderRadius:"50%",background:"rgba(255,255,255,0.04)",animation:"lgFloat 6s ease-in-out 2s infinite"}}/>
+        <div style={{position:"absolute",top:"40%",left:"60%",width:160,height:160,borderRadius:"50%",background:"rgba(255,255,255,0.03)",animation:"lgFloat 7s ease-in-out 1s infinite"}}/>
+        <div style={{position:"relative",zIndex:2}}>
+          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:36,animation:"lgUp 0.5s ease 0.05s both"}}>
+            <Logo sz={52}/>
             <div>
-              <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,lineHeight:1.1,letterSpacing:1}}>PERFORMANCE</div>
-              <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.red,lineHeight:1.1,letterSpacing:1}}>ARENA</div>
+              <div style={{fontFamily:"Georgia,serif",fontSize:27,fontWeight:900,color:"#fff",letterSpacing:2,lineHeight:1.1}}>PERFORMANCE</div>
+              <div style={{fontFamily:"Georgia,serif",fontSize:27,fontWeight:900,color:"#ffd700",letterSpacing:2,lineHeight:1.1}}>ARENA</div>
             </div>
           </div>
-          <div style={{color:C.muted,fontSize:15,marginBottom:28,lineHeight:1.6}}>El sistema de gamificación que transforma tu desempeño en logros reales.</div>
-          <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:28}}>
-            {features.map(([icon,title,desc])=>(
-              <div key={title} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"12px 16px",background:`${C.blue}09`,borderRadius:12,border:`1px solid ${C.blue}18`}}>
-                <span style={{fontSize:22,flexShrink:0}}>{icon}</span>
+          <div style={{color:"rgba(255,255,255,0.75)",fontSize:16,marginBottom:6,animation:"lgUp 0.5s ease 0.1s both"}}>El sistema de gamificación que</div>
+          <div style={{color:"#fff",fontSize:27,fontWeight:900,lineHeight:1.2,marginBottom:40,animation:"lgUp 0.5s ease 0.15s both"}}>transforma tu desempeño<br/>en logros reales.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:40}}>
+            {features.map(([icon,title,desc],i)=>(
+              <div key={title} style={{display:"flex",alignItems:"flex-start",gap:13,padding:"12px 16px",background:"rgba(255,255,255,0.1)",borderRadius:13,border:"1px solid rgba(255,255,255,0.16)",backdropFilter:"blur(4px)",animation:`lgSlide 0.45s ease ${0.2+i*0.07}s both`}}>
+                <span style={{fontSize:20,flexShrink:0}}>{icon}</span>
                 <div>
-                  <div style={{color:C.text,fontWeight:700,fontSize:14}}>{title}</div>
-                  <div style={{color:C.muted,fontSize:12,marginTop:2}}>{desc}</div>
+                  <div style={{color:"#fff",fontWeight:700,fontSize:13}}>{title}</div>
+                  <div style={{color:"rgba(255,255,255,0.6)",fontSize:12,marginTop:2}}>{desc}</div>
                 </div>
               </div>
             ))}
           </div>
-          {onPublicView&&<button onClick={onPublicView} style={{width:"100%",padding:"12px 0",borderRadius:10,border:`1.5px solid ${C.blue}`,background:`${C.blue}10`,color:C.blue,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-            👀 Ver Rankings y Premios sin iniciar sesión →
-          </button>}
+          {onPublicView&&<div style={{animation:"lgUp 0.5s ease 0.58s both"}}>
+            <button onClick={onPublicView} style={{padding:"12px 20px",borderRadius:11,border:"1.5px solid rgba(255,255,255,0.35)",background:"rgba(255,255,255,0.12)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",width:"100%",transition:"background 0.2s,transform 0.15s"}}
+              onMouseOver={e=>{e.currentTarget.style.background="rgba(255,255,255,0.22)";e.currentTarget.style.transform="translateY(-1px)";}}
+              onMouseOut={e=>{e.currentTarget.style.background="rgba(255,255,255,0.12)";e.currentTarget.style.transform="";}}>
+              👀 Ver Rankings y Premios sin iniciar sesión →
+            </button>
+          </div>}
         </div>
-        {/* Right: login form */}
-        <div style={{flex:"1 1 320px",maxWidth:400}}>
+      </div>
+      {/* RIGHT: form panel */}
+      <div className="lg-right">
+        <div style={{width:"100%",maxWidth:380,animation:"lgSlide 0.5s ease 0.25s both"}}>
           {tabBar}
-          <div style={{textAlign:"center",marginBottom:20}}>
-            <div style={{color:C.text,fontWeight:800,fontSize:20}}>Bienvenido de vuelta</div>
-            <div style={{color:C.muted,fontSize:13,marginTop:4}}>Inicia sesión para ver tu progreso</div>
+          <div style={{marginBottom:26}}>
+            <div style={{color:C.text,fontWeight:900,fontSize:24,marginBottom:5}}>Bienvenido de vuelta</div>
+            <div style={{color:C.muted,fontSize:14}}>Inicia sesión para ver tu progreso</div>
           </div>
           {formCard}
         </div>
       </div>
     </div>
+    </>
   );
 }
 
