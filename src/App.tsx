@@ -379,8 +379,12 @@ function Toast({msg,onClose}){useEffect(()=>{if(msg){const t=setTimeout(onClose,
 function TempPwModal({user,onSave,dark=false}){const [p1,setP1]=useState("");const [p2,setP2]=useState("");const [err,setErr]=useState("");const save=()=>{if(p1.length<4){setErr(dark?"Minimum 4 characters":"Minimo 4 caracteres");return;}if(p1!==p2){setErr(dark?"Passwords do not match":"Las contrasenas no coinciden");return;}onSave(p1);};const inp={width:"100%",border:`1.5px solid ${dark?S.border:C.border}`,borderRadius:9,padding:"11px 14px",fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:dark?S.bg:C.bg,color:dark?S.text:C.text};return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:dark?S.bgCard:C.card,border:`1px solid ${dark?S.border:C.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:380}}><div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:42,marginBottom:8}}>🔑</div><div style={{color:dark?S.accent:C.blue,fontWeight:800,fontSize:18,marginBottom:6}}>{dark?"Password Change Required":"Cambio de Contrasena"}</div><div style={{color:dark?S.muted:C.muted,fontSize:13}}>{dark?`Hi ${user.name}, please set your new password.`:`Hola ${user.name}, crea tu nueva contrasena.`}</div></div><div style={{marginBottom:12}}><div style={{color:dark?S.muted:C.muted,fontSize:11,marginBottom:4}}>NEW PASSWORD</div><input type="password" value={p1} onChange={e=>setP1(e.target.value)} style={inp}/></div><div style={{marginBottom:16}}><div style={{color:dark?S.muted:C.muted,fontSize:11,marginBottom:4}}>CONFIRM PASSWORD</div><input type="password" value={p2} onChange={e=>setP2(e.target.value)} onKeyDown={e=>e.key==="Enter"&&save()} style={inp}/></div>{err&&<div style={{color:S.red,fontSize:13,marginBottom:10,textAlign:"center",fontWeight:600}}>{err}</div>}{dark?<SBtn onClick={save} style={{width:"100%",padding:12}}>SAVE PASSWORD</SBtn>:<Btn onClick={save} color={C.blue} style={{width:"100%",padding:12}}>GUARDAR</Btn>}</div></div>);}
 
 function PublicView({users,prizes,onBack}){
-  const [rankings,setRankings]=useState([]);const [loading,setLoading]=useState(true);const [tab,setTab]=useState("leaderboard");
+  const [rankings,setRankings]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [tab,setTab]=useState("leaderboard");
+  const [wide,setWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
   const shop=DEFAULT_SHOP;const medals=["🥇","🥈","🥉"];
+  useEffect(()=>{const h=()=>setWide(window.innerWidth>=900);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
   useEffect(()=>{
     async function load(){
       try{
@@ -400,91 +404,152 @@ function PublicView({users,prizes,onBack}){
     load();
   },[users]);
   const activePrizes=(prizes||[]).filter(p=>p.is_active!==false);
-  const btnSty={padding:"8px 18px",borderRadius:8,border:`1.5px solid ${C.blue}`,background:`${C.blue}12`,color:C.blue,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"};
+  const totalAgents=(users||[]).filter(u=>u.active).length;
+  const topScore=rankings[0]?.pts||0;
   return(
-    <div style={{minHeight:"100vh",background:`linear-gradient(160deg,${C.bg} 0%,${C.bgDk} 100%)`,paddingBottom:80}}>
-      <div style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
-        <Logo sz={32}/>
-        <div style={{flex:1}}>
-          <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:900,color:C.blue}}>PERFORMANCE ARENA</div>
-          <div style={{color:C.muted,fontSize:11}}>Vista Pública</div>
+    <>
+    <style>{`
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:"Segoe UI",system-ui,sans-serif;background:#fff}
+      @keyframes pvFadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+      @keyframes pvFloat{0%,100%{transform:translateY(0px)}50%{transform:translateY(-10px)}}
+      @keyframes pvPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+      @keyframes pvSlideIn{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
+      @keyframes pvOrbit{0%{transform:rotate(0deg) translateX(90px) rotate(0deg)}100%{transform:rotate(360deg) translateX(90px) rotate(-360deg)}}
+      .pv-hero-item{animation:pvFadeUp 0.55s ease both}
+      .pv-row{animation:pvSlideIn 0.4s ease both}
+      .pv-float{animation:pvFloat 3.5s ease-in-out infinite}
+      .pv-pulse{animation:pvPulse 2s ease-in-out infinite}
+    `}</style>
+    <div style={{minHeight:"100vh",background:"#fff"}}>
+
+      {/* ── HERO ── */}
+      <div style={{background:"linear-gradient(135deg,#0a0a40 0%,#1a1aff 55%,#e8282a 100%)",padding:"0 20px 52px",position:"relative",overflow:"hidden"}}>
+        {/* decorative blobs */}
+        <div style={{position:"absolute",top:-80,right:-80,width:300,height:300,borderRadius:"50%",background:"rgba(255,255,255,0.04)",pointerEvents:"none"}} className="pv-float"/>
+        <div style={{position:"absolute",bottom:-100,left:-100,width:360,height:360,borderRadius:"50%",background:"rgba(255,255,255,0.03)",pointerEvents:"none",animationDelay:"1.5s"}} className="pv-float"/>
+        <div style={{position:"absolute",top:"50%",left:"50%",width:500,height:500,borderRadius:"50%",background:"rgba(255,255,255,0.025)",transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>
+
+        {/* top nav */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 0 32px",position:"relative",zIndex:2}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <Logo sz={40}/>
+            <div>
+              <div style={{fontFamily:"Georgia,serif",fontSize:17,fontWeight:900,color:"#fff",letterSpacing:2,lineHeight:1.1}}>PERFORMANCE</div>
+              <div style={{fontFamily:"Georgia,serif",fontSize:17,fontWeight:900,color:"#ffd700",letterSpacing:2,lineHeight:1.1}}>ARENA</div>
+            </div>
+          </div>
+          <button onClick={onBack} style={{padding:"11px 24px",borderRadius:10,border:"1.5px solid rgba(255,255,255,0.35)",background:"rgba(255,255,255,0.1)",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",backdropFilter:"blur(6px)",transition:"background 0.2s"}} onMouseOver={e=>(e.currentTarget.style.background="rgba(255,255,255,0.2)")} onMouseOut={e=>(e.currentTarget.style.background="rgba(255,255,255,0.1)")}>
+            Iniciar Sesión →
+          </button>
         </div>
-        <button onClick={onBack} style={btnSty}>Iniciar Sesión →</button>
+
+        {/* hero content */}
+        <div style={{textAlign:"center",position:"relative",zIndex:2}}>
+          <div style={{fontSize:60,marginBottom:14}} className="pv-float">🏆</div>
+          <div className="pv-hero-item" style={{fontFamily:"Georgia,serif",fontSize:wide?48:34,fontWeight:900,color:"#fff",letterSpacing:3,marginBottom:10,animationDelay:"0.1s"}}>LEADERBOARD</div>
+          <div className="pv-hero-item" style={{color:"rgba(255,255,255,0.7)",fontSize:15,marginBottom:36,animationDelay:"0.2s"}}>Rankings y premios en tiempo real · Mes actual</div>
+          {/* stats */}
+          <div className="pv-hero-item" style={{display:"flex",justifyContent:"center",gap:wide?48:24,flexWrap:"wrap",animationDelay:"0.3s"}}>
+            {[{icon:"👥",val:totalAgents,label:"Agentes activos"},{icon:"🥇",val:topScore,label:"Mejor score"},{icon:"🎁",val:activePrizes.length,label:"Premios"}].map(s=>(
+              <div key={s.label} style={{textAlign:"center"}}>
+                <div style={{fontSize:26,marginBottom:4}}>{s.icon}</div>
+                <div style={{color:"#fff",fontWeight:900,fontSize:30,lineHeight:1}} className="pv-pulse">{loading&&s.label==="Mejor score"?"…":s.val}</div>
+                <div style={{color:"rgba(255,255,255,0.55)",fontSize:12,marginTop:4}}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
-      <div style={{display:"flex",background:C.card,borderBottom:`1px solid ${C.border}`}}>
-        {[["leaderboard","🏆 Rankings"],["rewards","🎁 Premios"]].map(([v,l])=>(
-          <button key={v} onClick={()=>setTab(v)} style={{flex:1,padding:"13px 0",border:"none",borderBottom:`3px solid ${tab===v?C.blue:"transparent"}`,background:"transparent",color:tab===v?C.blue:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"color 0.2s"}}>{l}</button>
-        ))}
-      </div>
-      <div style={{padding:"14px 14px 0"}}>
-        {tab==="leaderboard"&&(
-          <>
-            <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.red},${C.blue})`,border:"none",textAlign:"center"}}>
-              <div style={{fontSize:32}}>🏆</div>
-              <div style={{color:"#fff",fontWeight:800,fontSize:19}}>LEADERBOARD</div>
-              <div style={{color:"rgba(255,255,255,0.55)",fontSize:12}}>Score del mes (KPI + Riddles + Tasks)</div>
-            </Card>
-            {loading&&<div style={{textAlign:"center",padding:40,color:C.muted}}>Cargando ranking...</div>}
-            {!loading&&rankings.map((r,i)=>{
-              const u=r.profile;
-              return(
-                <div key={r.game_id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",marginBottom:8,borderRadius:14,background:C.card,border:`1.5px solid ${C.border}`}}>
-                  <div style={{width:30,textAlign:"center",fontWeight:900,color:i<3?"#f59e0b":C.muted,fontSize:i<3?20:14}}>{i<3?medals[i]:`#${i+1}`}</div>
-                  <Av av={u?.avatar} sz={40} shop={shop}/>
-                  <div style={{flex:1}}>
-                    <div style={{color:C.text,fontWeight:700,fontSize:14}}>{u?.name||r.game_id}</div>
-                    <Bdg l={u?.level||1}/>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{color:C.blue,fontWeight:900,fontSize:18}}>{r.pts}</div>
-                    <div style={{color:C.muted,fontSize:11}}>score</div>
-                  </div>
+
+      {/* ── CONTENT ── */}
+      <div style={{maxWidth:1140,margin:"0 auto",padding:wide?"32px 32px 60px":"0 0 60px"}}>
+        {/* mobile tab switcher */}
+        {!wide&&<div style={{display:"flex",borderBottom:`1.5px solid ${C.border}`,background:"#fff",position:"sticky",top:0,zIndex:10}}>
+          {[["leaderboard","🏆 Rankings"],["rewards","🎁 Premios"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setTab(v)} style={{flex:1,padding:"14px 0",border:"none",borderBottom:`3px solid ${tab===v?C.blue:"transparent"}`,background:"transparent",color:tab===v?C.blue:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"color 0.2s"}}>{l}</button>
+          ))}
+        </div>}
+
+        <div style={{display:"flex",gap:32,alignItems:"flex-start",padding:wide?"0":"16px 16px 0"}}>
+
+          {/* LEFT: Leaderboard */}
+          {(wide||tab==="leaderboard")&&(
+            <div style={{flex:1,minWidth:0}}>
+              {wide&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+                <span style={{fontSize:26}}>🏆</span>
+                <div>
+                  <div style={{color:C.text,fontWeight:900,fontSize:20}}>Rankings del Mes</div>
+                  <div style={{color:C.muted,fontSize:13}}>Score acumulado: KPI + Riddles + Tareas</div>
                 </div>
-              );
-            })}
-            {!loading&&rankings.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>📭</div><div style={{color:C.muted}}>No hay datos aún.</div></Card>}
-          </>
-        )}
-        {tab==="rewards"&&(
-          <>
-            <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.gold},${C.red})`,border:"none",textAlign:"center"}}>
-              <div style={{fontSize:32}}>🎁</div>
-              <div style={{color:"#fff",fontWeight:800,fontSize:19}}>PREMIOS DISPONIBLES</div>
-              <div style={{color:"rgba(255,255,255,0.55)",fontSize:12}}>Canjea tus coins por premios exclusivos</div>
-            </Card>
-            {activePrizes.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>🎁</div><div style={{color:C.muted}}>No hay premios disponibles.</div></Card>}
-            {activePrizes.map(p=>{
-              const hasStock=p.stock===-1||(p.stock||0)>0;
-              const minLv=p.min_level||p.minLevel||1;
-              return(
-                <Card key={p.id} style={{marginBottom:10,opacity:hasStock?1:0.5}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
-                    <div style={{flex:1}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                        <span style={{fontSize:26}}>{p.emoji||"🎁"}</span>
-                        <div>
-                          <div style={{color:C.text,fontWeight:700,fontSize:14}}>{p.name}</div>
-                          {p.description&&<div style={{color:C.muted,fontSize:12}}>{p.description}</div>}
-                        </div>
-                      </div>
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
-                        <span style={{padding:"3px 10px",borderRadius:6,background:`${C.gold}18`,color:C.gold,fontSize:12,fontWeight:700}}>🪙 {p.points_cost||0}</span>
-                        {minLv>1&&<span style={{padding:"3px 10px",borderRadius:6,background:`${C.blue}18`,color:C.blue,fontSize:12,fontWeight:700}}>Nivel {minLv}+</span>}
-                        {p.stock===-1?<span style={{padding:"3px 10px",borderRadius:6,background:`${C.green}18`,color:C.green,fontSize:12,fontWeight:700}}>∞ Ilimitado</span>:<span style={{padding:"3px 10px",borderRadius:6,background:hasStock?`${C.green}18`:`${C.red}18`,color:hasStock?C.green:C.red,fontSize:12,fontWeight:700}}>{hasStock?`${p.stock} disp.`:"Sin stock"}</span>}
+              </div>}
+              {loading&&<div style={{textAlign:"center",padding:48,color:C.muted,fontSize:14}}>Cargando ranking…</div>}
+              {!loading&&rankings.map((r,i)=>{
+                const u=r.profile;
+                const isTop3=i<3;
+                return(
+                  <div key={r.game_id} className="pv-row" style={{display:"flex",alignItems:"center",gap:13,padding:"13px 16px",marginBottom:8,borderRadius:14,background:isTop3?`linear-gradient(135deg,${C.blue}09,${C.red}06)`:"#fff",border:`1.5px solid ${isTop3?C.blue:C.border}`,boxShadow:isTop3?"0 2px 16px rgba(26,26,255,0.08)":"none",animationDelay:`${Math.min(i,12)*35}ms`,transition:"box-shadow 0.2s"}}>
+                    <div style={{width:36,textAlign:"center",fontWeight:900,fontSize:isTop3?24:14,color:isTop3?"#f59e0b":C.muted,flexShrink:0}}>{isTop3?medals[i]:`#${i+1}`}</div>
+                    <Av av={u?.avatar} sz={42} shop={shop}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{color:C.text,fontWeight:700,fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u?.name||r.game_id}</div>
+                      <Bdg l={u?.level||1}/>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{color:C.blue,fontWeight:900,fontSize:22,lineHeight:1}}>{r.pts}</div>
+                      <div style={{color:C.muted,fontSize:10}}>pts</div>
+                    </div>
+                  </div>
+                );
+              })}
+              {!loading&&rankings.length===0&&<div style={{textAlign:"center",padding:48,color:C.muted}}>No hay datos de ranking aún.</div>}
+            </div>
+          )}
+
+          {/* RIGHT: Prizes */}
+          {(wide||tab==="rewards")&&(
+            <div style={{flex:wide?"0 0 380px":1,minWidth:0}}>
+              {wide&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+                <span style={{fontSize:26}}>🎁</span>
+                <div>
+                  <div style={{color:C.text,fontWeight:900,fontSize:20}}>Premios Disponibles</div>
+                  <div style={{color:C.muted,fontSize:13}}>Canjea coins por recompensas reales</div>
+                </div>
+              </div>}
+              {activePrizes.length===0&&<div style={{textAlign:"center",padding:48,color:C.muted}}>No hay premios disponibles.</div>}
+              {activePrizes.map((p,i)=>{
+                const hasStock=p.stock===-1||(p.stock||0)>0;
+                const minLv=p.min_level||p.minLevel||1;
+                return(
+                  <div key={p.id} className="pv-row" style={{display:"flex",alignItems:"center",gap:13,padding:"14px 16px",marginBottom:9,borderRadius:14,background:"#fff",border:`1.5px solid ${C.border}`,opacity:hasStock?1:0.45,animationDelay:`${Math.min(i,12)*35}ms`,boxShadow:"0 1px 8px rgba(0,0,0,0.05)"}}>
+                    <span style={{fontSize:32,flexShrink:0}}>{p.emoji||"🎁"}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{color:C.text,fontWeight:700,fontSize:14}}>{p.name}</div>
+                      {p.description&&<div style={{color:C.muted,fontSize:12,marginTop:2}}>{p.description}</div>}
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:7}}>
+                        <span style={{padding:"2px 9px",borderRadius:6,background:`${C.gold}18`,color:C.gold,fontSize:12,fontWeight:700}}>🪙 {p.points_cost||0}</span>
+                        {minLv>1&&<span style={{padding:"2px 9px",borderRadius:6,background:`${C.blue}14`,color:C.blue,fontSize:12,fontWeight:700}}>Nivel {minLv}+</span>}
+                        {p.stock===-1?<span style={{padding:"2px 9px",borderRadius:6,background:`${C.green}14`,color:C.green,fontSize:12,fontWeight:700}}>∞ Ilimitado</span>:<span style={{padding:"2px 9px",borderRadius:6,background:hasStock?`${C.green}14`:`${C.red}14`,color:hasStock?C.green:C.red,fontSize:12,fontWeight:700}}>{hasStock?`${p.stock} disp.`:"Sin stock"}</span>}
                       </div>
                     </div>
                   </div>
-                </Card>
-              );
-            })}
-            <div style={{textAlign:"center",marginTop:16,padding:"14px 16px",background:C.card,borderRadius:14,border:`1.5px dashed ${C.border}`}}>
-              <div style={{color:C.muted,fontSize:13,marginBottom:10}}>¿Quieres canjear premios?</div>
-              <button onClick={onBack} style={{...btnSty,background:C.blue,color:"#fff",border:"none",padding:"10px 24px",fontSize:14}}>Iniciar Sesión →</button>
+                );
+              })}
+              {/* CTA */}
+              <div style={{marginTop:18,padding:"22px 20px",borderRadius:16,background:`linear-gradient(135deg,${C.blue}0d,${C.red}0d)`,border:`1.5px solid ${C.blue}25`,textAlign:"center"}}>
+                <div style={{fontSize:32,marginBottom:8}}>🚀</div>
+                <div style={{color:C.text,fontWeight:800,fontSize:15,marginBottom:6}}>¿Quieres participar?</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:16}}>Inicia sesión para canjear premios y competir en el ranking</div>
+                <button onClick={onBack} style={{padding:"12px 32px",borderRadius:10,border:"none",background:`linear-gradient(135deg,${C.blue},${C.red})`,color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px rgba(26,26,255,0.3)",transition:"transform 0.15s,box-shadow 0.15s"}} onMouseOver={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 20px rgba(26,26,255,0.4)";}} onMouseOut={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="0 4px 16px rgba(26,26,255,0.3)";}}>
+                  Iniciar Sesión →
+                </button>
+              </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </div>
+    </>
   );
 }
 
