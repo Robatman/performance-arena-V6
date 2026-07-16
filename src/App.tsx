@@ -141,12 +141,13 @@ export function calcScoreCoins(weeklyMetrics, riddleAnswers, taskSubmissions, ku
   };
 }
 
-export function calcLevel(score, maxScore) {
-  if (maxScore <= 0) return 1;
-  const pct = score / maxScore;
-  if (pct >= 1.0) return 4;
-  if (pct >= 0.9) return 3;
-  if (pct >= 0.8) return 2;
+// Absolute coin thresholds — level is based on total coins earned (what agents see)
+export const LEVEL_THRESHOLDS = [0, 40, 80, 140]; // coins for L1 start, L2, L3, L4
+
+export function calcLevel(coins) {
+  if (coins >= LEVEL_THRESHOLDS[3]) return 4;
+  if (coins >= LEVEL_THRESHOLDS[2]) return 3;
+  if (coins >= LEVEL_THRESHOLDS[1]) return 2;
   return 1;
 }
 
@@ -154,9 +155,12 @@ export function calcMaxScore(weekCount, riddleCount, taskCount) {
   return (weekCount * 15) + (riddleCount * 2) + (taskCount * 2);
 }
 
-export function getLevelPct(score, maxScore) {
-  if (maxScore <= 0) return 0;
-  return Math.min(score / maxScore, 1);
+export function getLevelPct(coins) {
+  const level = calcLevel(coins);
+  if (level >= 4) return 1;
+  const lo = LEVEL_THRESHOLDS[level - 1];
+  const hi = LEVEL_THRESHOLDS[level];
+  return Math.min((coins - lo) / (hi - lo), 1);
 }
 
 // Level metadata
@@ -241,21 +245,18 @@ function ScorePill({label,val,color,icon}){
 }
 
 // ─── LEVEL PROGRESS CARD ─────────────────────────────────────────────────────
-function LevelProgressCard({score, maxScore, level, coinsTotal}){
-  const pct = maxScore > 0 ? Math.min(score / maxScore, 1) : 0;
+function LevelProgressCard({coins, level}){
+  const lo = LEVEL_THRESHOLDS[level - 1] || 0;
+  const hi = level < 4 ? LEVEL_THRESHOLDS[level] : LEVEL_THRESHOLDS[3];
+  const pct = level >= 4 ? 1 : Math.min((coins - lo) / (hi - lo), 1);
   const pctDisplay = Math.round(pct * 100);
   const lm = LEVEL_META[level] || LEVEL_META[1];
+  const coinsToNext = level < 4 ? Math.max(0, hi - coins) : 0;
 
-  // Thresholds for progress bar markers
-  const thresholds = [
-    { pct: 0.80, label: "L2", color: LEVEL_META[2].color },
-    { pct: 0.90, label: "L3", color: LEVEL_META[3].color },
-    { pct: 1.00, label: "L4", color: LEVEL_META[4].color },
-  ];
-
-  const nextLevel = level < 4 ? level + 1 : null;
-  const nextThreshold = nextLevel === 2 ? 0.80 : nextLevel === 3 ? 0.90 : nextLevel === 4 ? 1.00 : null;
-  const ptsToNext = nextThreshold ? Math.ceil(nextThreshold * maxScore) - score : 0;
+  // Marker positions for each level threshold on the progress bar
+  const thresholds = level < 4 ? [
+    { pct: 1, label: `L${level+1}`, color: LEVEL_META[level+1]?.color || "#fff" },
+  ] : [];
 
   return(
     <Card style={{marginBottom:12,background:`linear-gradient(135deg,${C.blue} 0%,${C.blueDk} 60%,${C.red} 100%)`,border:"none",color:"#fff"}}>
@@ -269,9 +270,9 @@ function LevelProgressCard({score, maxScore, level, coinsTotal}){
           </div>
         </div>
         <div style={{textAlign:"right"}}>
-          <div style={{color:"rgba(255,255,255,0.6)",fontSize:10,letterSpacing:1}}>SCORE</div>
-          <div style={{color:"#fde68a",fontWeight:900,fontSize:28,lineHeight:1}}>{score}</div>
-          <div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>/ {maxScore} max</div>
+          <div style={{color:"rgba(255,255,255,0.6)",fontSize:10,letterSpacing:1}}>COINS GANADAS</div>
+          <div style={{color:"#fde68a",fontWeight:900,fontSize:28,lineHeight:1}}>{coins}</div>
+          <div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>{level < 4 ? `/${hi} para L${level+1}` : "Nivel máximo"}</div>
         </div>
       </div>
 
@@ -288,9 +289,9 @@ function LevelProgressCard({score, maxScore, level, coinsTotal}){
           ))}
         </div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{color:"rgba(255,255,255,0.7)",fontSize:12,fontWeight:700}}>{pctDisplay}% del máximo</div>
+          <div style={{color:"rgba(255,255,255,0.7)",fontSize:12,fontWeight:700}}>{pctDisplay}% hacia Nivel {level < 4 ? level+1 : level}</div>
           {level < 4
-            ? <div style={{color:"#fde68a",fontSize:12,fontWeight:700}}>Faltan {ptsToNext} pts para Nivel {nextLevel}</div>
+            ? <div style={{color:"#fde68a",fontSize:12,fontWeight:700}}>Faltan {coinsToNext} 🪙 para Nivel {level+1}</div>
             : <div style={{color:"#fde68a",fontSize:12,fontWeight:700}}>🏆 NIVEL MÁXIMO</div>
           }
         </div>
@@ -302,7 +303,7 @@ function LevelProgressCard({score, maxScore, level, coinsTotal}){
           <div style={{color:"rgba(255,255,255,0.6)",fontSize:10,letterSpacing:1}}>COINS DISPONIBLES</div>
           <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
             <span style={{fontSize:18}}>🪙</span>
-            <span style={{color:C.gold,fontWeight:900,fontSize:22}}>{coinsTotal}</span>
+            <span style={{color:C.gold,fontWeight:900,fontSize:22}}>{coins}</span>
             <span style={{color:"rgba(255,255,255,0.4)",fontSize:11}}>para la tienda</span>
           </div>
         </div>
@@ -723,13 +724,12 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
     user.referrals,
     coinSettings
   );
-  const maxScore = calcMaxScore(sc.weekCount, riddleCount, taskCount);
-  const level = calcLevel(sc.score, maxScore);
+  const level = calcLevel(sc.coins);
 
   return(
     <div style={{paddingBottom:100}}>
       {/* Level + Score card */}
-      <LevelProgressCard score={sc.score} maxScore={maxScore} level={level} coinsTotal={sc.coins}/>
+      <LevelProgressCard coins={sc.coins} level={level}/>
 
       {isSA&&availableWeeks.length>0&&(<Card style={{marginBottom:12,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:2}}>SEMANA VISUALIZADA</div><div style={{color:C.blue,fontWeight:700,fontSize:13}}>Última evaluada: {availableWeeks[0]}</div></div><select value={selectedWeek} onChange={e=>onWeekChange(e.target.value)} style={{border:`1.5px solid ${C.border}`,borderRadius:8,padding:"7px 11px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,cursor:"pointer"}}>{availableWeeks.map(w=><option key={w} value={w}>{w}</option>)}</select></div></Card>)}
       {!isSA&&lastEvaluatedWeek&&(<Card style={{marginBottom:12,padding:"10px 14px",background:`${C.blue}06`,border:`1.5px solid ${C.blue}20`}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>📅</span><div style={{color:C.muted,fontSize:12}}>Última semana evaluada: <strong style={{color:C.blue}}>{lastEvaluatedWeek}</strong></div></div></Card>)}
@@ -950,8 +950,7 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
     db.getMyRedemptions(user.id).then(d=>setMyRedemptions(d||[])).catch(()=>{});
   },[user.id]);
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
-  const maxScore=calcMaxScore(sc.weekCount,riddleCount,taskCount);
-  const level=calcLevel(sc.score,maxScore);
+  const level=calcLevel(sc.coins);
   const coins=sc.coins;
   const activePrizes=prizes.filter(p=>p.active!==false);
   const freeSection=activePrizes.filter(p=>(p.minLevel||p.min_level||1)===1);
@@ -1251,8 +1250,7 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
   const [av,setAv]=useState(user.avatar||{base:"b1",hair:null,accessory:null,outfit:null,background:null});
   const [tab,setTab]=useState("edit");const [saving,setSaving]=useState(false);
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
-  const maxScore=calcMaxScore(sc.weekCount,riddleCount,taskCount);
-  const level=calcLevel(sc.score,maxScore);
+  const level=calcLevel(sc.coins);
   const coins=sc.coins;
   const types=["hair","accessory","outfit","background"];
   const tl={hair:"Cabello",accessory:"Accesorios",outfit:"Ropa",background:"Fondo"};
@@ -2410,8 +2408,7 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
 function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,user,coinSettings={}}){
   if(!user||!weeklyMetrics||weeklyMetrics.length===0)return null;
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
-  const maxScore=calcMaxScore(sc.weekCount,riddleCount,taskCount);
-  const level=calcLevel(sc.score,maxScore);
+  const level=calcLevel(sc.coins);
   return(
     <div style={{display:"flex",gap:6,alignItems:"center"}}>
       <div style={{background:`${lc(level)}15`,border:`1px solid ${lc(level)}40`,borderRadius:8,padding:"3px 8px",textAlign:"center"}}>
@@ -2557,11 +2554,9 @@ export default function App(){
     const newMonthTaskCount=(tasks||[]).filter(t=>t.created_at&&thisMonth(t.created_at)).length;
     setMonthRiddleCount(newMonthRiddleCount);
     setMonthTaskCount(newMonthTaskCount);
-    // Level-change detection — scope to current month so weekCount doesn't inflate maxScore
-    const wmMonth=(wm||[]).filter(w=>w.week&&thisMonth(w.week));
-    const sc=calcScoreCoins(wmMonth,ra||[],ts||[],agent.kudos,agent.gold_kudos,agent.referrals,coinSettings);
-    const maxSc=calcMaxScore(sc.weekCount,newMonthRiddleCount,newMonthTaskCount);
-    const newLevel=calcLevel(sc.score,maxSc);
+    // Level-change detection — uses total earned coins against absolute thresholds
+    const sc=calcScoreCoins(wm||[],ra||[],ts||[],agent.kudos,agent.gold_kudos,agent.referrals,coinSettings);
+    const newLevel=calcLevel(sc.coins);
     const oldLevel=agent.monthly_level||1;
     if(newLevel>oldLevel&&newLevel>lastLevelRef.current){
       lastLevelRef.current=newLevel;
@@ -2647,8 +2642,8 @@ export default function App(){
   const markNotifRead=async(id)=>{try{await db.markNotifRead(id);setNotifs(notifs.map(n=>n.id===id?{...n,is_read:true}:n));}catch(e){}};
   const markAllRead=async()=>{try{await db.markAllNotifsRead(cu.id);setNotifs(notifs.map(n=>n.recipient_id===cu.id?{...n,is_read:true}:n));}catch(e){}};
 
-  // Score props — agents see this month's weeks (level is monthly), SA sees selected week
-  const agentMetricsFiltered=isSA?(selectedWeek?agentWeeklyMetrics.filter((w)=>w.week===selectedWeek):agentWeeklyMetrics):agentWeeklyMetrics.filter((w)=>{if(!w.week)return false;const d=new Date(w.week),n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();});
+  // Score props — pass all weeks so sc.coins reflects total earned (level uses absolute coin thresholds)
+  const agentMetricsFiltered=isSA?(selectedWeek?agentWeeklyMetrics.filter((w)=>w.week===selectedWeek):agentWeeklyMetrics):agentWeeklyMetrics;
   const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount,coinSettings};
 
   if(appLoading){return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><Logo sz={64}/><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,letterSpacing:2}}>PERFORMANCE ARENA</div><div style={{color:C.muted,fontSize:14,marginTop:8}}>Loading...</div></div>);}
@@ -2754,8 +2749,7 @@ export default function App(){
         // Level gate — enforce server-side in handler, not just in UI
         const minLv=p.min_level||p.minLevel||1;
         if(minLv>1){
-          const maxSc=calcMaxScore(sc.weekCount,monthRiddleCount,monthTaskCount);
-          const playerLv=calcLevel(sc.score,maxSc);
+          const playerLv=calcLevel(sc.coins);
           if(playerLv<minLv){toast(`Este premio requiere Nivel ${minLv}. Tu nivel actual es ${playerLv}.`);return;}
         }
         // Fetch fresh coins from DB to prevent double-spend with stale state
