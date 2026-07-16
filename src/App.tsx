@@ -1878,14 +1878,12 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
             };
             const cancelRedemption=async()=>{
               if(!window.confirm(`¿Cancelar este canje y devolver ${r.points_spent||0} 🪙 a ${u?.name||"el agente"}?`))return;
-              // Step 1: mark cancelled in DB
-              try{await patchStatus("cancelled");}
+              // Step 1: mark cancelled in DB — continue with refunds even if this fails
+              let statusOk=false;
+              try{await patchStatus("cancelled");statusOk=true;}
               catch(e){
-                const msg=String(e?.message||e);
-                toast("Error al cancelar: "+msg.substring(0,120));
-                console.error("[cancel step1]",e);
+                console.error("[cancel step1 - continuing with refunds]",e);
                 console.info("%c[FIX] Ejecuta esto en Supabase SQL Editor:\nALTER TABLE reward_redemptions DROP CONSTRAINT IF EXISTS reward_redemptions_status_check;\nALTER TABLE reward_redemptions ADD CONSTRAINT reward_redemptions_status_check CHECK (status IN ('pending','approved','delivered','cancelled'));","color:orange;font-weight:bold");
-                return;
               }
               // Step 2: refund coins
               try{
@@ -1895,7 +1893,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                   await sbFetch(`profiles?id=eq.${u.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({coins:cur+(r.points_spent||0)})});
                 }
               }catch(e){console.error("[cancel step2 coins]",e);}
-              // Step 3: restore stock (fetch fresh stock to avoid stale value)
+              // Step 3: restore stock
               try{
                 const freshPrize=await sbFetch(`reward_catalog?id=eq.${r.reward_id}&select=id,stock`).catch(()=>[]);
                 const currentStock=freshPrize?.[0]?.stock;
@@ -1912,7 +1910,11 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                   db.createNotif({recipient_id:r.user_id,title:"❌ Canje cancelado",message:`Tu solicitud de "${prizeName}" fue cancelada. Se devolvieron ${r.points_spent||0} 🪙 a tu cuenta.`,type:"reward_cancelled",is_read:false}).catch(()=>{});
                 }
               }catch(e){console.error("[cancel step5 notif]",e);}
-              toast(`Canje cancelado — ${r.points_spent||0} 🪙 devueltos a ${u?.name||"agente"}`);
+              if(statusOk){
+                toast(`Canje cancelado — ${r.points_spent||0} 🪙 devueltos a ${u?.name||"agente"}`);
+              }else{
+                toast(`⚠️ Coins y stock restaurados. Actualiza el estado DB manualmente (ver consola).`);
+              }
             };
             return(
               <Card key={r.id||i} style={{marginBottom:8,borderLeft:borderColor[r.status]}}>
@@ -2388,7 +2390,7 @@ export default function App(){
   const [users,setUsers]=useState([]);const [prizes,setPrizes]=useState([]);
   const [shop]=useState(DEFAULT_SHOP);const [notifs,setNotifs]=useState([]);
   const [loggedIn,setLoggedIn]=useState(null);const [screen,setScreen]=useState("dashboard");
-  const [toastMsg,setToastMsg]=useState("");const [appLoading,setAppLoading]=useState(true);const [showPublic,setShowPublic]=useState(true);
+  const [toastMsg,setToastMsg]=useState("");const [appLoading,setAppLoading]=useState(true);const [showPublic,setShowPublic]=useState(true);const [isWide,setIsWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
   const [coinSettings,setCoinSettings]=useState<any>({riddle_coins:2,task_coins:2});
   const [allStaff,setAllStaff]=useState([]);const [staffMetrics,setStaffMetrics]=useState([]);
   const [staffPoints,setStaffPoints]=useState(null);const [staffBadges,setStaffBadges]=useState([]);
@@ -2427,6 +2429,7 @@ export default function App(){
     setAppLoading(false);
   };
   useEffect(()=>{loadInitialData();},[]);
+  useEffect(()=>{const h=()=>setIsWide(window.innerWidth>=900);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
 
   // Load agent-specific scoring data on login
   const loadAgentScoreData=async(agent)=>{
@@ -2583,7 +2586,7 @@ export default function App(){
           <button onClick={()=>{setLoggedIn(null);setScreen("dashboard");}} style={{background:S.border,border:"none",borderRadius:7,padding:"4px 10px",color:S.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Exit</button>
         </div>
       </div>
-      <div style={{padding:"14px 14px 0"}}>
+      <div style={{marginLeft:isWide?188:0,padding:isWide?"20px 28px 40px":"14px 14px 0"}}>
         {screen==="dashboard"&&((isYurito||isSAorManager)?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos} bulletin={bulletin}/>)}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
         {screen==="kudos"&&(isYurito?<YuritoKudos cu={cu} allUsers={users} allStaff={allStaff} toast={toast} reloadUsers={reloadUsers}/>:<StaffKudos user={cu} allStaff={allStaff} kudos={[...staffKudos,...pendingKudos.filter(pk=>!staffKudos.find(sk=>sk.id===pk.id))]} isManager={isManager} allAgents={users}
@@ -2602,9 +2605,20 @@ export default function App(){
         {screen==="report"&&cu?.role==="superadmin"&&<StaffPointsReport user={cu}/>}
         {screen==="admin"&&cu?.role==="superadmin"&&<StaffAdminPanel cu={cu} allStaff={allStaff} toast={toast} reloadStaff={reloadStaff}/>}
       </div>
-      <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:S.bgCard,borderTop:`1px solid ${S.border}`,display:"flex",padding:"6px 0 10px",overflowX:"auto"}}>
-        {staffNav.map(item=>{const active=screen===item.id;const staffUnread=item.id==="staffnotifs"?(staffNotifs||[]).filter(n=>!n.is_read&&n.recipient_id===cu?.id).length:0;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{staffUnread>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{staffUnread}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(60%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?S.accent:S.muted,whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:S.accent}}/>}</button>);})}
-      </div>
+      {isWide?(
+        <div style={{position:"fixed",top:60,left:0,bottom:0,width:188,zIndex:50,background:S.bgCard,borderRight:`1px solid ${S.border}`,display:"flex",flexDirection:"column",padding:"12px 8px",overflowY:"auto",gap:2}}>
+          {staffNav.map(item=>{const active=screen===item.id;const staffUnread=item.id==="staffnotifs"?(staffNotifs||[]).filter(n=>!n.is_read&&n.recipient_id===cu?.id).length:0;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{position:"relative",display:"flex",flexDirection:"row",alignItems:"center",gap:10,background:active?`${S.accent}18`:"none",border:"none",borderRadius:10,cursor:"pointer",padding:"10px 12px",width:"100%",transition:"background 0.15s",fontFamily:"inherit"}}>
+            {staffUnread>0&&<div style={{position:"absolute",top:6,right:8,width:16,height:16,borderRadius:"50%",background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{staffUnread}</div>}
+            {active&&<div style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",width:3,height:22,borderRadius:2,background:S.accent}}/>}
+            <span style={{fontSize:18}}>{item.icon}</span>
+            <span style={{fontSize:13,fontWeight:700,color:active?S.accent:S.muted,whiteSpace:"nowrap"}}>{item.label}</span>
+          </button>);})}
+        </div>
+      ):(
+        <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:S.bgCard,borderTop:`1px solid ${S.border}`,display:"flex",padding:"6px 0 10px",overflowX:"auto"}}>
+          {staffNav.map(item=>{const active=screen===item.id;const staffUnread=item.id==="staffnotifs"?(staffNotifs||[]).filter(n=>!n.is_read&&n.recipient_id===cu?.id).length:0;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{staffUnread>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{staffUnread}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(60%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?S.accent:S.muted,whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:S.accent}}/>}</button>);})}
+        </div>
+      )}
     </>;
   }
 
@@ -2626,7 +2640,7 @@ export default function App(){
         <button onClick={()=>{setLoggedIn(null);setScreen("dashboard");}} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,padding:"4px 10px",color:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Salir</button>
       </div>
     </div>
-    <div style={{padding:"14px 14px 0",animation:"fadeIn 0.25s ease"}}>
+    <div style={{marginLeft:isWide?188:0,padding:isWide?"20px 28px 40px":"14px 14px 0",animation:"fadeIn 0.25s ease"}}>
       {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps} isSA={isSA} availableWeeks={availableWeeks} selectedWeek={selectedWeek} lastEvaluatedWeek={lastEvaluatedWeek} onWeekChange={setSelectedWeek} bulletin={bulletin}/>}
       {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle" coinSettings={coinSettings}/>}
       {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task" coinSettings={coinSettings}/>}
@@ -2664,8 +2678,19 @@ export default function App(){
       {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps} weeklyMetrics={agentWeeklyMetrics}/>}
       {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount} bulletin={bulletin} setBulletin={setBulletin} allStaff={allStaff} coinSettings={coinSettings} onSaveCoinSettings={async(s)=>{try{await Promise.all([sbFetch("app_config?on_conflict=key",{method:"POST",prefer:"resolution=merge-duplicates,return=minimal",body:JSON.stringify({key:"riddle_coins",value:String(s.riddle_coins)})}),sbFetch("app_config?on_conflict=key",{method:"POST",prefer:"resolution=merge-duplicates,return=minimal",body:JSON.stringify({key:"task_coins",value:String(s.task_coins)})})]);setCoinSettings(s);toast("Configuración guardada ✓");}catch(e){console.error("[CoinSettings] save error:",e?.message||e);toast("Error: "+(e?.message||"ver consola para detalles"));}}}/>}
     </div>
-    <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:C.card,borderTop:`1.5px solid ${C.border}`,display:"flex",padding:"6px 0 10px",boxShadow:`0 -2px 10px ${C.blue}10`,overflowX:"auto"}}>
-      {nav.map(item=>{const active=screen===item.id;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{item.badge>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{item.badge}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(55%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?C.blue:C.muted,transition:"color 0.18s",whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:C.blue}}/>}</button>);})}
-    </div>
+    {isWide?(
+      <div style={{position:"fixed",top:60,left:0,bottom:0,width:188,zIndex:50,background:C.card,borderRight:`1.5px solid ${C.border}`,display:"flex",flexDirection:"column",padding:"12px 8px",overflowY:"auto",gap:2}}>
+        {nav.map(item=>{const active=screen===item.id;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{position:"relative",display:"flex",flexDirection:"row",alignItems:"center",gap:10,background:active?`${C.blue}12`:"none",border:"none",borderRadius:10,cursor:"pointer",padding:"10px 12px",width:"100%",transition:"background 0.15s",fontFamily:"inherit"}}>
+          {item.badge>0&&<div style={{position:"absolute",top:6,right:8,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{item.badge}</div>}
+          {active&&<div style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",width:3,height:22,borderRadius:2,background:C.blue}}/>}
+          <span style={{fontSize:18}}>{item.icon}</span>
+          <span style={{fontSize:13,fontWeight:700,color:active?C.blue:C.muted,whiteSpace:"nowrap"}}>{item.label}</span>
+        </button>);})}
+      </div>
+    ):(
+      <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:C.card,borderTop:`1.5px solid ${C.border}`,display:"flex",padding:"6px 0 10px",boxShadow:`0 -2px 10px ${C.blue}10`,overflowX:"auto"}}>
+        {nav.map(item=>{const active=screen===item.id;return(<button key={item.id} onClick={()=>setScreen(item.id)} style={{flex:"0 0 auto",minWidth:58,display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"none",border:"none",cursor:"pointer",padding:"5px 8px",position:"relative"}}>{item.badge>0&&<div style={{position:"absolute",top:0,right:8,width:16,height:16,borderRadius:"50%",background:C.red,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{item.badge}</div>}<div style={{fontSize:17,filter:active?"none":"grayscale(55%)",transform:active?"scale(1.1)":"scale(1)",transition:"all 0.18s"}}>{item.icon}</div><div style={{fontSize:9,fontWeight:700,color:active?C.blue:C.muted,transition:"color 0.18s",whiteSpace:"nowrap"}}>{item.label}</div>{active&&<div style={{width:16,height:3,borderRadius:2,background:C.blue}}/>}</button>);})}
+      </div>
+    )}
   </>;
 }
