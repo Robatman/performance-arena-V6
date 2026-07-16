@@ -1433,14 +1433,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6}}>
                 <span style={{color:C.muted,fontSize:11,flexShrink:0}}>Stock:</span>
-                <input
-                  type="number"
-                  defaultValue={p.stock}
-                  onBlur={e=>{const v=Number(e.target.value);if(v!==p.stock)updPz(p.id,"stock",v);}}
-                  onKeyDown={e=>{if(e.key==="Enter"){const v=Number(e.target.value);if(v!==p.stock)updPz(p.id,"stock",v);e.target.blur();}}}
-                  style={{width:70,border:`1.5px solid ${C.border}`,borderRadius:7,padding:"4px 8px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,textAlign:"center"}}
-                />
-                <span style={{color:C.muted,fontSize:10}}>{p.stock===-1?"(ilimitado)":""}</span>
+                <span style={{color:p.stock===0?C.red:C.text,fontWeight:700,fontSize:13}}>{p.stock===-1?"∞ Ilimitado":p.stock}</span>
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
