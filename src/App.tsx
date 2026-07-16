@@ -714,7 +714,7 @@ function BulletinCard({bulletin}){
   );
 }
 
-function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, coinSettings={}}){
+function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, coinSettings={}, totalCoins=0}){
   const sc = calcScoreCoins(
     weeklyMetrics,
     riddleAnswers,
@@ -724,12 +724,12 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
     user.referrals,
     coinSettings
   );
-  const level = calcLevel(sc.coins);
+  const level = user.level||1;
 
   return(
     <div style={{paddingBottom:100}}>
       {/* Level + Score card */}
-      <LevelProgressCard coins={sc.coins} level={level}/>
+      <LevelProgressCard coins={totalCoins} level={level}/>
 
       {isSA&&availableWeeks.length>0&&(<Card style={{marginBottom:12,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:2}}>SEMANA VISUALIZADA</div><div style={{color:C.blue,fontWeight:700,fontSize:13}}>Última evaluada: {availableWeeks[0]}</div></div><select value={selectedWeek} onChange={e=>onWeekChange(e.target.value)} style={{border:`1.5px solid ${C.border}`,borderRadius:8,padding:"7px 11px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,cursor:"pointer"}}>{availableWeeks.map(w=><option key={w} value={w}>{w}</option>)}</select></div></Card>)}
       {!isSA&&lastEvaluatedWeek&&(<Card style={{marginBottom:12,padding:"10px 14px",background:`${C.blue}06`,border:`1.5px solid ${C.blue}20`}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>📅</span><div style={{color:C.muted,fontSize:12}}>Última semana evaluada: <strong style={{color:C.blue}}>{lastEvaluatedWeek}</strong></div></div></Card>)}
@@ -950,7 +950,7 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
     db.getMyRedemptions(user.id).then(d=>setMyRedemptions(d||[])).catch(()=>{});
   },[user.id]);
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
-  const level=calcLevel(sc.coins);
+  const level=user.level||1;
   const coins=sc.coins;
   const activePrizes=prizes.filter(p=>p.active!==false);
   const freeSection=activePrizes.filter(p=>(p.minLevel||p.min_level||1)===1);
@@ -1250,7 +1250,7 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
   const [av,setAv]=useState(user.avatar||{base:"b1",hair:null,accessory:null,outfit:null,background:null});
   const [tab,setTab]=useState("edit");const [saving,setSaving]=useState(false);
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
-  const level=calcLevel(sc.coins);
+  const level=user.level||1;
   const coins=sc.coins;
   const types=["hair","accessory","outfit","background"];
   const tl={hair:"Cabello",accessory:"Accesorios",outfit:"Ropa",background:"Fondo"};
@@ -2408,7 +2408,7 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
 function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,user,coinSettings={}}){
   if(!user||!weeklyMetrics||weeklyMetrics.length===0)return null;
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
-  const level=calcLevel(sc.coins);
+  const level=user.level||1;
   return(
     <div style={{display:"flex",gap:6,alignItems:"center"}}>
       <div style={{background:`${lc(level)}15`,border:`1px solid ${lc(level)}40`,borderRadius:8,padding:"3px 8px",textAlign:"center"}}>
@@ -2506,6 +2506,7 @@ export default function App(){
   const [agentTaskSubmissions,setAgentTaskSubmissions]=useState([]);
   const [monthRiddleCount,setMonthRiddleCount]=useState(0);
   const [monthTaskCount,setMonthTaskCount]=useState(0);
+  const [agentTotalCoins,setAgentTotalCoins]=useState(0);
   const lastLevelRef=useRef(0);
 
   const loadInitialData=async()=>{
@@ -2554,8 +2555,9 @@ export default function App(){
     const newMonthTaskCount=(tasks||[]).filter(t=>t.created_at&&thisMonth(t.created_at)).length;
     setMonthRiddleCount(newMonthRiddleCount);
     setMonthTaskCount(newMonthTaskCount);
-    // Level-change detection — uses total earned coins against absolute thresholds
+    // Level-change detection — uses total all-time earned coins against absolute thresholds
     const sc=calcScoreCoins(wm||[],ra||[],ts||[],agent.kudos,agent.gold_kudos,agent.referrals,coinSettings);
+    setAgentTotalCoins(sc.coins);
     const newLevel=calcLevel(sc.coins);
     const oldLevel=agent.monthly_level||1;
     if(newLevel>oldLevel&&newLevel>lastLevelRef.current){
@@ -2642,9 +2644,9 @@ export default function App(){
   const markNotifRead=async(id)=>{try{await db.markNotifRead(id);setNotifs(notifs.map(n=>n.id===id?{...n,is_read:true}:n));}catch(e){}};
   const markAllRead=async()=>{try{await db.markAllNotifsRead(cu.id);setNotifs(notifs.map(n=>n.recipient_id===cu.id?{...n,is_read:true}:n));}catch(e){}};
 
-  // Score props — pass all weeks so sc.coins reflects total earned (level uses absolute coin thresholds)
-  const agentMetricsFiltered=isSA?(selectedWeek?agentWeeklyMetrics.filter((w)=>w.week===selectedWeek):agentWeeklyMetrics):agentWeeklyMetrics;
-  const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount,coinSettings};
+  // Score props — last evaluated week for display; agentTotalCoins (all-time) used for level
+  const agentMetricsFiltered=isSA?(selectedWeek?agentWeeklyMetrics.filter((w)=>w.week===selectedWeek):agentWeeklyMetrics):agentWeeklyMetrics.filter((w)=>w.week===lastEvaluatedWeek);
+  const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount,coinSettings,totalCoins:agentTotalCoins};
 
   if(appLoading){return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><Logo sz={64}/><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,letterSpacing:2}}>PERFORMANCE ARENA</div><div style={{color:C.muted,fontSize:14,marginTop:8}}>Loading...</div></div>);}
 
