@@ -211,7 +211,7 @@ const rp=(u)=>((u.referrals||[]).reduce((s,r)=>s+(r.approved?5:1),0));
 // Legacy gs() kept for compatibility — use calcScoreCoins for new logic
 const gs=(u)=>{const perf=(u.weekly_perf||[]).reduce((s,w)=>s+w.tot,0);const wks=Math.max((u.weekly_perf||[]).length,1);const rdl=u.riddle_completed===wks?10:0;const tp=(u.task_completed||0)/wks;const tsk=tp>=1?10:tp>=0.75?5:tp>=0.5?1:0;return{perf,rdl,tsk,kp:kp(u),rp:rp(u),total:perf+rdl+tsk+kp(u)+rp(u)};};
 
-function adaptProfile(p){return{id:p.id,name:p.full_name,username:p.username,password_hash:p.password_hash,role:p.role==="usuario"?"user":p.role,project:p.team||"Campaign K",active:p.is_active,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},level:p.level||1,puzzlePieces:(p.puzzle_pieces||[]).length,perfectMonths:p.perfect_months||0,kudos:p.kudos||0,goldKudos:p.gold_kudos||0,gold_kudos:p.gold_kudos||0,referrals:p.referrals||[],weekly_perf:p.weekly_perf||[],weeklyPerf:p.weekly_perf||[],riddle_completed:p.riddle_completed||0,riddleCompleted:p.riddle_completed||0,task_completed:p.task_completed||0,taskCompleted:p.task_completed||0,monthsHistory:p.months_history||[],ownedItems:p.owned_items||[],rewards:p.rewards||[],game_id:p.game_id||"",needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,kudosLog:p.kudos_log||[],points_total:p.points_total||0,coins:p.coins||0,monthly_level:p.monthly_level||1,coach_id:p.coach_id||"",qa_coach:p.qa_coach||"",appType:"agents"};}
+function adaptProfile(p){return{id:p.id,name:p.full_name,username:p.username,password_hash:p.password_hash,role:p.role==="usuario"?"user":p.role,project:p.team||"",active:p.is_active,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},level:p.monthly_level||p.level||1,puzzlePieces:(p.puzzle_pieces||[]).length,perfectMonths:p.perfect_months||0,kudos:p.kudos||0,goldKudos:p.gold_kudos||0,gold_kudos:p.gold_kudos||0,referrals:p.referrals||[],weekly_perf:p.weekly_perf||[],weeklyPerf:p.weekly_perf||[],riddle_completed:p.riddle_completed||0,riddleCompleted:p.riddle_completed||0,task_completed:p.task_completed||0,taskCompleted:p.task_completed||0,monthsHistory:p.months_history||[],ownedItems:p.owned_items||[],rewards:p.rewards||[],game_id:p.game_id||"",needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,kudosLog:p.kudos_log||[],points_total:p.points_total||0,coins:p.coins||0,monthly_level:p.monthly_level||1,coach_id:p.coach_id||"",qa_coach:p.qa_coach||"",appType:"agents"};}
 function adaptStaffProfile(p){return{id:p.id,gameId:p.game_id||"",username:p.username,name:p.full_name||p.username||"",password_hash:p.password_hash,role:p.role,project:(p.project||"").trim(),managerId:p.manager_id,active:p.is_active,needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},ownedItems:p.owned_items||[],level:p.level||1,appType:"staff"};}
 
 // ─── UI ATOMS ─────────────────────────────────────────────────────────────────
@@ -378,7 +378,117 @@ function Toast({msg,onClose}){useEffect(()=>{if(msg){const t=setTimeout(onClose,
 
 function TempPwModal({user,onSave,dark=false}){const [p1,setP1]=useState("");const [p2,setP2]=useState("");const [err,setErr]=useState("");const save=()=>{if(p1.length<4){setErr(dark?"Minimum 4 characters":"Minimo 4 caracteres");return;}if(p1!==p2){setErr(dark?"Passwords do not match":"Las contrasenas no coinciden");return;}onSave(p1);};const inp={width:"100%",border:`1.5px solid ${dark?S.border:C.border}`,borderRadius:9,padding:"11px 14px",fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:dark?S.bg:C.bg,color:dark?S.text:C.text};return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:dark?S.bgCard:C.card,border:`1px solid ${dark?S.border:C.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:380}}><div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:42,marginBottom:8}}>🔑</div><div style={{color:dark?S.accent:C.blue,fontWeight:800,fontSize:18,marginBottom:6}}>{dark?"Password Change Required":"Cambio de Contrasena"}</div><div style={{color:dark?S.muted:C.muted,fontSize:13}}>{dark?`Hi ${user.name}, please set your new password.`:`Hola ${user.name}, crea tu nueva contrasena.`}</div></div><div style={{marginBottom:12}}><div style={{color:dark?S.muted:C.muted,fontSize:11,marginBottom:4}}>NEW PASSWORD</div><input type="password" value={p1} onChange={e=>setP1(e.target.value)} style={inp}/></div><div style={{marginBottom:16}}><div style={{color:dark?S.muted:C.muted,fontSize:11,marginBottom:4}}>CONFIRM PASSWORD</div><input type="password" value={p2} onChange={e=>setP2(e.target.value)} onKeyDown={e=>e.key==="Enter"&&save()} style={inp}/></div>{err&&<div style={{color:S.red,fontSize:13,marginBottom:10,textAlign:"center",fontWeight:600}}>{err}</div>}{dark?<SBtn onClick={save} style={{width:"100%",padding:12}}>SAVE PASSWORD</SBtn>:<Btn onClick={save} color={C.blue} style={{width:"100%",padding:12}}>GUARDAR</Btn>}</div></div>);}
 
-function UnifiedLogin({onLoginAgent,onLoginStaff}){
+function PublicView({users,prizes,onBack}){
+  const [rankings,setRankings]=useState([]);const [loading,setLoading]=useState(true);const [tab,setTab]=useState("leaderboard");
+  const shop=DEFAULT_SHOP;const medals=["🥇","🥈","🥉"];
+  useEffect(()=>{
+    async function load(){
+      try{
+        const res=await fetch(`${SUPABASE_URL}/rest/v1/weekly_metrics?select=game_id,qa_pts,aht_pts,attendance_pts&order=game_id.asc`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
+        const data=await res.json();
+        const totals={};
+        (data||[]).forEach(r=>{const kpi=(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);totals[r.game_id]=(totals[r.game_id]||0)+kpi;});
+        const active=(users||[]).filter(u=>u.active);
+        const findPts=u=>{const byId=totals[u.game_id];if(byId!==undefined)return byId;const k=Object.keys(totals).find(k=>k.toLowerCase()===(u.game_id||"").toLowerCase()||k.toLowerCase()===(u.username||"").toLowerCase());return k?totals[k]:0;};
+        const covered=new Set(active.flatMap(u=>[(u.game_id||"").toLowerCase(),(u.username||"").toLowerCase()].filter(Boolean)));
+        const orphans=Object.entries(totals).filter(([gid])=>!covered.has(gid.toLowerCase())).map(([game_id,pts])=>({game_id,pts,profile:null}));
+        const ranked=[...active.map(u=>({game_id:u.game_id||u.username,pts:findPts(u),profile:u})),...orphans].sort((a,b)=>b.pts-a.pts);
+        setRankings(ranked);
+      }catch(e){console.error(e);}
+      setLoading(false);
+    }
+    load();
+  },[users]);
+  const activePrizes=(prizes||[]).filter(p=>p.is_active!==false);
+  const btnSty={padding:"8px 18px",borderRadius:8,border:`1.5px solid ${C.blue}`,background:`${C.blue}12`,color:C.blue,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"};
+  return(
+    <div style={{minHeight:"100vh",background:`linear-gradient(160deg,${C.bg} 0%,${C.bgDk} 100%)`,paddingBottom:80}}>
+      <div style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100}}>
+        <Logo sz={32}/>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:900,color:C.blue}}>PERFORMANCE ARENA</div>
+          <div style={{color:C.muted,fontSize:11}}>Vista Pública</div>
+        </div>
+        <button onClick={onBack} style={btnSty}>Iniciar Sesión →</button>
+      </div>
+      <div style={{display:"flex",background:C.card,borderBottom:`1px solid ${C.border}`}}>
+        {[["leaderboard","🏆 Rankings"],["rewards","🎁 Premios"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setTab(v)} style={{flex:1,padding:"13px 0",border:"none",borderBottom:`3px solid ${tab===v?C.blue:"transparent"}`,background:"transparent",color:tab===v?C.blue:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"color 0.2s"}}>{l}</button>
+        ))}
+      </div>
+      <div style={{padding:"14px 14px 0"}}>
+        {tab==="leaderboard"&&(
+          <>
+            <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.red},${C.blue})`,border:"none",textAlign:"center"}}>
+              <div style={{fontSize:32}}>🏆</div>
+              <div style={{color:"#fff",fontWeight:800,fontSize:19}}>LEADERBOARD</div>
+              <div style={{color:"rgba(255,255,255,0.55)",fontSize:12}}>Score del mes (KPI + Riddles + Tasks)</div>
+            </Card>
+            {loading&&<div style={{textAlign:"center",padding:40,color:C.muted}}>Cargando ranking...</div>}
+            {!loading&&rankings.map((r,i)=>{
+              const u=r.profile;
+              return(
+                <div key={r.game_id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",marginBottom:8,borderRadius:14,background:C.card,border:`1.5px solid ${C.border}`}}>
+                  <div style={{width:30,textAlign:"center",fontWeight:900,color:i<3?"#f59e0b":C.muted,fontSize:i<3?20:14}}>{i<3?medals[i]:`#${i+1}`}</div>
+                  <Av av={u?.avatar} sz={40} shop={shop}/>
+                  <div style={{flex:1}}>
+                    <div style={{color:C.text,fontWeight:700,fontSize:14}}>{u?.name||r.game_id}</div>
+                    <Bdg l={u?.level||1}/>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{color:C.blue,fontWeight:900,fontSize:18}}>{r.pts}</div>
+                    <div style={{color:C.muted,fontSize:11}}>score</div>
+                  </div>
+                </div>
+              );
+            })}
+            {!loading&&rankings.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>📭</div><div style={{color:C.muted}}>No hay datos aún.</div></Card>}
+          </>
+        )}
+        {tab==="rewards"&&(
+          <>
+            <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.gold},${C.red})`,border:"none",textAlign:"center"}}>
+              <div style={{fontSize:32}}>🎁</div>
+              <div style={{color:"#fff",fontWeight:800,fontSize:19}}>PREMIOS DISPONIBLES</div>
+              <div style={{color:"rgba(255,255,255,0.55)",fontSize:12}}>Canjea tus coins por premios exclusivos</div>
+            </Card>
+            {activePrizes.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:48,marginBottom:8}}>🎁</div><div style={{color:C.muted}}>No hay premios disponibles.</div></Card>}
+            {activePrizes.map(p=>{
+              const hasStock=p.stock===-1||(p.stock||0)>0;
+              const minLv=p.min_level||p.minLevel||1;
+              return(
+                <Card key={p.id} style={{marginBottom:10,opacity:hasStock?1:0.5}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                        <span style={{fontSize:26}}>{p.emoji||"🎁"}</span>
+                        <div>
+                          <div style={{color:C.text,fontWeight:700,fontSize:14}}>{p.name}</div>
+                          {p.description&&<div style={{color:C.muted,fontSize:12}}>{p.description}</div>}
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
+                        <span style={{padding:"3px 10px",borderRadius:6,background:`${C.gold}18`,color:C.gold,fontSize:12,fontWeight:700}}>🪙 {p.points_cost||0}</span>
+                        {minLv>1&&<span style={{padding:"3px 10px",borderRadius:6,background:`${C.blue}18`,color:C.blue,fontSize:12,fontWeight:700}}>Nivel {minLv}+</span>}
+                        {p.stock===-1?<span style={{padding:"3px 10px",borderRadius:6,background:`${C.green}18`,color:C.green,fontSize:12,fontWeight:700}}>∞ Ilimitado</span>:<span style={{padding:"3px 10px",borderRadius:6,background:hasStock?`${C.green}18`:`${C.red}18`,color:hasStock?C.green:C.red,fontSize:12,fontWeight:700}}>{hasStock?`${p.stock} disp.`:"Sin stock"}</span>}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+            <div style={{textAlign:"center",marginTop:16,padding:"14px 16px",background:C.card,borderRadius:14,border:`1.5px dashed ${C.border}`}}>
+              <div style={{color:C.muted,fontSize:13,marginBottom:10}}>¿Quieres canjear premios?</div>
+              <button onClick={onBack} style={{...btnSty,background:C.blue,color:"#fff",border:"none",padding:"10px 24px",fontSize:14}}>Iniciar Sesión →</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
   const [name,setName]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);const [mode,setMode]=useState("agents");
   const go=async()=>{
     if(!name.trim()||!pw.trim()){setErr(mode==="agents"?"Escribe tu nombre y contrasena":"Enter your username and password");return;}
@@ -403,21 +513,67 @@ function UnifiedLogin({onLoginAgent,onLoginStaff}){
     setLoading(false);
   };
   const isStaff=mode==="staff";
-  const inp={width:"100%",border:`1.5px solid ${isStaff?S.border:C.border}`,borderRadius:9,padding:"11px 14px",fontSize:15,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:isStaff?S.bg:C.bg,color:isStaff?S.text:C.text};
-  return(
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:isStaff?S.bg:`linear-gradient(160deg,${C.bg} 0%,${C.bgDk} 100%)`,transition:"background 0.4s"}}>
-      <div style={{width:"100%",maxWidth:420}}>
-        <div style={{display:"flex",background:isStaff?S.bgCard:"#e8eaf6",borderRadius:12,padding:4,marginBottom:28,border:`1px solid ${isStaff?S.border:C.border}`}}>
-          {["agents","staff"].map(m=><button key={m} onClick={()=>{setMode(m);setErr("");setName("");setPw("");}} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:mode===m?(m==="staff"?S.accent:C.blue):"transparent",color:mode===m?"#fff":isStaff?S.muted:C.muted,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}}>{m==="agents"?"🏆 Performance Arena":"⚡ Staff Arena"}</button>)}
-        </div>
+  const inp={width:"100%",border:`1.5px solid ${isStaff?S.border:C.border}`,borderRadius:9,padding:"12px 14px",fontSize:15,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:isStaff?S.bg:C.bg,color:isStaff?S.text:C.text};
+  const features=[["🏆","Leaderboard en tiempo real","Compite con tu equipo semana a semana"],["🎁","Canjea premios exclusivos","Usa tus coins por recompensas reales"],["📊","Sigue tu progreso mensual","KPIs, riddles y tareas en un solo lugar"],["🔔","Notificaciones de logros","Sube de nivel y recibe reconocimientos"]];
+  const tabBar=<div style={{display:"flex",background:isStaff?S.bgCard:"#e8eaf6",borderRadius:12,padding:4,marginBottom:24,border:`1px solid ${isStaff?S.border:C.border}`}}>
+    {["agents","staff"].map(m=><button key={m} onClick={()=>{setMode(m);setErr("");setName("");setPw("");}} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:mode===m?(m==="staff"?S.accent:C.blue):"transparent",color:mode===m?"#fff":isStaff?S.muted:C.muted,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}}>{m==="agents"?"🏆 Performance Arena":"⚡ Staff Arena"}</button>)}
+  </div>;
+  const formCard=<div style={{background:isStaff?S.bgCard:C.card,border:`1.5px solid ${isStaff?S.border:C.border}`,borderRadius:16,padding:"24px 20px"}}>
+    <div style={{marginBottom:16}}><div style={{color:isStaff?S.muted:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>{isStaff?"USERNAME":"TU NOMBRE"}</div><input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder={isStaff?"Your username":"Escribe tu nombre"} style={inp}/></div>
+    <div style={{marginBottom:20}}><div style={{color:isStaff?S.muted:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>{isStaff?"PASSWORD":"CONTRASENA"}</div><input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder={isStaff?"Your password":"Tu contrasena"} style={inp}/></div>
+    {err&&<div style={{color:isStaff?S.red:C.red,fontSize:13,marginBottom:14,textAlign:"center",fontWeight:600,padding:"8px 12px",background:isStaff?`${S.red}22`:C.red2,borderRadius:8}}>{err}</div>}
+    <button onClick={go} disabled={loading} style={{width:"100%",padding:14,fontSize:15,background:loading?(isStaff?S.border:"#c5cae9"):(isStaff?S.accent:C.blue),color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:1}}>{loading?"...":(isStaff?"SIGN IN":"ENTRAR")}</button>
+  </div>;
+  if(isStaff){return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:S.bg}}>
+      <div style={{width:"100%",maxWidth:440}}>
+        {tabBar}
         <div style={{textAlign:"center",marginBottom:28}}>
-          {isStaff?(<><div style={{display:"flex",justifyContent:"center",marginBottom:12}}><StaffLogo sz={64}/></div><div style={{fontSize:28,fontWeight:900,color:S.text,letterSpacing:2}}>STAFF</div><div style={{fontSize:28,fontWeight:900,color:S.accent,letterSpacing:2}}>ARENA</div><div style={{color:S.muted,fontSize:12,marginTop:6}}>Staff Performance System</div></>):(<><div style={{display:"flex",justifyContent:"center",marginBottom:12}}><Logo sz={64}/></div><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,letterSpacing:2}}>PERFORMANCE</div><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.red,letterSpacing:2}}>ARENA</div><div style={{color:C.muted,fontSize:12,marginTop:6}}>Sistema de Gamificacion</div></>)}
+          <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><StaffLogo sz={64}/></div>
+          <div style={{fontSize:28,fontWeight:900,color:S.text,letterSpacing:2}}>STAFF</div>
+          <div style={{fontSize:28,fontWeight:900,color:S.accent,letterSpacing:2}}>ARENA</div>
+          <div style={{color:S.muted,fontSize:12,marginTop:6}}>Staff Performance System</div>
         </div>
-        <div style={{background:isStaff?S.bgCard:C.card,border:`1.5px solid ${isStaff?S.border:C.border}`,borderRadius:16,padding:20}}>
-          <div style={{marginBottom:14}}><div style={{color:isStaff?S.muted:C.muted,fontSize:11,letterSpacing:1,marginBottom:5}}>{isStaff?"USERNAME":"TU NOMBRE"}</div><input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder={isStaff?"Your username":"Escribe tu nombre"} style={inp}/></div>
-          <div style={{marginBottom:20}}><div style={{color:isStaff?S.muted:C.muted,fontSize:11,letterSpacing:1,marginBottom:5}}>{isStaff?"PASSWORD":"CONTRASENA"}</div><input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder={isStaff?"Your password":"Tu contrasena"} style={inp}/></div>
-          {err&&<div style={{color:isStaff?S.red:C.red,fontSize:13,marginBottom:14,textAlign:"center",fontWeight:600,padding:"8px 12px",background:isStaff?`${S.red}22`:C.red2,borderRadius:8}}>{err}</div>}
-          <button onClick={go} disabled={loading} style={{width:"100%",padding:13,fontSize:15,background:loading?(isStaff?S.border:"#c5cae9"):(isStaff?S.accent:C.blue),color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit"}}>{loading?"...":(isStaff?"SIGN IN":"ENTRAR")}</button>
+        {formCard}
+      </div>
+    </div>
+  );}
+  return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"40px 24px",background:`linear-gradient(150deg,${C.bg} 0%,${C.bgDk} 100%)`}}>
+      <div style={{width:"100%",maxWidth:920,display:"flex",gap:56,alignItems:"center",flexWrap:"wrap",justifyContent:"center"}}>
+        {/* Left: hero panel */}
+        <div style={{flex:"1 1 340px",maxWidth:440}}>
+          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:20}}>
+            <Logo sz={56}/>
+            <div>
+              <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,lineHeight:1.1,letterSpacing:1}}>PERFORMANCE</div>
+              <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.red,lineHeight:1.1,letterSpacing:1}}>ARENA</div>
+            </div>
+          </div>
+          <div style={{color:C.muted,fontSize:15,marginBottom:28,lineHeight:1.6}}>El sistema de gamificación que transforma tu desempeño en logros reales.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:28}}>
+            {features.map(([icon,title,desc])=>(
+              <div key={title} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"12px 16px",background:`${C.blue}09`,borderRadius:12,border:`1px solid ${C.blue}18`}}>
+                <span style={{fontSize:22,flexShrink:0}}>{icon}</span>
+                <div>
+                  <div style={{color:C.text,fontWeight:700,fontSize:14}}>{title}</div>
+                  <div style={{color:C.muted,fontSize:12,marginTop:2}}>{desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {onPublicView&&<button onClick={onPublicView} style={{width:"100%",padding:"12px 0",borderRadius:10,border:`1.5px solid ${C.blue}`,background:`${C.blue}10`,color:C.blue,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+            👀 Ver Rankings y Premios sin iniciar sesión →
+          </button>}
+        </div>
+        {/* Right: login form */}
+        <div style={{flex:"1 1 320px",maxWidth:400}}>
+          {tabBar}
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <div style={{color:C.text,fontWeight:800,fontSize:20}}>Bienvenido de vuelta</div>
+            <div style={{color:C.muted,fontSize:13,marginTop:4}}>Inicia sesión para ver tu progreso</div>
+          </div>
+          {formCard}
         </div>
       </div>
     </div>
@@ -477,7 +633,7 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
         <div style={{flex:1}}>
           <div style={{color:C.text,fontWeight:900,fontSize:17}}>{user.name}</div>
           <div style={{marginTop:4}}><Bdg l={level}/></div>
-          <div style={{color:C.muted,fontSize:12,marginTop:4}}>{user.project}</div>
+          {user.project&&<div style={{color:C.muted,fontSize:12,marginTop:4}}>{user.project}</div>}
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{color:C.muted,fontSize:10,letterSpacing:1}}>MESES PERF.</div>
@@ -569,14 +725,29 @@ function Leaderboard({user,allUsers,shop,weeklyMetricsAll}){
           const kpi=(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);
           totals[r.game_id]=(totals[r.game_id]||0)+kpi;
         });
-        const findProfile=(gid)=>
-          allUsers.find(u=>u.game_id===gid)
-          ||allUsers.find(u=>(u.game_id||"").toLowerCase()===(gid||"").toLowerCase())
-          ||allUsers.find(u=>(u.username||"").toLowerCase()===(gid||"").toLowerCase());
-        const ranked=Object.entries(totals)
-          .map(([game_id,pts])=>({game_id,pts,profile:findProfile(game_id)}))
-          .filter(r=>r.profile?.active)
-          .sort((a,b)=>b.pts-a.pts);
+        // Build from ALL active profiles, with pts from totals (0 if no metrics)
+        const activeUsers=allUsers.filter(u=>u.active);
+        const findTotals=(u)=>{
+          const byId=totals[u.game_id];
+          if(byId!==undefined)return byId;
+          const key=Object.keys(totals).find(k=>
+            k.toLowerCase()===(u.game_id||"").toLowerCase()||
+            k.toLowerCase()===(u.username||"").toLowerCase()
+          );
+          return key?totals[key]:0;
+        };
+        // Track which game_ids profiles cover (case-insensitive)
+        const coveredIds=new Set(activeUsers.flatMap(u=>[
+          (u.game_id||"").toLowerCase(),(u.username||"").toLowerCase()
+        ].filter(Boolean)));
+        // Include metrics entries that have no matching profile (e.g. orphaned game_ids)
+        const orphans=Object.entries(totals)
+          .filter(([gid])=>!coveredIds.has(gid.toLowerCase()))
+          .map(([game_id,pts])=>({game_id,pts,profile:null}));
+        const ranked=[
+          ...activeUsers.map(u=>({game_id:u.game_id||u.username,pts:findTotals(u),profile:u})),
+          ...orphans,
+        ].sort((a,b)=>b.pts-a.pts);
         setRankings(ranked);
       }catch(e){console.error(e);}
       setLoading(false);
@@ -699,13 +870,23 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
             </Card>
           ):myRedemptions.map((r,i)=>{
             const statusColor={pending:C.yellow,approved:C.green,delivered:C.blue,cancelled:C.red};
-            const statusLabel={pending:"Pendiente",approved:"Aprobado",delivered:"Entregado",cancelled:"Cancelado"};
+            const statusLabel={pending:"⏳ Pendiente",approved:"✅ Aprobado",delivered:"📦 Entregado",cancelled:"❌ Cancelado"};
             const prizeLookup=prizes?.find(px=>px.id===r.reward_id);
             const rName=prizeLookup?.name||r.reward_name||"Premio";
             const rEmoji=prizeLookup?.emoji||"🎁";
             const rDate=r.redeemed_at;
+            const isApproved=r.status==="approved";
             return(
-              <Card key={r.id||i} style={{marginBottom:10}}>
+              <Card key={r.id||i} style={{marginBottom:10,border:isApproved?`2px solid ${C.green}`:undefined}}>
+                {isApproved&&(
+                  <div style={{background:`${C.green}12`,border:`1px solid ${C.green}30`,borderRadius:8,padding:"8px 12px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:20}}>🚚</span>
+                    <div>
+                      <div style={{color:C.green,fontWeight:800,fontSize:12}}>¡En camino!</div>
+                      <div style={{color:C.muted,fontSize:11}}>Tu premio fue aprobado y está siendo preparado para entrega.</div>
+                    </div>
+                  </div>
+                )}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                   <div style={{flex:1}}>
                     <div style={{color:C.text,fontWeight:700,fontSize:14,marginBottom:4}}>{rEmoji} {rName}</div>
@@ -1091,13 +1272,13 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
     }catch(e){toast("Error al guardar");}
   };
   const deletePrize=async(id,name)=>{
-    if(!window.confirm(`¿Eliminar "${name}" permanentemente? Esta acción no se puede deshacer.`))return;
+    if(!window.confirm(`¿Desactivar "${name}"? Dejará de aparecer en la tienda pero los canjes existentes se conservan.`))return;
     try{
-      await sbFetch(`reward_catalog?id=eq.${id}`,{method:"DELETE",prefer:"return=minimal"});
-      const updated=await sbFetch("reward_catalog?is_active=eq.true&order=created_at.desc").catch(()=>[]);
+      await sbFetch(`reward_catalog?id=eq.${id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({is_active:false})});
+      const updated=await db.getPrizes();
       setPrizes(updated||[]);
-      toast("Premio eliminado");
-    }catch(e){toast("Error al eliminar");}
+      toast(`"${name}" desactivado`);
+    }catch(e){toast("Error al desactivar: "+(e?.message||"ver consola"));console.error(e);}
   };
 
   return(<div>
@@ -1290,12 +1471,93 @@ function CoinSettingsCard({coinSettings,onSave,inp}){
   );
 }
 
+function UtilizationTab({allUsers,allRedemptions}){
+  const active=allUsers.filter(u=>u.active);
+  const lvCounts={1:0,2:0,3:0,4:0};
+  active.forEach(u=>{const lv=Math.min(4,Math.max(1,u.monthly_level||1));lvCounts[lv]++;});
+  const totalUsers=active.length||1;
+  const canjeSt={pending:0,approved:0,delivered:0,cancelled:0};
+  (allRedemptions||[]).forEach(r=>{if(r.status in canjeSt)canjeSt[r.status]++;});
+  const totalCanjes=(allRedemptions||[]).length||1;
+  const totalCoins=active.reduce((s,u)=>s+(u.coins||0),0);
+  const avgCoins=active.length?Math.round(totalCoins/active.length):0;
+  const lvColors=["","#cd7f32","#9ca3af","#f59e0b","#22d3ee"];
+  const lvNames=["","Bronce 🥉","Plata 🥈","Oro 🥇","Platino 💎"];
+  const statItems=[
+    {label:"Agentes activos",val:active.length,color:C.blue,icon:"👤"},
+    {label:"Canjes totales",val:(allRedemptions||[]).length,color:C.green,icon:"📦"},
+    {label:"Coins en circulación",val:totalCoins,color:C.gold||"#f59e0b",icon:"🪙"},
+    {label:"Promedio coins",val:avgCoins,color:C.purple,icon:"📈"},
+  ];
+  const canjeItems=[
+    {label:"Pendiente",count:canjeSt.pending,color:C.yellow},
+    {label:"Aprobado",count:canjeSt.approved,color:C.green},
+    {label:"Entregado",count:canjeSt.delivered,color:C.blue},
+    {label:"Cancelado",count:canjeSt.cancelled,color:C.red},
+  ];
+  return(
+    <div>
+      <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
+        <div style={{color:C.blue,fontWeight:800,fontSize:14,marginBottom:2}}>📊 Visualizador de Utilización</div>
+        <div style={{color:C.muted,fontSize:12}}>Métricas de adopción de la plataforma</div>
+      </Card>
+      <Card style={{marginBottom:10}}>
+        <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:10}}>👥 Resumen General</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          {statItems.map(({label,val,color,icon})=>(
+            <div key={label} style={{background:`${color}15`,borderRadius:10,padding:"10px 12px",border:`1px solid ${color}30`}}>
+              <div style={{fontSize:20}}>{icon}</div>
+              <div style={{fontSize:22,fontWeight:900,color:color}}>{val}</div>
+              <div style={{fontSize:10,color:C.muted,fontWeight:600}}>{label}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+      <Card style={{marginBottom:10}}>
+        <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:10}}>🏆 Distribución de Niveles</div>
+        {[1,2,3,4].map(lv=>{
+          const pct=Math.round(lvCounts[lv]/totalUsers*100);
+          return(
+            <div key={lv} style={{marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                <span style={{fontSize:12,color:C.text,fontWeight:600}}>Nivel {lv} — {lvNames[lv]}</span>
+                <span style={{fontSize:12,color:lvColors[lv],fontWeight:800}}>{lvCounts[lv]} ({pct}%)</span>
+              </div>
+              <div style={{background:C.border,borderRadius:4,height:10,overflow:"hidden"}}>
+                <div style={{width:`${pct}%`,height:"100%",background:lvColors[lv],borderRadius:4,transition:"width 0.5s"}}/>
+              </div>
+            </div>
+          );
+        })}
+      </Card>
+      <Card style={{marginBottom:10}}>
+        <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:10}}>📦 Estado de Canjes</div>
+        {canjeItems.map(({label,count,color})=>{
+          const pct=Math.round(count/totalCanjes*100);
+          return(
+            <div key={label} style={{marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                <span style={{fontSize:12,color:C.text,fontWeight:600}}>{label}</span>
+                <span style={{fontSize:12,color:color,fontWeight:800}}>{count} ({pct}%)</span>
+              </div>
+              <div style={{background:C.border,borderRadius:4,height:10,overflow:"hidden"}}>
+                <div style={{width:`${pct}%`,height:"100%",background:color,borderRadius:4,transition:"width 0.5s"}}/>
+              </div>
+            </div>
+          );
+        })}
+      </Card>
+    </div>
+  );
+}
+
 function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNotifs,toast,reloadUsers,riddleCount,taskCount,bulletin,setBulletin,allStaff=[],coinSettings={},onSaveCoinSettings}){
   const [tab,setTab]=useState("users");const isSA=cu.role==="superadmin";
   const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:C.bg,color:C.text};
   const blank={name:"",password:"",role:"user",project:"Campaign K",gameId:""};
   const [form,setForm]=useState(blank);const [filter,setFilter]=useState("active");
   const [resetId,setResetId]=useState(null);const [newPw,setNewPw]=useState("");
+  const [campaignEditId,setCampaignEditId]=useState(null);const [campaignEditVal,setCampaignEditVal]=useState("");
   const [delConfirm,setDelConfirm]=useState(null);const [loading,setLoading]=useState(false);
 
   const createUser=async()=>{
@@ -1312,6 +1574,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
 
   const toggleActive=async(u)=>{try{await db.updateUser(u.id,{is_active:!u.active});await reloadUsers();toast(u.active?"Usuario desactivado":"Usuario activado");}catch(e){toast("Error");}};
   const savePw=async(u)=>{if(!newPw.trim()||newPw.trim().length<4){toast("Minimo 4 caracteres");return;}try{await db.updateUser(u.id,{password_hash:newPw.trim(),needs_pw_change:true,temp_pw:newPw.trim()});await reloadUsers();setResetId(null);setNewPw("");toast("Contrasena temporal asignada.");}catch(e){toast("Error");}};
+  const saveCampaign=async(u)=>{try{await db.updateUser(u.id,{team:campaignEditVal.trim()||null});await reloadUsers();setCampaignEditId(null);setCampaignEditVal("");toast(`Campaña de ${u.name} actualizada`);}catch(e){toast("Error al guardar campaña");}};
 
   const [kf,setKf]=useState({toId:"",gold:false,reason:""});
   const sendKudo=async()=>{
@@ -1368,7 +1631,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   };
   useEffect(()=>{if(isSA)reloadCanjes();},[isSA]);
   // Reload canjes every time the admin navigates to that tab
-  useEffect(()=>{if(tab==="canjes"&&isSA)reloadCanjes();},[tab]);
+  useEffect(()=>{if(tab==="canjes"||tab==="utilization")reloadCanjes();},[tab]);
   const addPrize=async()=>{if(!pf.name.trim()){toast("Escribe el nombre");return;}try{await db.createPrize({name:pf.name,emoji:pf.emoji||"🎁",points_cost:pf.pts,coins_cost:pf.pts,stock:pf.stock,category:"general",is_active:true,min_level:pf.minLevel,description:pf.description.trim()||null});const updated=await db.getPrizes();setPrizes(updated||[]);setPf({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1,description:""});toast("Premio anadido");}catch(e){toast("Error al crear premio");}};
   const updPz=async(id,field,val)=>{const dbField=field==="pts"?"points_cost":field==="stock"?"stock":field==="minLevel"?"min_level":field;try{await db.updatePrize(id,{[dbField]:val});const updated=await db.getPrizes();setPrizes(updated||[]);}catch(e){toast("Error");}};
 
@@ -1382,7 +1645,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   };
 
   const filtered=allUsers.filter(u=>filter==="active"?u.active:!u.active);
-  const tabs=[{id:"bulletin",label:"📋 Boletín"},{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"kudosHistory",label:"👏 Historial Kudos"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"},{id:"grupos",label:"👥 Grupos"}];
+  const tabs=[{id:"bulletin",label:"📋 Boletín"},{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"kudosHistory",label:"👏 Historial Kudos"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"},{id:"grupos",label:"👥 Grupos"},{id:"utilization",label:"📊 Utilización"}];
 
   return(
     <div style={{paddingBottom:100}}>
@@ -1476,6 +1739,10 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
               <Av av={u.avatar} sz={42} shop={DEFAULT_SHOP}/>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{color:C.text,fontWeight:700,fontSize:14}}>{u.name}{u.id===cu.id&&<span style={{color:C.blue,fontSize:10}}> (tu)</span>}</div>
+                <div style={{color:C.muted,fontSize:11,marginTop:2,display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <span>📋 {u.project||<span style={{fontStyle:"italic"}}>Sin campaña</span>}</span>
+                  {u.game_id&&<span>🎮 {u.game_id}</span>}
+                </div>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:3}}>
                   <Tag color={u.role==="superadmin"?C.red:u.role==="admin"?C.blue:C.muted}>{(u.role||"user").toUpperCase()}</Tag>
                   <Tag color={u.active?C.green:C.red}>{u.active?"ACTIVO":"INACTIVO"}</Tag>
@@ -1485,11 +1752,21 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
               {isSA&&u.id!==cu.id&&(
                 <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
                   <Btn onClick={()=>toggleActive(u)} color={u.active?C.red:C.green} sm>{u.active?"Desactivar":"Activar"}</Btn>
-                  <Btn onClick={()=>{setResetId(resetId===u.id?null:u.id);setNewPw("");}} color={resetId===u.id?"#6b7280":C.yellow} sm>{resetId===u.id?"Cancelar":"Contrasena"}</Btn>
+                  <Btn onClick={()=>{setResetId(resetId===u.id?null:u.id);setNewPw("");setCampaignEditId(null);}} color={resetId===u.id?"#6b7280":C.yellow} sm>{resetId===u.id?"Cancelar":"Contrasena"}</Btn>
+                  <Btn onClick={()=>{setCampaignEditId(campaignEditId===u.id?null:u.id);setCampaignEditVal(u.project||"");setResetId(null);}} color={campaignEditId===u.id?"#6b7280":C.blue} sm>{campaignEditId===u.id?"Cerrar":"Campaña"}</Btn>
                   <Btn onClick={()=>setDelConfirm(u)} color={C.red} sm>Desactivar</Btn>
                 </div>
               )}
             </div>
+            {isSA&&campaignEditId===u.id&&(
+              <div style={{marginTop:12,padding:"12px 14px",background:`${C.blue}08`,borderRadius:10,border:`1.5px solid ${C.blue}30`,display:"flex",gap:8,alignItems:"flex-end"}}>
+                <div style={{flex:1}}>
+                  <div style={{color:C.blue,fontSize:11,fontWeight:700,marginBottom:4}}>📋 CAMPAÑA / PROYECTO</div>
+                  <input type="text" value={campaignEditVal} onChange={e=>setCampaignEditVal(e.target.value)} style={{...inp}} placeholder="ej. Campaign A"/>
+                </div>
+                <Btn onClick={()=>saveCampaign(u)} color={C.green} sm>Guardar</Btn>
+              </div>
+            )}
             {isSA&&resetId===u.id&&(
               <div style={{marginTop:12,padding:"12px 14px",background:C.yellowBg,borderRadius:10,border:"1.5px solid #fde68a",display:"flex",gap:8,alignItems:"flex-end"}}>
                 <div style={{flex:1}}>
@@ -1580,14 +1857,18 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
             const statusLabel={pending:"Pendiente",approved:"Aprobado",delivered:"Entregado",cancelled:"Cancelado"};
             const borderColor={pending:undefined,approved:`3px solid ${C.green}`,delivered:`3px solid ${C.blue}`,cancelled:`3px solid ${C.red}`};
             const patchStatus=async(newStatus)=>{
-              await sbFetch(`reward_redemptions?id=eq.${r.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({status:newStatus})});
+              const res=await sbFetch(`reward_redemptions?id=eq.${r.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({status:newStatus})});
+              console.log(`[patchStatus] ${newStatus} →`,res);
               setAllRedemptions(prev=>prev.map(x=>x.id===r.id?{...x,status:newStatus}:x));
             };
             const approveRedemption=async()=>{
               try{
                 await patchStatus("approved");
+                if(r.user_id){
+                  db.createNotif({recipient_id:r.user_id,title:"✅ Premio aprobado",message:`Tu solicitud de "${prizeName}" fue aprobada. ¡Pronto lo recibirás! 🎁`,type:"reward_approved",is_read:false}).catch(()=>{});
+                }
                 toast(`✅ Canje aprobado para ${u?.name||"agente"}`);
-              }catch(e){toast("Error al aprobar");console.error(e);}
+              }catch(e){toast("Error al aprobar: "+(e?.message||"ver consola"));console.error(e);}
             };
             const deliverRedemption=async()=>{
               try{
@@ -1599,7 +1880,13 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
               if(!window.confirm(`¿Cancelar este canje y devolver ${r.points_spent||0} 🪙 a ${u?.name||"el agente"}?`))return;
               // Step 1: mark cancelled in DB
               try{await patchStatus("cancelled");}
-              catch(e){toast("Error al actualizar estado");console.error("[cancel step1]",e);return;}
+              catch(e){
+                const msg=String(e?.message||e);
+                toast("Error al cancelar: "+msg.substring(0,120));
+                console.error("[cancel step1]",e);
+                console.info("%c[FIX] Ejecuta esto en Supabase SQL Editor:\nALTER TABLE reward_redemptions DROP CONSTRAINT IF EXISTS reward_redemptions_status_check;\nALTER TABLE reward_redemptions ADD CONSTRAINT reward_redemptions_status_check CHECK (status IN ('pending','approved','delivered','cancelled'));","color:orange;font-weight:bold");
+                return;
+              }
               // Step 2: refund coins
               try{
                 if(u?.id){
@@ -1619,6 +1906,12 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
               }catch(e){console.error("[cancel step3 stock]",e);}
               // Step 4: refresh users
               try{await reloadUsers();}catch(e){console.error("[cancel step4]",e);}
+              // Step 5: notify agent
+              try{
+                if(r.user_id){
+                  db.createNotif({recipient_id:r.user_id,title:"❌ Canje cancelado",message:`Tu solicitud de "${prizeName}" fue cancelada. Se devolvieron ${r.points_spent||0} 🪙 a tu cuenta.`,type:"reward_cancelled",is_read:false}).catch(()=>{});
+                }
+              }catch(e){console.error("[cancel step5 notif]",e);}
               toast(`Canje cancelado — ${r.points_spent||0} 🪙 devueltos a ${u?.name||"agente"}`);
             };
             return(
@@ -1630,7 +1923,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                       <span style={{fontSize:16}}>{prizeEmoji}</span>
                       <span style={{color:C.text,fontSize:13,fontWeight:600}}>{prizeName}</span>
                     </div>
-                    {r.redeemed_at&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"})}</div>}
+                    {r.redeemed_at&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>📅 Solicitado: {new Date(r.redeemed_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>}
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:6,justifyContent:"flex-end"}}>
@@ -1696,7 +1989,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                       <span style={{fontSize:16}}>{prizeEmoji}</span>
                       <span style={{color:C.text,fontSize:13,fontWeight:600}}>{prizeName}</span>
                     </div>
-                    {r.redeemed_at&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>{new Date(r.redeemed_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"})}</div>}
+                    {r.redeemed_at&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>📅 Solicitado: {new Date(r.redeemed_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>}
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:6,justifyContent:"flex-end"}}>
@@ -1722,6 +2015,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
         </div>
       )}
       {tab==="referrals"&&<ReferralsPanel isAdmin={true} currentUser={{game_id:cu.game_id||cu.username||"",username:cu.username||cu.name||""}}/>}
+      {tab==="utilization"&&<UtilizationTab allUsers={allUsers} allRedemptions={allRedemptions}/>}
       {tab==="grupos"&&(
         <div>
           <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
@@ -1781,7 +2075,7 @@ function StaffDashboard({user,allStaff,metrics,points,badges,kudos,bulletin}){
             <div style={{color:"#a5b4fc",fontSize:13,marginTop:2}}>{STAFF_ROLES[user.role]}</div>
             <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6}}>
               <div style={{padding:"3px 10px",borderRadius:20,background:`${levelColors[lv]}22`,border:`1px solid ${levelColors[lv]}`,color:levelColors[lv],fontWeight:700,fontSize:11}}>LVL {lv} · {levelNames[lv]||"Rookie"}</div>
-              <div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>{user.project}</div>
+              {user.project&&<div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>{user.project}</div>}
             </div>
           </div>
         </div>
@@ -2094,7 +2388,7 @@ export default function App(){
   const [users,setUsers]=useState([]);const [prizes,setPrizes]=useState([]);
   const [shop]=useState(DEFAULT_SHOP);const [notifs,setNotifs]=useState([]);
   const [loggedIn,setLoggedIn]=useState(null);const [screen,setScreen]=useState("dashboard");
-  const [toastMsg,setToastMsg]=useState("");const [appLoading,setAppLoading]=useState(true);
+  const [toastMsg,setToastMsg]=useState("");const [appLoading,setAppLoading]=useState(true);const [showPublic,setShowPublic]=useState(true);
   const [coinSettings,setCoinSettings]=useState<any>({riddle_coins:2,task_coins:2});
   const [allStaff,setAllStaff]=useState([]);const [staffMetrics,setStaffMetrics]=useState([]);
   const [staffPoints,setStaffPoints]=useState(null);const [staffBadges,setStaffBadges]=useState([]);
@@ -2113,6 +2407,7 @@ export default function App(){
   const [agentTaskSubmissions,setAgentTaskSubmissions]=useState([]);
   const [monthRiddleCount,setMonthRiddleCount]=useState(0);
   const [monthTaskCount,setMonthTaskCount]=useState(0);
+  const lastLevelRef=useRef(0);
 
   const loadInitialData=async()=>{
     try{
@@ -2155,8 +2450,24 @@ export default function App(){
     setAgentTaskSubmissions(ts||[]);
     const now=new Date();
     const thisMonth=(d)=>{const dt=new Date(d);return dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear();};
-    setMonthRiddleCount((riddles||[]).filter(r=>r.created_at&&thisMonth(r.created_at)).length);
-    setMonthTaskCount((tasks||[]).filter(t=>t.created_at&&thisMonth(t.created_at)).length);
+    const newMonthRiddleCount=(riddles||[]).filter(r=>r.created_at&&thisMonth(r.created_at)).length;
+    const newMonthTaskCount=(tasks||[]).filter(t=>t.created_at&&thisMonth(t.created_at)).length;
+    setMonthRiddleCount(newMonthRiddleCount);
+    setMonthTaskCount(newMonthTaskCount);
+    // Level-change detection
+    const sc=calcScoreCoins(wm||[],ra||[],ts||[],agent.kudos,agent.gold_kudos,agent.referrals,coinSettings);
+    const maxSc=calcMaxScore(sc.weekCount,newMonthRiddleCount,newMonthTaskCount);
+    const newLevel=calcLevel(sc.score,maxSc);
+    const oldLevel=agent.monthly_level||1;
+    if(newLevel>oldLevel&&newLevel>lastLevelRef.current){
+      lastLevelRef.current=newLevel;
+      try{
+        const lvNames=["","Bronce","Plata","Oro","Platino"];
+        await db.updateUser(agent.id,{monthly_level:newLevel,level:newLevel});
+        await db.createNotif({recipient_id:agent.id,title:"🏆 ¡Subiste de nivel!",message:`¡Felicidades! Subiste a Nivel ${newLevel} – ${lvNames[newLevel]||""}. Ahora tienes acceso a más premios exclusivos. 🎉`,type:"level_up",is_read:false});
+        syncUser({...agent,monthly_level:newLevel,level:newLevel});
+      }catch(e){console.error("[levelCheck]",e);}
+    }
   };
 
   const loadNotifs=async(uid)=>{try{const d=await db.getNotifs(uid);setNotifs(d||[]);}catch(e){}};
@@ -2238,7 +2549,11 @@ export default function App(){
 
   if(appLoading){return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><Logo sz={64}/><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,letterSpacing:2}}>PERFORMANCE ARENA</div><div style={{color:C.muted,fontSize:14,marginTop:8}}>Loading...</div></div>);}
 
-  if(!loggedIn){return<><style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif}input,select,textarea{font-family:inherit}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style><UnifiedLogin onLoginAgent={u=>{setLoggedIn(u);setScreen("dashboard");}} onLoginStaff={u=>{setLoggedIn(u);setScreen("dashboard");}}/></>;}
+  if(!loggedIn){
+    const baseStyle=<style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif}input,select,textarea{font-family:inherit}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>;
+    if(showPublic)return<>{baseStyle}<PublicView users={users} prizes={prizes} onBack={()=>setShowPublic(false)}/></>;
+    return<>{baseStyle}<UnifiedLogin onLoginAgent={u=>{setLoggedIn(u);setScreen("dashboard");}} onLoginStaff={u=>{setLoggedIn(u);setScreen("dashboard");}} onPublicView={()=>setShowPublic(true)}/></>;
+  }
 
   // ── STAFF APP ──
   if(loggedIn?.appType==="staff"){
@@ -2321,17 +2636,26 @@ export default function App(){
         const cost=p.points_cost||p.pts||0;
         const stock=p.stock!==undefined?p.stock:(p.stock_remaining??0);
         if(stock!==-1&&stock<=0){toast("Sin stock");return;}
-        if(sc.coins<cost){toast(`Necesitas ${cost} 🪙 coins, tienes ${sc.coins}`);return;}
+        // Level gate — enforce server-side in handler, not just in UI
+        const minLv=p.min_level||p.minLevel||1;
+        if(minLv>1){
+          const maxSc=calcMaxScore(sc.weekCount,monthRiddleCount,monthTaskCount);
+          const playerLv=calcLevel(sc.score,maxSc);
+          if(playerLv<minLv){toast(`Este premio requiere Nivel ${minLv}. Tu nivel actual es ${playerLv}.`);return;}
+        }
+        // Fetch fresh coins from DB to prevent double-spend with stale state
+        const freshProfile=await sbFetch(`profiles?id=eq.${cu.id}&select=coins`).catch(()=>null);
+        const currentCoins=freshProfile?.[0]?.coins??cu.coins??0;
+        if(currentCoins<cost){toast(`Necesitas ${cost} 🪙 coins, tienes ${currentCoins}`);return;}
         try{
-          await db.createRedemption({user_id:cu.id,reward_id:p.id,points_spent:cost,reward_name:p.name||"Premio",status:"pending"});
+          await db.createRedemption({user_id:cu.id,reward_id:p.id,points_spent:cost,reward_name:p.name||"Premio",status:"pending",redeemed_at:new Date().toISOString()});
           if(stock!==-1)await db.updatePrize(p.id,{stock:stock-1});
-          // Deduct coins from profile
-          const newCoins=Math.max(0,(cu.coins||0)-cost);
+          const newCoins=Math.max(0,currentCoins-cost);
           await db.updateUser(cu.id,{coins:newCoins});
           const updated=await db.getPrizes();setPrizes(updated||[]);
           syncUser({...cu,coins:newCoins});
           toast(`${p.name} canjeado! -${cost} 🪙`);
-        }catch(e){toast("Error al canjear");}
+        }catch(e){toast("Error al canjear: "+(e?.message||"ver consola"));}
       }}/>}
       {screen==="referrals"&&<ReferralsPanel isAdmin={false} currentUser={{game_id:cu.game_id||cu.username||"",username:cu.username||cu.name||""}}/>}
       {screen==="report"&&isSA&&<GeneralReport/>}
