@@ -2557,8 +2557,9 @@ export default function App(){
     const newMonthTaskCount=(tasks||[]).filter(t=>t.created_at&&thisMonth(t.created_at)).length;
     setMonthRiddleCount(newMonthRiddleCount);
     setMonthTaskCount(newMonthTaskCount);
-    // Level-change detection
-    const sc=calcScoreCoins(wm||[],ra||[],ts||[],agent.kudos,agent.gold_kudos,agent.referrals,coinSettings);
+    // Level-change detection — scope to current month so weekCount doesn't inflate maxScore
+    const wmMonth=(wm||[]).filter(w=>w.week&&thisMonth(w.week));
+    const sc=calcScoreCoins(wmMonth,ra||[],ts||[],agent.kudos,agent.gold_kudos,agent.referrals,coinSettings);
     const maxSc=calcMaxScore(sc.weekCount,newMonthRiddleCount,newMonthTaskCount);
     const newLevel=calcLevel(sc.score,maxSc);
     const oldLevel=agent.monthly_level||1;
@@ -2646,8 +2647,8 @@ export default function App(){
   const markNotifRead=async(id)=>{try{await db.markNotifRead(id);setNotifs(notifs.map(n=>n.id===id?{...n,is_read:true}:n));}catch(e){}};
   const markAllRead=async()=>{try{await db.markAllNotifsRead(cu.id);setNotifs(notifs.map(n=>n.recipient_id===cu.id?{...n,is_read:true}:n));}catch(e){}};
 
-  // Score props - agents see only last evaluated week, SA sees selected week
-  const agentMetricsFiltered=isSA?(selectedWeek?agentWeeklyMetrics.filter((w)=>w.week===selectedWeek):agentWeeklyMetrics):agentWeeklyMetrics.filter((w)=>w.week===lastEvaluatedWeek);
+  // Score props — agents see this month's weeks (level is monthly), SA sees selected week
+  const agentMetricsFiltered=isSA?(selectedWeek?agentWeeklyMetrics.filter((w)=>w.week===selectedWeek):agentWeeklyMetrics):agentWeeklyMetrics.filter((w)=>{if(!w.week)return false;const d=new Date(w.week),n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();});
   const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount,coinSettings};
 
   if(appLoading){return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><Logo sz={64}/><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,letterSpacing:2}}>PERFORMANCE ARENA</div><div style={{color:C.muted,fontSize:14,marginTop:8}}>Loading...</div></div>);}
@@ -2775,7 +2776,7 @@ export default function App(){
       {screen==="report"&&isSA&&<GeneralReport/>}
       {screen==="info"&&<Info/>}
       {screen==="notifs"&&<Notifs user={cu} notifs={notifs} onMarkRead={markNotifRead} onMarkAll={markAllRead} onRefresh={()=>loadNotifs(cu.id)}/>}
-      {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps} weeklyMetrics={agentWeeklyMetrics}/>}
+      {screen==="profile"&&<Profile user={cu} onUpdate={syncUser} toast={toast} shop={shop} {...scoreProps}/>}
       {screen==="admin"&&<AdminPanel cu={cu} allUsers={users} setAllUsers={setUsers} prizes={prizes} setPrizes={setPrizes} shop={shop} notifs={notifs} setNotifs={setNotifs} toast={toast} reloadUsers={reloadUsers} riddleCount={monthRiddleCount} taskCount={monthTaskCount} bulletin={bulletin} setBulletin={setBulletin} allStaff={allStaff} coinSettings={coinSettings} onSaveCoinSettings={async(s)=>{try{await Promise.all([sbFetch("app_config?on_conflict=key",{method:"POST",prefer:"resolution=merge-duplicates,return=minimal",body:JSON.stringify({key:"riddle_coins",value:String(s.riddle_coins)})}),sbFetch("app_config?on_conflict=key",{method:"POST",prefer:"resolution=merge-duplicates,return=minimal",body:JSON.stringify({key:"task_coins",value:String(s.task_coins)})})]);setCoinSettings(s);toast("Configuración guardada ✓");}catch(e){console.error("[CoinSettings] save error:",e?.message||e);toast("Error: "+(e?.message||"ver consola para detalles"));}}}/>}
     </div>
     {isWide?(
