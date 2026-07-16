@@ -554,7 +554,8 @@ function PublicView({users,prizes,onBack}){
 }
 
 function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
-  const [name,setName]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);const [mode,setMode]=useState("agents");
+  const [name,setName]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);const [mode,setMode]=useState("agents");const [wide,setWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
+  useEffect(()=>{const h=()=>setWide(window.innerWidth>=900);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
   const go=async()=>{
     if(!name.trim()||!pw.trim()){setErr(mode==="agents"?"Escribe tu nombre y contrasena":"Enter your username and password");return;}
     setLoading(true);setErr("");
@@ -590,80 +591,95 @@ function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
     <button onClick={go} disabled={loading} style={{width:"100%",padding:14,fontSize:15,background:loading?(isStaff?S.border:"#c5cae9"):(isStaff?S.accent:C.blue),color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:1}}>{loading?"...":(isStaff?"SIGN IN":"ENTRAR")}</button>
   </div>;
   const lgStyle=<style>{`
-    @keyframes lgUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-    @keyframes lgSlide{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:translateX(0)}}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:"Segoe UI",system-ui,sans-serif;background:#fff}
+    @keyframes lgFadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
     @keyframes lgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-    .lg-layout{display:flex;flex-direction:row;min-height:100vh}
-    .lg-right{flex:0 1 460px;min-width:280px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:48px 40px;background:#fff}
-    @media(max-width:700px){
-      .lg-layout{flex-direction:column-reverse}
-      .lg-left{min-height:auto!important;padding:32px 24px!important}
-      .lg-right{flex:none;min-width:auto;padding:28px 20px}
-    }
+    @keyframes lgSlideIn{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes lgPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+    .lg-hero-item{animation:lgFadeUp 0.55s ease both}
+    .lg-row{animation:lgSlideIn 0.4s ease both}
+    .lg-float{animation:lgFloat 3.5s ease-in-out infinite}
+    .lg-pulse{animation:lgPulse 2s ease-in-out infinite}
   `}</style>;
   if(isStaff){return(
     <>{lgStyle}
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:S.bg}}>
-      <div style={{width:"100%",maxWidth:440,animation:"lgUp 0.45s ease both"}}>
+      <div style={{width:"100%",maxWidth:440,animation:"lgFadeUp 0.45s ease both"}}>
         {tabBar}
         <div style={{textAlign:"center",marginBottom:28}}>
-          <div style={{display:"flex",justifyContent:"center",marginBottom:12,animation:"lgFloat 5s ease-in-out infinite"}}><StaffLogo sz={64}/></div>
-          <div style={{fontSize:28,fontWeight:900,color:S.text,letterSpacing:2,animation:"lgUp 0.45s ease 0.1s both"}}>STAFF</div>
-          <div style={{fontSize:28,fontWeight:900,color:S.accent,letterSpacing:2,animation:"lgUp 0.45s ease 0.15s both"}}>ARENA</div>
-          <div style={{color:S.muted,fontSize:12,marginTop:6,animation:"lgUp 0.45s ease 0.2s both"}}>Staff Performance System</div>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:12}} className="lg-float"><StaffLogo sz={64}/></div>
+          <div style={{fontSize:28,fontWeight:900,color:S.text,letterSpacing:2,animation:"lgFadeUp 0.45s ease 0.1s both"}}>STAFF</div>
+          <div style={{fontSize:28,fontWeight:900,color:S.accent,letterSpacing:2,animation:"lgFadeUp 0.45s ease 0.15s both"}}>ARENA</div>
+          <div style={{color:S.muted,fontSize:12,marginTop:6,animation:"lgFadeUp 0.45s ease 0.2s both"}}>Staff Performance System</div>
         </div>
-        <div style={{animation:"lgUp 0.45s ease 0.25s both"}}>{formCard}</div>
+        <div style={{animation:"lgFadeUp 0.45s ease 0.25s both"}}>{formCard}</div>
       </div>
     </div>
     </>
   );}
   return(
     <>{lgStyle}
-    <div className="lg-layout" style={{background:"#fff"}}>
-      {/* LEFT: gradient hero panel */}
-      <div className="lg-left" style={{flex:"1 1 400px",background:"linear-gradient(155deg,#0a0a40 0%,#1a1aff 58%,#e8282a 100%)",padding:"56px 48px",display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",overflow:"hidden",minHeight:"100vh"}}>
-        <div style={{position:"absolute",top:-60,right:-60,width:240,height:240,borderRadius:"50%",background:"rgba(255,255,255,0.05)",animation:"lgFloat 5s ease-in-out infinite"}}/>
-        <div style={{position:"absolute",bottom:-80,left:-40,width:280,height:280,borderRadius:"50%",background:"rgba(255,255,255,0.04)",animation:"lgFloat 6s ease-in-out 2s infinite"}}/>
-        <div style={{position:"absolute",top:"40%",left:"60%",width:160,height:160,borderRadius:"50%",background:"rgba(255,255,255,0.03)",animation:"lgFloat 7s ease-in-out 1s infinite"}}/>
-        <div style={{position:"relative",zIndex:2}}>
-          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:36,animation:"lgUp 0.5s ease 0.05s both"}}>
-            <Logo sz={52}/>
+    <div style={{minHeight:"100vh",background:"#fff"}}>
+
+      {/* ── HERO ── */}
+      <div style={{background:"linear-gradient(135deg,#0a0a40 0%,#1a1aff 55%,#e8282a 100%)",padding:"0 20px 52px",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:-80,right:-80,width:300,height:300,borderRadius:"50%",background:"rgba(255,255,255,0.04)",pointerEvents:"none"}} className="lg-float"/>
+        <div style={{position:"absolute",bottom:-100,left:-100,width:360,height:360,borderRadius:"50%",background:"rgba(255,255,255,0.03)",pointerEvents:"none",animationDelay:"1.5s"}} className="lg-float"/>
+        <div style={{position:"absolute",top:"50%",left:"50%",width:500,height:500,borderRadius:"50%",background:"rgba(255,255,255,0.025)",transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>
+
+        {/* top nav */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 0 32px",position:"relative",zIndex:2}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <Logo sz={40}/>
             <div>
-              <div style={{fontFamily:"Georgia,serif",fontSize:27,fontWeight:900,color:"#fff",letterSpacing:2,lineHeight:1.1}}>PERFORMANCE</div>
-              <div style={{fontFamily:"Georgia,serif",fontSize:27,fontWeight:900,color:"#ffd700",letterSpacing:2,lineHeight:1.1}}>ARENA</div>
+              <div style={{fontFamily:"Georgia,serif",fontSize:17,fontWeight:900,color:"#fff",letterSpacing:2,lineHeight:1.1}}>PERFORMANCE</div>
+              <div style={{fontFamily:"Georgia,serif",fontSize:17,fontWeight:900,color:"#ffd700",letterSpacing:2,lineHeight:1.1}}>ARENA</div>
             </div>
           </div>
-          <div style={{color:"rgba(255,255,255,0.75)",fontSize:16,marginBottom:6,animation:"lgUp 0.5s ease 0.1s both"}}>El sistema de gamificación que</div>
-          <div style={{color:"#fff",fontSize:27,fontWeight:900,lineHeight:1.2,marginBottom:40,animation:"lgUp 0.5s ease 0.15s both"}}>transforma tu desempeño<br/>en logros reales.</div>
-          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:40}}>
-            {features.map(([icon,title,desc],i)=>(
-              <div key={title} style={{display:"flex",alignItems:"flex-start",gap:13,padding:"12px 16px",background:"rgba(255,255,255,0.1)",borderRadius:13,border:"1px solid rgba(255,255,255,0.16)",backdropFilter:"blur(4px)",animation:`lgSlide 0.45s ease ${0.2+i*0.07}s both`}}>
-                <span style={{fontSize:20,flexShrink:0}}>{icon}</span>
-                <div>
-                  <div style={{color:"#fff",fontWeight:700,fontSize:13}}>{title}</div>
-                  <div style={{color:"rgba(255,255,255,0.6)",fontSize:12,marginTop:2}}>{desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-          {onPublicView&&<div style={{animation:"lgUp 0.5s ease 0.58s both"}}>
-            <button onClick={onPublicView} style={{padding:"12px 20px",borderRadius:11,border:"1.5px solid rgba(255,255,255,0.35)",background:"rgba(255,255,255,0.12)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",width:"100%",transition:"background 0.2s,transform 0.15s"}}
-              onMouseOver={e=>{e.currentTarget.style.background="rgba(255,255,255,0.22)";e.currentTarget.style.transform="translateY(-1px)";}}
-              onMouseOut={e=>{e.currentTarget.style.background="rgba(255,255,255,0.12)";e.currentTarget.style.transform="";}}>
-              👀 Ver Rankings y Premios sin iniciar sesión →
-            </button>
-          </div>}
+          {onPublicView&&<button onClick={onPublicView} style={{padding:"11px 24px",borderRadius:10,border:"1.5px solid rgba(255,255,255,0.35)",background:"rgba(255,255,255,0.1)",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",backdropFilter:"blur(6px)",transition:"background 0.2s"}} onMouseOver={e=>(e.currentTarget.style.background="rgba(255,255,255,0.2)")} onMouseOut={e=>(e.currentTarget.style.background="rgba(255,255,255,0.1)")}>
+            👀 Ver Rankings →
+          </button>}
+        </div>
+
+        {/* hero content */}
+        <div style={{textAlign:"center",position:"relative",zIndex:2}}>
+          <div style={{fontSize:58,marginBottom:14}} className="lg-float">⚡</div>
+          <div className="lg-hero-item" style={{fontFamily:"Georgia,serif",fontSize:wide?46:32,fontWeight:900,color:"#fff",letterSpacing:3,marginBottom:10,animationDelay:"0.1s"}}>INICIAR SESIÓN</div>
+          <div className="lg-hero-item" style={{color:"rgba(255,255,255,0.7)",fontSize:15,marginBottom:0,animationDelay:"0.2s"}}>Compite, sube de nivel y canjea premios reales</div>
         </div>
       </div>
-      {/* RIGHT: form panel */}
-      <div className="lg-right">
-        <div style={{width:"100%",maxWidth:380,animation:"lgSlide 0.5s ease 0.25s both"}}>
-          {tabBar}
-          <div style={{marginBottom:26}}>
-            <div style={{color:C.text,fontWeight:900,fontSize:24,marginBottom:5}}>Bienvenido de vuelta</div>
-            <div style={{color:C.muted,fontSize:14}}>Inicia sesión para ver tu progreso</div>
+
+      {/* ── CONTENT ── */}
+      <div style={{maxWidth:960,margin:"0 auto",padding:wide?"40px 32px 60px":"0 0 60px"}}>
+        <div style={{display:"flex",gap:40,alignItems:"flex-start",padding:wide?"0":"20px 16px 0",flexWrap:"wrap"}}>
+
+          {/* LEFT: features */}
+          <div style={{flex:"1 1 300px",minWidth:0,paddingTop:wide?8:0}}>
+            <div className="lg-hero-item" style={{color:C.text,fontWeight:900,fontSize:18,marginBottom:18,animationDelay:"0.25s"}}>¿Por qué Performance Arena?</div>
+            <div style={{display:"flex",flexDirection:"column",gap:11}}>
+              {features.map(([icon,title,desc],i)=>(
+                <div key={title} className="lg-row" style={{display:"flex",alignItems:"flex-start",gap:13,padding:"13px 16px",background:`${C.blue}08`,borderRadius:13,border:`1px solid ${C.blue}15`,animationDelay:`${0.3+i*0.07}s`}}>
+                  <span style={{fontSize:22,flexShrink:0}}>{icon}</span>
+                  <div>
+                    <div style={{color:C.text,fontWeight:700,fontSize:14}}>{title}</div>
+                    <div style={{color:C.muted,fontSize:12,marginTop:2}}>{desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          {formCard}
+
+          {/* RIGHT: login form */}
+          <div style={{flex:"0 1 400px",minWidth:280,animationDelay:"0.3s"}} className="lg-hero-item">
+            {tabBar}
+            <div style={{marginBottom:22}}>
+              <div style={{color:C.text,fontWeight:900,fontSize:22,marginBottom:4}}>Bienvenido de vuelta</div>
+              <div style={{color:C.muted,fontSize:14}}>Inicia sesión para ver tu progreso</div>
+            </div>
+            {formCard}
+          </div>
+
         </div>
       </div>
     </div>
