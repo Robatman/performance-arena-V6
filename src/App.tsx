@@ -714,7 +714,7 @@ function BulletinCard({bulletin}){
   );
 }
 
-function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, coinSettings={}, totalCoins=0}){
+function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, coinSettings={}, totalCoins=0, level=1}){
   const sc = calcScoreCoins(
     weeklyMetrics,
     riddleAnswers,
@@ -724,7 +724,6 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
     user.referrals,
     coinSettings
   );
-  const level = user.level||1;
 
   return(
     <div style={{paddingBottom:100}}>
@@ -943,14 +942,13 @@ function PrizeCard({p,coins,onRedeem,locked=false,userLevel=1}){
   );
 }
 
-function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,coinSettings={}}){
+function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,coinSettings={},level=1}){
   const [tab,setTab]=useState("store");
   const [myRedemptions,setMyRedemptions]=useState([]);
   useEffect(()=>{
     db.getMyRedemptions(user.id).then(d=>setMyRedemptions(d||[])).catch(()=>{});
   },[user.id]);
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
-  const level=user.level||1;
   const coins=sc.coins;
   const activePrizes=prizes.filter(p=>p.active!==false);
   const freeSection=activePrizes.filter(p=>(p.minLevel||p.min_level||1)===1);
@@ -1246,11 +1244,10 @@ function Info(){
   );
 }
 
-function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,coinSettings={}}){
+function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,coinSettings={},level=1}){
   const [av,setAv]=useState(user.avatar||{base:"b1",hair:null,accessory:null,outfit:null,background:null});
   const [tab,setTab]=useState("edit");const [saving,setSaving]=useState(false);
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
-  const level=user.level||1;
   const coins=sc.coins;
   const types=["hair","accessory","outfit","background"];
   const tl={hair:"Cabello",accessory:"Accesorios",outfit:"Ropa",background:"Fondo"};
@@ -2405,10 +2402,9 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
 }
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
-function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,user,coinSettings={}}){
+function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,user,coinSettings={},level=1}){
   if(!user||!weeklyMetrics||weeklyMetrics.length===0)return null;
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
-  const level=user.level||1;
   return(
     <div style={{display:"flex",gap:6,alignItems:"center"}}>
       <div style={{background:`${lc(level)}15`,border:`1px solid ${lc(level)}40`,borderRadius:8,padding:"3px 8px",textAlign:"center"}}>
@@ -2646,7 +2642,7 @@ export default function App(){
 
   // Score props — last evaluated week for display; agentTotalCoins (all-time) used for level
   const agentMetricsFiltered=isSA?(selectedWeek?agentWeeklyMetrics.filter((w)=>w.week===selectedWeek):agentWeeklyMetrics):agentWeeklyMetrics.filter((w)=>w.week===lastEvaluatedWeek);
-  const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount,coinSettings,totalCoins:agentTotalCoins};
+  const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount,coinSettings,totalCoins:agentTotalCoins,level:calcLevel(agentTotalCoins)};
 
   if(appLoading){return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><Logo sz={64}/><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,letterSpacing:2}}>PERFORMANCE ARENA</div><div style={{color:C.muted,fontSize:14,marginTop:8}}>Loading...</div></div>);}
 
