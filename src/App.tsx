@@ -949,8 +949,11 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
     db.getMyRedemptions(user.id).then(d=>setMyRedemptions(d||[])).catch(()=>{});
   },[user.id]);
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
-  const coins=sc.coins;
-  const activePrizes=prizes.filter(p=>p.active!==false);
+  const maxScore=calcMaxScore(sc.weekCount,riddleCount,taskCount);
+  const totalSpent=myRedemptions.filter(r=>['pending','approved','delivered'].includes(r.status)).reduce((s,r)=>s+(r.points_spent||r.coins_spent||0),0);
+  const coins=Math.max(0,sc.coins-totalSpent);
+  const handleRedeem=async p=>{await onRedeem(p);db.getMyRedemptions(user.id).then(d=>setMyRedemptions(d||[])).catch(()=>{});};
+  const activePrizes=(prizes||[]).filter(p=>p.active!==false);
   const freeSection=activePrizes.filter(p=>(p.minLevel||p.min_level||1)===1);
   const exclusiveSection=activePrizes.filter(p=>(p.minLevel||p.min_level||1)>1);
   const exclusiveUnlocked=exclusiveSection.filter(p=>(p.minLevel||p.min_level||1)<=level);
@@ -1046,7 +1049,7 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
         </div>
         {freeSection.length===0
           ?<Card style={{textAlign:"center",padding:20,color:C.muted,fontSize:13}}>Sin premios en esta sección aún.</Card>
-          :freeSection.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={onRedeem}/>)
+          :freeSection.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={handleRedeem}/>)
         }
       </div>
 
@@ -1062,13 +1065,13 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
           {exclusiveUnlocked.length>0&&(
             <div style={{marginBottom:8}}>
               <div style={{color:C.green,fontSize:11,fontWeight:700,marginBottom:8}}>✅ Tu nivel {level} desbloquea estos:</div>
-              {exclusiveUnlocked.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={onRedeem}/>)}
+              {exclusiveUnlocked.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={handleRedeem}/>)}
             </div>
           )}
           {exclusiveLocked.length>0&&(
             <div>
               <div style={{color:C.muted,fontSize:11,fontWeight:700,marginBottom:8}}>🔒 Sube de nivel para acceder:</div>
-              {exclusiveLocked.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={onRedeem} locked userLevel={level}/>)}
+              {exclusiveLocked.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={handleRedeem} locked userLevel={level}/>)}
             </div>
           )}
         </div>
@@ -2744,23 +2747,21 @@ export default function App(){
         const cost=p.points_cost||p.pts||0;
         const stock=p.stock!==undefined?p.stock:(p.stock_remaining??0);
         if(stock!==-1&&stock<=0){toast("Sin stock");return;}
-        // Level gate — enforce server-side in handler, not just in UI
+        // Level gate
         const minLv=p.min_level||p.minLevel||1;
         if(minLv>1){
-          const playerLv=calcLevel(sc.coins);
+          const playerLv=calcLevel(agentTotalCoins);
           if(playerLv<minLv){toast(`Este premio requiere Nivel ${minLv}. Tu nivel actual es ${playerLv}.`);return;}
         }
-        // Fetch fresh coins from DB to prevent double-spend with stale state
-        const freshProfile=await sbFetch(`profiles?id=eq.${cu.id}&select=coins`).catch(()=>null);
-        const currentCoins=freshProfile?.[0]?.coins??cu.coins??0;
-        if(currentCoins<cost){toast(`Necesitas ${cost} 🪙 coins, tienes ${currentCoins}`);return;}
+        // Compute spendable = total earned - total spent (same formula used in display)
+        const myReds=await db.getMyRedemptions(cu.id).catch(()=>[]);
+        const totalSpent=(myReds||[]).filter(r=>['pending','approved','delivered'].includes(r.status)).reduce((s,r)=>s+(r.points_spent||r.coins_spent||0),0);
+        const currentCoins=Math.max(0,sc.coins-totalSpent);
+        if(currentCoins<cost){toast(`Necesitas ${cost} 🪙, tienes ${currentCoins}`);return;}
         try{
           await db.createRedemption({user_id:cu.id,reward_id:p.id,points_spent:cost,reward_name:p.name||"Premio",status:"pending",redeemed_at:new Date().toISOString()});
           if(stock!==-1)await db.updatePrize(p.id,{stock:stock-1});
-          const newCoins=Math.max(0,currentCoins-cost);
-          await db.updateUser(cu.id,{coins:newCoins});
           const updated=await db.getPrizes();setPrizes(updated||[]);
-          syncUser({...cu,coins:newCoins});
           toast(`${p.name} canjeado! -${cost} 🪙`);
         }catch(e){toast("Error al canjear: "+(e?.message||"ver consola"));}
       }}/>}
