@@ -93,6 +93,12 @@ interface ProcessedAgent {
 interface CoachRow { game_id: string; position: string; manager: string; attrition: number; }
 interface UploadSummary { week: string; agents_processed: number; agents_created: number; agents_updated: number; coaches_processed: number; errors: string[]; }
 
+interface MissingAgent {
+  game_id: string;
+  project: string;
+  action: "vacation" | "sick_leave" | "termination" | "skip" | "";
+}
+
 const isMSL = (v: any) => String(v ?? "").trim().toUpperCase() === "MSL";
 const isBlank = (v: any) => v === null || v === undefined || String(v).trim() === "" || String(v).trim().toUpperCase() === "N/A" || String(v).trim().toUpperCase() === "#N/A";
 
@@ -163,6 +169,8 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
   const [summary, setSummary] = useState<UploadSummary|null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [importNew, setImportNew] = useState<"all"|"none"|"pending">("none");
+  const [missingAgents, setMissingAgents] = useState<MissingAgent[]>([]);
+  const [allActiveProfiles, setAllActiveProfiles] = useState<{game_id:string,team:string}[]>([]);
   const [progress, setProgress] = useState(0);
   const [progressMsg, setProgressMsg] = useState("");
 
@@ -178,7 +186,13 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     try { const ex = await dbGet("weekly_metrics", `week=eq.${encodeURIComponent(week)}&limit=1&select=id`); setWeekAlreadyLoaded(Array.isArray(ex) && ex.length > 0); } catch { setWeekAlreadyLoaded(false); }
 
     let existingIds = new Set<string>();
-    try { const p = await dbGet("profiles", "select=game_id&is_active=eq.true"); existingIds = new Set((Array.isArray(p)?p:[]).map((x:any)=>String(x.game_id).trim().toUpperCase())); } catch {}
+    let activeProfiles: {game_id:string, team:string}[] = [];
+    try {
+      const p = await dbGet("profiles", "select=game_id,team&is_active=eq.true");
+      activeProfiles = Array.isArray(p) ? p : [];
+      existingIds = new Set(activeProfiles.map((x:any)=>String(x.game_id).trim().toUpperCase()));
+      setAllActiveProfiles(activeProfiles);
+    } catch {}
 
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -257,6 +271,14 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
         }
 
         if (!processed.length) { setErrors(["No agentes válidos."]); setStage("error"); return; }
+
+        // Detect active agents in DB that are NOT in this Excel
+        const excelIds = new Set(processed.map(a => a.game_id.toUpperCase()));
+        const missing: MissingAgent[] = activeProfiles
+          .filter((p:any) => !excelIds.has(String(p.game_id).trim().toUpperCase()))
+          .map((p:any) => ({ game_id: String(p.game_id).trim(), project: String(p.team||"").trim(), action: "" }));
+        setMissingAgents(missing);
+
         setAgents(processed); setCoaches(parsedCoaches); setStage("preview");
       } catch(err) { setErrors([`Error: ${err}`]); setStage("error"); }
     };
@@ -269,6 +291,12 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
   // Select all flagged agents with one reason
   const selectAllReason = (reason: ReviewReason) =>
     setAgents(prev => prev.map(a => a.flag!=="ok" ? {...a, review_reason:reason} : a));
+
+  const updateMissingAction = (gid: string, action: MissingAgent["action"]) =>
+    setMissingAgents(prev => prev.map(a => a.game_id===gid ? {...a, action} : a));
+
+  const selectAllMissingAction = (action: MissingAgent["action"]) =>
+    setMissingAgents(prev => prev.map(a => ({...a, action})));
 
   const handleUpload = async () => {
     setStage("uploading"); setProgress(0); setProgressMsg("Limpiando...");
@@ -297,6 +325,24 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     for (const a of agents.filter(x=>x.review_reason==="termination")) {
       try { await dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, {is_active:false}); }
       catch(e:any) { errs.push(`Baja ${a.game_id}: ${e.message}`); }
+    }
+
+    // Handle missing agents (active in DB but not in this Excel)
+    for (const m of missingAgents) {
+      try {
+        if (m.action === "termination") {
+          await dbPatch("profiles", `game_id=eq.${encodeURIComponent(m.game_id)}`, {is_active:false});
+        } else if (m.action === "vacation" || m.action === "sick_leave" || m.action === "skip") {
+          // Insert a zero-metric row so the week is tracked but with excused status
+          await dbInsert("weekly_metrics", {
+            game_id: m.game_id, week, project: m.project||"",
+            attendance_pts: 0, aht_pts: 0, qa_pts: 0, total_pts: 0,
+            flag: "msl", review_reason: m.action,
+            attendance_status: "excused",
+          });
+        }
+        // action === "" → skip silently (no row inserted)
+      } catch(e:any) { errs.push(`Ausente ${m.game_id}: ${e.message}`); }
     }
 
     setProgressMsg("Guardando métricas...");
@@ -329,15 +375,15 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
 
     // Update coach_id and qa_coach in agent profiles
     setProgressMsg("Actualizando perfiles...");
-    await Promise.all(
-      agents.filter(x=>x.review_reason!=="termination").map(a =>
-        dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, {
+    for (const a of agents.filter(x=>x.review_reason!=="termination")) {
+      try {
+        await dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, {
           team: a.project,
           coach_id: a.coach_id||null,
           qa_coach: a.qcoach||null,
-        }).catch(()=>{})
-      )
-    );
+        });
+      } catch(e:any) { /* ignore */ }
+    }
 
     setProgressMsg("Actualizando coaches...");
     for (const c of coaches) {
@@ -473,14 +519,15 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     setStage("done");
   };
 
-  const reset = () => { setStage("idle"); setAgents([]); setCoaches([]); setErrors([]); setSummary(null); setWeekLabel(""); setWeekAlreadyLoaded(false); setImportNew("pending"); setProgress(0); setProgressMsg(""); };
+  const reset = () => { setStage("idle"); setAgents([]); setCoaches([]); setErrors([]); setSummary(null); setWeekLabel(""); setWeekAlreadyLoaded(false); setImportNew("pending"); setProgress(0); setProgressMsg(""); setMissingAgents([]); setAllActiveProfiles([]); };
 
   const flagged = agents.filter(a=>a.flag!=="ok");
   const ok      = agents.filter(a=>a.flag==="ok");
   const newA    = agents.filter(a=>a.is_new);
   const reviewPending = flagged.some(a=>!a.review_reason);
+  const missingPending = missingAgents.some(a=>a.action==="");
   const resolvedImport = importNew === "pending" ? "none" : importNew;
-  const canUpload     = !reviewPending && resolvedImport!=="pending";
+  const canUpload     = !reviewPending && !missingPending && resolvedImport!=="pending";
   const SD = { border:"1px solid #1e3a5f", muted:"#64748b", text:"#f1f5f9", card:"#1e293b" };
 
   return (
@@ -532,7 +579,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
             {weekAlreadyLoaded&&<div style={{background:"#2d2000",border:"1px solid #78350f",borderRadius:10,padding:12}}><p style={{color:"#fbbf24",fontWeight:700,margin:0}}>⚠️ Semana <b>{weekLabel}</b> ya cargada — se sobreescribirá</p></div>}
 
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              {[{n:agents.length,l:"Total",c:"#60a5fa"},{n:ok.length,l:"OK",c:"#4ade80"},{n:flagged.length,l:"Revisión",c:"#fbbf24"},{n:newA.length,l:"Nuevos",c:"#a78bfa"},{n:coaches.length,l:"Coaches",c:"#f97316"}].map(c=>(
+              {[{n:agents.length,l:"Total",c:"#60a5fa"},{n:ok.length,l:"OK",c:"#4ade80"},{n:flagged.length,l:"Revisión",c:"#fbbf24"},{n:newA.length,l:"Nuevos",c:"#a78bfa"},{n:missingAgents.length,l:"Ausentes",c:"#f87171"},{n:coaches.length,l:"Coaches",c:"#f97316"}].map(c=>(
                 <div key={c.l} style={{flex:1,minWidth:90,background:SD.card,borderRadius:10,padding:12,textAlign:"center"}}>
                   <div style={{fontSize:22,fontWeight:700,color:c.c}}>{c.n}</div>
                   <div style={{fontSize:11,color:SD.muted}}>{c.l}</div>
@@ -597,6 +644,48 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
               </div>
             )}
 
+
+            {/* ── AGENTES AUSENTES DEL EXCEL ── */}
+            {missingAgents.length>0&&(
+              <div style={{background:"#0c1a2e",border:"1px solid #dc2626",borderRadius:10,padding:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <p style={{color:"#f87171",fontWeight:700,margin:0}}>🚨 {missingAgents.length} agentes activos NO aparecen en este Excel</p>
+                  <div style={{display:"flex",gap:6}}>
+                    <span style={{color:"#64748b",fontSize:12,alignSelf:"center"}}>Todos:</span>
+                    {[{r:"sick_leave",l:"🏥 MSL"},{r:"vacation",l:"🏖️ Vacaciones"},{r:"skip",l:"⏭️ Ignorar"},{r:"termination",l:"📤 Baja"}].map(b=>(
+                      <button key={b.r} onClick={()=>selectAllMissingAction(b.r as MissingAgent["action"])}
+                        style={{background:"#1e293b",color:"#94a3b8",border:"1px solid #334155",padding:"4px 10px",borderRadius:6,cursor:"pointer",fontWeight:600,fontSize:11}}>
+                        {b.l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p style={{color:"#94a3b8",fontSize:12,margin:"0 0 10px"}}>
+                  Define qué pasó con cada uno. <b style={{color:"#fbbf24"}}>Baja</b> = desactiva la cuenta. <b style={{color:"#60a5fa"}}>MSL/Vacaciones</b> = registra semana excusada. <b style={{color:"#94a3b8"}}>Ignorar</b> = no hace nada esta semana.
+                </p>
+                <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:280,overflowY:"auto"}}>
+                  {missingAgents.map((m,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:"#0a0f1a",borderRadius:8,padding:"8px 12px",flexWrap:"wrap"}}>
+                      <div style={{flex:1}}>
+                        <span style={{color:"#e2e8f0",fontWeight:700,fontSize:13}}>{m.game_id}</span>
+                        {m.project&&<span style={{color:"#64748b",fontSize:11,marginLeft:8}}>{m.project}</span>}
+                        <span style={{marginLeft:8,padding:"1px 7px",borderRadius:999,fontSize:10,fontWeight:700,background:"#1f0a0a",color:"#f87171"}}>No está en Excel</span>
+                      </div>
+                      <select value={m.action} onChange={e=>updateMissingAction(m.game_id,e.target.value as MissingAgent["action"])}
+                        style={{background:"#1e293b",border:`1px solid ${m.action===""?"#dc2626":"#334155"}`,borderRadius:6,padding:"5px 8px",color:"#e2e8f0",fontSize:12,cursor:"pointer",outline:"none"}}>
+                        <option value="">-- ¿Qué pasó? --</option>
+                        <option value="vacation">🏖️ Vacaciones</option>
+                        <option value="sick_leave">🏥 Sick Leave / MSL</option>
+                        <option value="termination">📤 Baja (desactivar cuenta)</option>
+                        <option value="skip">⏭️ Ignorar esta semana</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+                {missingPending&&<p style={{color:"#ef4444",fontSize:12,marginTop:8}}>⚠️ Define el estado de todos los ausentes antes de continuar.</p>}
+              </div>
+            )}
+
             <p style={{color:"#94a3b8",fontSize:13,fontWeight:600,margin:0}}>Vista previa — {ok.length} agentes OK</p>
             <div style={{overflowX:"auto",borderRadius:8,border:SD.border}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
@@ -630,8 +719,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                   <thead><tr>{["Game ID","Posición","Manager","Attrition","Impacto"].map(h=><th key={h} style={{background:"#0c2240",color:"#93c5fd",fontWeight:600,padding:"7px 8px",textAlign:"left"}}>{h}</th>)}</tr></thead>
                   <tbody>{coaches.map((c,i)=>{
-                    const attrPts=c.attrition===0?5:c.attrition===1?2:c.attrition===2?0:-(c.attrition-2)*3;
-                    const imp=attrPts>0?`+${attrPts}`:String(attrPts);
+                    const imp=c.attrition===0?"+10":c.attrition===1?"+2":c.attrition===2?"0":"-5";
                     const col=c.attrition===0?"#16a34a":c.attrition===1?"#d97706":c.attrition===2?"#6b7280":"#dc2626";
                     return(<tr key={i} style={{background:i%2===0?"#0f172a":"#0c1a2e"}}>
                       <td style={{padding:"6px 8px",color:"#e2e8f0",fontWeight:600}}>{c.game_id}</td>
@@ -649,7 +737,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
               <button onClick={reset} style={{background:"transparent",color:"#94a3b8",border:"1px solid #334155",padding:"11px 24px",borderRadius:8,cursor:"pointer",fontWeight:600}}>Cancelar</button>
               <button onClick={handleUpload} disabled={!canUpload}
                 style={{background:canUpload?"#1d4ed8":"#334155",color:"#fff",border:"none",padding:"11px 28px",borderRadius:8,cursor:canUpload?"pointer":"not-allowed",fontWeight:700}}>
-                {!canUpload?(reviewPending?"⚠️ Completa revisión":"⚠️ Define agentes nuevos"):`✅ Confirmar y subir ${weekLabel}`}
+                {!canUpload?(reviewPending?"⚠️ Completa revisión":missingPending?"⚠️ Define agentes ausentes":"⚠️ Define agentes nuevos"):`✅ Confirmar y subir ${weekLabel}`}
               </button>
             </div>
           </div>
