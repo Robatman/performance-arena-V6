@@ -141,34 +141,20 @@ export function calcScoreCoins(weeklyMetrics, riddleAnswers, taskSubmissions, ku
   };
 }
 
-// Absolute coin thresholds — level is based on total coins earned (what agents see)
-export const LEVEL_THRESHOLDS = [0, 40, 80, 140]; // coins for L1 start, L2, L3, L4
-
-export function calcLevel(coins) {
-  if (coins >= LEVEL_THRESHOLDS[3]) return 4;
-  if (coins >= LEVEL_THRESHOLDS[2]) return 3;
-  if (coins >= LEVEL_THRESHOLDS[1]) return 2;
-  return 1;
+// Level is DB-driven — ExcelUpload computes and stores it based on KPI streak
+export function calcLevel(profile) {
+  return profile?.level || 1;
 }
 
 export function calcMaxScore(weekCount, riddleCount, taskCount) {
   return (weekCount * 15) + (riddleCount * 2) + (taskCount * 2);
 }
 
-export function getLevelPct(coins) {
-  const level = calcLevel(coins);
-  if (level >= 4) return 1;
-  const lo = LEVEL_THRESHOLDS[level - 1];
-  const hi = LEVEL_THRESHOLDS[level];
-  return Math.min((coins - lo) / (hi - lo), 1);
-}
-
-// Level metadata
+// Level metadata — 3-tier KPI-streak system
 const LEVEL_META = {
-  1: { name: "ROOKIE",  color: "#6b7280", bg: "#6b728018" },
-  2: { name: "RISING",  color: "#1a1aff", bg: "#1a1aff18" },
-  3: { name: "ELITE",   color: "#7c3aed", bg: "#7c3aed18" },
-  4: { name: "LEGEND",  color: "#e8282a", bg: "#e8282a18" },
+  1: { name: "ROOKIE", color: "#6b7280", bg: "#6b728018" },
+  2: { name: "RISING", color: "#1a1aff", bg: "#1a1aff18" },
+  3: { name: "ELITE",  color: "#7c3aed", bg: "#7c3aed18" },
 };
 
 // ─── COLORS ──────────────────────────────────────────────────────────────────
@@ -215,7 +201,7 @@ const rp=(u)=>((u.referrals||[]).reduce((s,r)=>s+(r.approved?5:1),0));
 // Legacy gs() kept for compatibility — use calcScoreCoins for new logic
 const gs=(u)=>{const perf=(u.weekly_perf||[]).reduce((s,w)=>s+w.tot,0);const wks=Math.max((u.weekly_perf||[]).length,1);const rdl=u.riddle_completed===wks?10:0;const tp=(u.task_completed||0)/wks;const tsk=tp>=1?10:tp>=0.75?5:tp>=0.5?1:0;return{perf,rdl,tsk,kp:kp(u),rp:rp(u),total:perf+rdl+tsk+kp(u)+rp(u)};};
 
-function adaptProfile(p){return{id:p.id,name:p.full_name,username:p.username,password_hash:p.password_hash,role:p.role==="usuario"?"user":p.role,project:p.team||"",active:p.is_active,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},level:p.monthly_level||p.level||1,puzzlePieces:(p.puzzle_pieces||[]).length,perfectMonths:p.perfect_months||0,kudos:p.kudos||0,goldKudos:p.gold_kudos||0,gold_kudos:p.gold_kudos||0,referrals:p.referrals||[],weekly_perf:p.weekly_perf||[],weeklyPerf:p.weekly_perf||[],riddle_completed:p.riddle_completed||0,riddleCompleted:p.riddle_completed||0,task_completed:p.task_completed||0,taskCompleted:p.task_completed||0,monthsHistory:p.months_history||[],ownedItems:p.owned_items||[],rewards:p.rewards||[],game_id:p.game_id||"",needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,kudosLog:p.kudos_log||[],points_total:p.points_total||0,coins:p.coins||0,monthly_level:p.monthly_level||1,coach_id:p.coach_id||"",qa_coach:p.qa_coach||"",appType:"agents"};}
+function adaptProfile(p){return{id:p.id,name:p.full_name,username:p.username,password_hash:p.password_hash,role:p.role==="usuario"?"user":p.role,project:p.team||"",active:p.is_active,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},level:p.monthly_level||p.level||1,puzzlePieces:(p.puzzle_pieces||[]).length,perfectMonths:p.perfect_months||0,kudos:p.kudos||0,goldKudos:p.gold_kudos||0,gold_kudos:p.gold_kudos||0,referrals:p.referrals||[],weekly_perf:p.weekly_perf||[],weeklyPerf:p.weekly_perf||[],riddle_completed:p.riddle_completed||0,riddleCompleted:p.riddle_completed||0,task_completed:p.task_completed||0,taskCompleted:p.task_completed||0,monthsHistory:p.months_history||[],ownedItems:p.owned_items||[],rewards:p.rewards||[],game_id:p.game_id||"",needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,kudosLog:p.kudos_log||[],points_total:p.points_total||0,coins:p.coins||0,monthly_level:p.monthly_level||1,coach_id:p.coach_id||"",qa_coach:p.qa_coach||"",appType:"agents",consecutive_weeks_on_target:p.consecutive_weeks_on_target||0,weeks_at_elite:p.weeks_at_elite||0,level_history:p.level_history||[]};}
 function adaptStaffProfile(p){return{id:p.id,gameId:p.game_id||"",username:p.username,name:p.full_name||p.username||"",password_hash:p.password_hash,role:p.role,project:(p.project||"").trim(),managerId:p.manager_id,active:p.is_active,needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},ownedItems:p.owned_items||[],level:p.level||1,appType:"staff"};}
 
 // ─── UI ATOMS ─────────────────────────────────────────────────────────────────
@@ -245,70 +231,73 @@ function ScorePill({label,val,color,icon}){
 }
 
 // ─── LEVEL PROGRESS CARD ─────────────────────────────────────────────────────
-function LevelProgressCard({coins, level}){
-  const lo = LEVEL_THRESHOLDS[level - 1] || 0;
-  const hi = level < 4 ? LEVEL_THRESHOLDS[level] : LEVEL_THRESHOLDS[3];
-  const pct = level >= 4 ? 1 : Math.min((coins - lo) / (hi - lo), 1);
-  const pctDisplay = Math.round(pct * 100);
+function LevelProgressCard({level=1, streak=0, weeksAtElite=0, levelHistory=[], totalCoins=0}){
   const lm = LEVEL_META[level] || LEVEL_META[1];
-  const coinsToNext = level < 4 ? Math.max(0, hi - coins) : 0;
+  const target = level === 1 ? 3 : level === 2 ? 9 : 4;
+  const current = level === 3 ? weeksAtElite : streak;
 
-  // Marker positions for each level threshold on the progress bar
-  const thresholds = level < 4 ? [
-    { pct: 1, label: `L${level+1}`, color: LEVEL_META[level+1]?.color || "#fff" },
-  ] : [];
+  const getMsg = () => {
+    if (level === 1) {
+      if (streak === 0) return "¡Empieza tu racha! 3 semanas perfectas para ser RISING";
+      if (streak === 2) return "¡Casi! 1 semana más y serás RISING";
+      return `¡${streak} semana${streak>1?"s":""} seguida${streak>1?"s":""}! ${3-streak} más para RISING`;
+    }
+    if (level === 2) {
+      if (streak === 0) return "¡Eres RISING! 9 semanas perfectas para alcanzar ELITE";
+      if (streak >= 7) return `¡Impresionante! Solo ${9-streak} semana${9-streak===1?"":"s"} para ELITE`;
+      return `¡${streak} semana${streak>1?"s":""} seguida${streak>1?"s":""}! ${9-streak} más para ELITE`;
+    }
+    if (weeksAtElite === 1) return "¡Eres ELITE! El pináculo del rendimiento. 3 semanas más en este nivel";
+    if (weeksAtElite >= 3) return "¡Última semana ELITE — disfrútala al máximo!";
+    return `ELITE semana ${weeksAtElite}/4 — ${4-weeksAtElite} semana${4-weeksAtElite===1?"":"s"} restante${4-weeksAtElite===1?"":"s"}`;
+  };
+
+  const recentHistory = (levelHistory||[]).slice(-9);
 
   return(
     <Card style={{marginBottom:12,background:`linear-gradient(135deg,${C.blue} 0%,${C.blueDk} 60%,${C.red} 100%)`,border:"none",color:"#fff"}}>
-      {/* Header row */}
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14}}>
         <div>
-          <div style={{fontSize:22,fontWeight:900,letterSpacing:1}}>NIVEL DEL MES</div>
-          <div style={{marginTop:6,display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.15)",borderRadius:20,padding:"4px 12px"}}>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:"rgba(255,255,255,0.6)"}}>NIVEL ACTUAL</div>
+          <div style={{marginTop:4,display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.15)",borderRadius:20,padding:"4px 14px"}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:lm.color,boxShadow:`0 0 8px ${lm.color}`}}/>
-            <span style={{color:"#fff",fontWeight:800,fontSize:13,letterSpacing:1.5}}>LVL {level} · {lm.name}</span>
+            <span style={{color:"#fff",fontWeight:900,fontSize:15,letterSpacing:2}}>LVL {level} · {lm.name}</span>
           </div>
         </div>
         <div style={{textAlign:"right"}}>
-          <div style={{color:"rgba(255,255,255,0.6)",fontSize:10,letterSpacing:1}}>COINS GANADAS</div>
-          <div style={{color:"#fde68a",fontWeight:900,fontSize:28,lineHeight:1}}>{coins}</div>
-          <div style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>{level < 4 ? `/${hi} para L${level+1}` : "Nivel máximo"}</div>
+          <div style={{color:"rgba(255,255,255,0.6)",fontSize:10,letterSpacing:1}}>COINS</div>
+          <div style={{color:"#fde68a",fontWeight:900,fontSize:24,lineHeight:1}}>🪙 {totalCoins}</div>
         </div>
       </div>
 
-      {/* Progress bar with threshold markers */}
+      {/* Streak dots */}
       <div style={{marginBottom:10}}>
-        <div style={{position:"relative",height:14,background:"rgba(255,255,255,0.2)",borderRadius:7,overflow:"visible",marginBottom:6}}>
-          <div style={{width:`${pctDisplay}%`,height:"100%",background:`linear-gradient(90deg,rgba(255,255,255,0.6),#fde68a)`,borderRadius:7,transition:"width 1s cubic-bezier(.34,1.56,.64,1)"}}/>
-          {/* Threshold markers */}
-          {thresholds.map(t=>(
-            <div key={t.label} style={{position:"absolute",top:"-3px",left:`${t.pct*100}%`,transform:"translateX(-50%)",display:"flex",flexDirection:"column",alignItems:"center"}}>
-              <div style={{width:3,height:20,background:t.color,borderRadius:2,opacity:0.9}}/>
-              <div style={{color:t.color,fontSize:8,fontWeight:800,marginTop:2,whiteSpace:"nowrap"}}>{t.label}</div>
-            </div>
+        <div style={{color:"rgba(255,255,255,0.7)",fontSize:11,fontWeight:700,marginBottom:6}}>
+          {level < 3 ? `RACHA: ${current}/${target} semanas${level===1?" para RISING":" para ELITE"}` : `SEMANAS ELITE: ${current}/${target}`}
+        </div>
+        <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
+          {Array.from({length:target}).map((_,i)=>(
+            <div key={i} style={{width:i<current?20:15,height:i<current?20:15,borderRadius:"50%",background:i<current?"#fde68a":"rgba(255,255,255,0.2)",border:i<current?"none":"1.5px solid rgba(255,255,255,0.3)",transition:"all 0.3s",boxShadow:i<current?"0 0 8px #fde68a88":undefined}}/>
+          ))}
+          {level===3&&weeksAtElite>=3&&<span style={{color:"#fde68a",fontSize:13,fontWeight:700,marginLeft:4}}>⚠️</span>}
+        </div>
+      </div>
+
+      {/* Message */}
+      <div style={{background:"rgba(255,255,255,0.12)",borderRadius:10,padding:"8px 12px",marginBottom:10}}>
+        <div style={{color:"#fde68a",fontSize:13,fontWeight:700}}>💬 {getMsg()}</div>
+      </div>
+
+      {/* History dots */}
+      {recentHistory.length>0&&(
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.15)",paddingTop:10,display:"flex",alignItems:"center",gap:3}}>
+          <span style={{color:"rgba(255,255,255,0.5)",fontSize:9,letterSpacing:1,marginRight:4}}>HISTORIAL</span>
+          {recentHistory.map((h,i)=>(
+            <div key={i} title={h.week||""} style={{width:10,height:10,borderRadius:"50%",background:h.on_target?"#22c55e":"#ef4444",opacity:0.65+i*0.04}}/>
           ))}
         </div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{color:"rgba(255,255,255,0.7)",fontSize:12,fontWeight:700}}>{pctDisplay}% hacia Nivel {level < 4 ? level+1 : level}</div>
-          {level < 4
-            ? <div style={{color:"#fde68a",fontSize:12,fontWeight:700}}>Faltan {coinsToNext} 🪙 para Nivel {level+1}</div>
-            : <div style={{color:"#fde68a",fontSize:12,fontWeight:700}}>🏆 NIVEL MÁXIMO</div>
-          }
-        </div>
-      </div>
-
-      {/* Coins display */}
-      <div style={{borderTop:"1px solid rgba(255,255,255,0.2)",paddingTop:12,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div>
-          <div style={{color:"rgba(255,255,255,0.6)",fontSize:10,letterSpacing:1}}>COINS DISPONIBLES</div>
-          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
-            <span style={{fontSize:18}}>🪙</span>
-            <span style={{color:C.gold,fontWeight:900,fontSize:22}}>{coins}</span>
-            <span style={{color:"rgba(255,255,255,0.4)",fontSize:11}}>para la tienda</span>
-          </div>
-        </div>
-        <Pzl pieces={0}/>
-      </div>
+      )}
     </Card>
   );
 }
@@ -714,7 +703,7 @@ function BulletinCard({bulletin}){
   );
 }
 
-function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, coinSettings={}, totalCoins=0, level=1}){
+function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, coinSettings={}, totalCoins=0, level=1, streak=0, weeksAtElite=0, levelHistory=[]}){
   const sc = calcScoreCoins(
     weeklyMetrics,
     riddleAnswers,
@@ -728,7 +717,7 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
   return(
     <div style={{paddingBottom:100}}>
       {/* Level + Score card */}
-      <LevelProgressCard coins={totalCoins} level={level}/>
+      <LevelProgressCard level={level} streak={streak} weeksAtElite={weeksAtElite} levelHistory={levelHistory} totalCoins={totalCoins}/>
 
       {isSA&&availableWeeks.length>0&&(<Card style={{marginBottom:12,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:2}}>SEMANA VISUALIZADA</div><div style={{color:C.blue,fontWeight:700,fontSize:13}}>Última evaluada: {availableWeeks[0]}</div></div><select value={selectedWeek} onChange={e=>onWeekChange(e.target.value)} style={{border:`1.5px solid ${C.border}`,borderRadius:8,padding:"7px 11px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,cursor:"pointer"}}>{availableWeeks.map(w=><option key={w} value={w}>{w}</option>)}</select></div></Card>)}
       {!isSA&&lastEvaluatedWeek&&(<Card style={{marginBottom:12,padding:"10px 14px",background:`${C.blue}06`,border:`1.5px solid ${C.blue}20`}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>📅</span><div style={{color:C.muted,fontSize:12}}>Última semana evaluada: <strong style={{color:C.blue}}>{lastEvaluatedWeek}</strong></div></div></Card>)}
@@ -1778,15 +1767,15 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   };
 
   const resetAllLevels=async()=>{
-    if(!window.confirm("¿Reiniciar NIVELES de TODOS los agentes a Nivel 1?"))return;
+    if(!window.confirm("¿Reiniciar NIVELES de TODOS los agentes a Nivel 1?\n\nEsto también reinicia la racha y el historial de niveles."))return;
     try{
-      await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({level:1,monthly_level:1}),prefer:"return=minimal"});
-      await reloadUsers();toast("✓ Niveles reiniciados a Nivel 1");
+      await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({level:1,monthly_level:1,consecutive_weeks_on_target:0,weeks_at_elite:0,level_history:[]}),prefer:"return=minimal"});
+      await reloadUsers();toast("✓ Niveles y rachas reiniciados a Nivel 1");
     }catch(e){toast("Error al reiniciar niveles");}
   };
 
   const filtered=allUsers.filter(u=>filter==="active"?u.active:!u.active);
-  const tabs=[{id:"bulletin",label:"📋 Boletín"},{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"kudosHistory",label:"👏 Historial Kudos"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"},{id:"grupos",label:"👥 Grupos"},{id:"utilization",label:"📊 Utilización"}];
+  const tabs=[{id:"bulletin",label:"📋 Boletín"},{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"kudosHistory",label:"👏 Historial Kudos"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"},{id:"grupos",label:"👥 Grupos"},{id:"utilization",label:"📊 Utilización"},{id:"niveles",label:"🏆 Niveles"}];
 
   return(
     <div style={{paddingBottom:100}}>
@@ -1943,6 +1932,54 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
       {tab==="prizes"&&(<PrizesTab prizes={prizes} setPrizes={setPrizes} pf={pf} setPf={setPf} addPrize={addPrize} updPz={updPz} toast={toast} inp={inp}/>)}
 
       {tab==="coins"&&(<CoinsTab allUsers={allUsers} coinSettings={coinSettings} onSaveCoinSettings={onSaveCoinSettings} resetAllCoins={resetAllCoins} resetAllPoints={resetAllPoints} resetAllLevels={resetAllLevels} reloadUsers={reloadUsers} toast={toast} inp={inp}/>)}
+
+      {tab==="niveles"&&(<div>
+        <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
+          <div style={{color:C.blue,fontWeight:800,fontSize:15,marginBottom:4}}>🏆 Estado de Niveles — Sistema KPI-Streak</div>
+          <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>
+            ROOKIE → RISING: 3 semanas perfectas (QA+AHT+Asistencia al 100%) · RISING → ELITE: 9 semanas · ELITE: máx 4 semanas · Off-target = regresa a ROOKIE
+          </div>
+        </Card>
+        {allUsers.filter(u=>u.active).sort((a,b)=>(b.level||1)-(a.level||1)||(b.consecutive_weeks_on_target||0)-(a.consecutive_weeks_on_target||0)).map(u=>{
+          const lvl=u.level||1;
+          const lm=LEVEL_META[lvl]||LEVEL_META[1];
+          const streak=u.consecutive_weeks_on_target||0;
+          const elite=u.weeks_at_elite||0;
+          const hist=(u.level_history||[]).slice(-9);
+          const target=lvl===1?3:lvl===2?9:4;
+          const current=lvl===3?elite:streak;
+          const pct=Math.min((current/target)*100,100);
+          return(
+            <Card key={u.id} style={{marginBottom:8,borderLeft:`4px solid ${lm.color}`}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <Av av={u.avatar} sz={38} shop={DEFAULT_SHOP}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{color:C.text,fontWeight:700,fontSize:13}}>{u.name}</div>
+                  <div style={{display:"flex",gap:5,alignItems:"center",marginTop:3,flexWrap:"wrap"}}>
+                    <span style={{background:lm.bg,color:lm.color,fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:12,border:`1px solid ${lm.color}40`,letterSpacing:1}}>LVL{lvl} {lm.name}</span>
+                    <span style={{color:C.muted,fontSize:11}}>{lvl<3?`${current}/${target} racha`:`${elite}/4 semanas elite`}</span>
+                  </div>
+                  <div style={{marginTop:6,display:"flex",gap:3,alignItems:"center"}}>
+                    {Array.from({length:target}).map((_,i)=>(
+                      <div key={i} style={{width:i<current?12:9,height:i<current?12:9,borderRadius:"50%",background:i<current?lm.color:`${lm.color}30`,transition:"all 0.2s"}}/>
+                    ))}
+                    {hist.length>0&&<>
+                      <span style={{color:C.muted,fontSize:9,marginLeft:6}}>|</span>
+                      {hist.map((h,i)=><div key={i} title={h.week||""} style={{width:8,height:8,borderRadius:"50%",background:h.on_target?"#22c55e":"#ef4444",opacity:0.5+i*0.06,marginLeft:2}}/>)}
+                    </>}
+                  </div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{background:"#e8eaf6",borderRadius:5,overflow:"hidden",height:5,width:60,marginBottom:4}}>
+                    <div style={{width:`${pct}%`,height:"100%",background:lm.color,borderRadius:5}}/>
+                  </div>
+                  <div style={{color:C.muted,fontSize:10}}>{Math.round(pct)}%</div>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>)}
 
       {tab==="kudosHistory"&&(
         <div>
@@ -2549,7 +2586,6 @@ export default function App(){
   const [monthRiddleCount,setMonthRiddleCount]=useState(0);
   const [monthTaskCount,setMonthTaskCount]=useState(0);
   const [agentTotalCoins,setAgentTotalCoins]=useState(0);
-  const lastLevelRef=useRef(0);
 
   const loadInitialData=async()=>{
     try{
@@ -2597,20 +2633,9 @@ export default function App(){
     const newMonthTaskCount=(tasks||[]).filter(t=>t.created_at&&thisMonth(t.created_at)).length;
     setMonthRiddleCount(newMonthRiddleCount);
     setMonthTaskCount(newMonthTaskCount);
-    // Level-change detection — uses total all-time earned coins against absolute thresholds
+    // Compute total earned coins for display (level is now DB-driven via ExcelUpload)
     const sc=calcScoreCoins(wm||[],ra||[],ts||[],agent.kudos,agent.gold_kudos,agent.referrals,coinSettings);
     setAgentTotalCoins(sc.coins);
-    const newLevel=calcLevel(sc.coins);
-    const oldLevel=agent.monthly_level||1;
-    if(newLevel>oldLevel&&newLevel>lastLevelRef.current){
-      lastLevelRef.current=newLevel;
-      try{
-        const lvNames=["","Bronce","Plata","Oro","Platino"];
-        await db.updateUser(agent.id,{monthly_level:newLevel,level:newLevel});
-        await db.createNotif({recipient_id:agent.id,title:"🏆 ¡Subiste de nivel!",message:`¡Felicidades! Subiste a Nivel ${newLevel} – ${lvNames[newLevel]||""}. Ahora tienes acceso a más premios exclusivos. 🎉`,type:"level_up",is_read:false});
-        syncUser({...agent,monthly_level:newLevel,level:newLevel});
-      }catch(e){console.error("[levelCheck]",e);}
-    }
   };
 
   const loadNotifs=async(uid)=>{try{const d=await db.getNotifs(uid);setNotifs(d||[]);}catch(e){}};
@@ -2686,9 +2711,9 @@ export default function App(){
   const markNotifRead=async(id)=>{try{await db.markNotifRead(id);setNotifs(notifs.map(n=>n.id===id?{...n,is_read:true}:n));}catch(e){}};
   const markAllRead=async()=>{try{await db.markAllNotifsRead(cu.id);setNotifs(notifs.map(n=>n.recipient_id===cu.id?{...n,is_read:true}:n));}catch(e){}};
 
-  // Score props — last evaluated week for display; agentTotalCoins (all-time) used for level
+  // Score props — last evaluated week for display; level is DB-driven (set by ExcelUpload)
   const agentMetricsFiltered=isSA?(selectedWeek?agentWeeklyMetrics.filter((w)=>w.week===selectedWeek):agentWeeklyMetrics):agentWeeklyMetrics.filter((w)=>w.week===lastEvaluatedWeek);
-  const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount,coinSettings,totalCoins:agentTotalCoins,level:calcLevel(agentTotalCoins)};
+  const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount,coinSettings,totalCoins:agentTotalCoins,level:cu?.level||1,streak:cu?.consecutive_weeks_on_target||0,weeksAtElite:cu?.weeks_at_elite||0,levelHistory:cu?.level_history||[]};
 
   if(appLoading){return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><Logo sz={64}/><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,letterSpacing:2}}>PERFORMANCE ARENA</div><div style={{color:C.muted,fontSize:14,marginTop:8}}>Loading...</div></div>);}
 
@@ -2793,7 +2818,7 @@ export default function App(){
         // Level gate
         const minLv=p.min_level||p.minLevel||1;
         if(minLv>1){
-          const playerLv=calcLevel(agentTotalCoins);
+          const playerLv=cu?.level||1;
           if(playerLv<minLv){toast(`Este premio requiere Nivel ${minLv}. Tu nivel actual es ${playerLv}.`);return;}
         }
         // Compute spendable = total earned - total spent (same formula used in display)

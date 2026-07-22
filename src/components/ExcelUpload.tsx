@@ -385,6 +385,61 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
       } catch(e:any) { /* ignore */ }
     }
 
+    // ── LEVEL SYSTEM: KPI-streak based ──────────────────────────────────────────
+    setProgressMsg("Calculando niveles...");
+    const lvlNames: Record<number, string> = { 1: "ROOKIE", 2: "RISING", 3: "ELITE" };
+    for (const a of agents.filter(x => x.review_reason !== "termination")) {
+      const isExcused = a.review_reason === "vacation" || a.review_reason === "sick_leave" || a.review_reason === "skip";
+      if (isExcused) continue; // freeze counters for excused weeks
+      try {
+        const profData = await dbGet(
+          "profiles",
+          `game_id=eq.${encodeURIComponent(a.game_id)}&select=id,level,consecutive_weeks_on_target,weeks_at_elite,level_history`
+        );
+        if (!profData || profData.length === 0) continue;
+        const prof = profData[0];
+        const currentLevel: number = prof.level || 1;
+        const streak: number = prof.consecutive_weeks_on_target || 0;
+        const eliteWeeks: number = prof.weeks_at_elite || 0;
+        const history: any[] = prof.level_history || [];
+        const onTarget = a.qa_pts === 5 && a.aht_pts === 5 && a.attendance_pts === 5;
+        let newLevel = currentLevel;
+        let newStreak = streak;
+        let newEliteWeeks = eliteWeeks;
+        if (!onTarget) {
+          newLevel = 1; newStreak = 0; newEliteWeeks = 0;
+        } else if (currentLevel === 1) {
+          newStreak = streak + 1;
+          if (newStreak >= 3) { newLevel = 2; newStreak = 0; }
+        } else if (currentLevel === 2) {
+          newStreak = streak + 1;
+          if (newStreak >= 9) { newLevel = 3; newStreak = 0; newEliteWeeks = 1; }
+        } else if (currentLevel === 3) {
+          newEliteWeeks = eliteWeeks + 1;
+          if (newEliteWeeks >= 4) { newLevel = 1; newStreak = 0; newEliteWeeks = 0; }
+        }
+        const newHistory = [...history.slice(-11), { week, on_target: onTarget, level: newLevel }];
+        await dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, {
+          level: newLevel, monthly_level: newLevel,
+          consecutive_weeks_on_target: newStreak,
+          weeks_at_elite: newEliteWeeks,
+          level_history: JSON.stringify(newHistory),
+        });
+        if (newLevel !== currentLevel && prof.id) {
+          const isUp = newLevel > currentLevel;
+          await dbInsert("notifications", {
+            recipient_id: prof.id,
+            title: isUp ? `Subiste a Nivel ${newLevel}: ${lvlNames[newLevel]}!` : "Regresaste a Nivel 1: ROOKIE",
+            body: isUp
+              ? `Felicidades! KPIs al 100% — avanzaste de ${lvlNames[currentLevel]} a ${lvlNames[newLevel]}.`
+              : "Un week off-target regresa al nivel ROOKIE. ¡Sigue adelante!",
+            type: "level_change", is_read: false,
+            created_at: new Date().toISOString(),
+          }).catch(() => {});
+        }
+      } catch (e: any) { errs.push(`Nivel ${a.game_id}: ${e.message}`); }
+    }
+
     setProgressMsg("Actualizando coaches...");
     for (const c of coaches) {
       try { await dbInsert("staff_attrition_monthly",{coach_name:c.game_id,week,voluntary_exits:c.attrition,position:c.position,manager_id:c.manager||null}); }
