@@ -1445,7 +1445,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
   </div>);
 }
 
-function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllCoins,reloadUsers,toast,inp}){
+function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllCoins,resetAllPoints,resetAllLevels,reloadUsers,toast,inp}){
   const [calcCoins,setCalcCoins]=useState(null);
   const [loading,setLoading]=useState(false);
   const [syncing,setSyncing]=useState(false);
@@ -1509,6 +1509,26 @@ function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllCoins,reload
       </div>
       <Btn onClick={resetAllCoins} color={C.red} style={{width:"100%",padding:12}}>🔄 REINICIAR COINS (TRIMESTRAL)</Btn>
     </Card>
+
+    <Card style={{marginBottom:14,background:`${C.red}08`,border:`1.5px solid ${C.red}30`}}>
+      <div style={{fontSize:24,marginBottom:8}}>📊</div>
+      <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:4}}>Reiniciar Puntos</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>
+        Borra las métricas semanales (KPI), riddles, tasks y kudos de todos los agentes.<br/>
+        Úsalo al iniciar una nueva temporada. <strong style={{color:C.red}}>No se puede deshacer.</strong>
+      </div>
+      <Btn onClick={resetAllPoints} color={C.red} style={{width:"100%",padding:12}}>⚠️ REINICIAR PUNTOS (TEMPORADA NUEVA)</Btn>
+    </Card>
+
+    <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}30`}}>
+      <div style={{fontSize:24,marginBottom:8}}>🏆</div>
+      <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:4}}>Reiniciar Niveles</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>
+        Regresa a todos los agentes a Nivel 1 sin borrar sus puntos ni coins.
+      </div>
+      <Btn onClick={resetAllLevels} color={C.blue} style={{width:"100%",padding:12}}>🔄 REINICIAR NIVELES A NIVEL 1</Btn>
+    </Card>
+
     <Card>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
         <div style={{color:C.muted,fontSize:11,letterSpacing:2,fontWeight:700}}>COINS POR AGENTE {calcCoins?"(CALCULADO)":"(GUARDADO EN DB)"}</div>
@@ -1738,8 +1758,31 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
     if(!window.confirm("¿Reiniciar coins de TODOS los agentes? Esta acción no se puede deshacer."))return;
     try{
       await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({coins:0}),prefer:"return=minimal"});
-      await reloadUsers();toast("Coins reiniciados para todos los agentes");
+      await sbFetch("reward_redemptions?user_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null);
+      await reloadUsers();toast("✓ Coins y canjes reiniciados");
     }catch(e){toast("Error al reiniciar coins");}
+  };
+
+  const resetAllPoints=async()=>{
+    if(!window.confirm("¿Reiniciar PUNTOS de TODOS los agentes?\n\nEsto borrará:\n• Métricas semanales (KPI)\n• Riddles y Tasks aprobadas\n• Kudos y Gold Kudos\n\nEsta acción NO se puede deshacer."))return;
+    try{
+      await Promise.all([
+        sbFetch("weekly_metrics?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
+        sbFetch("agent_riddle_answers?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
+        sbFetch("agent_task_submissions?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
+      ]);
+      await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({kudos:0,gold_kudos:0,coins:0}),prefer:"return=minimal"});
+      await sbFetch("reward_redemptions?user_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null);
+      await reloadUsers();toast("✓ Puntos reiniciados para todos los agentes");
+    }catch(e){toast("Error al reiniciar puntos");}
+  };
+
+  const resetAllLevels=async()=>{
+    if(!window.confirm("¿Reiniciar NIVELES de TODOS los agentes a Nivel 1?"))return;
+    try{
+      await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({level:1,monthly_level:1}),prefer:"return=minimal"});
+      await reloadUsers();toast("✓ Niveles reiniciados a Nivel 1");
+    }catch(e){toast("Error al reiniciar niveles");}
   };
 
   const filtered=allUsers.filter(u=>filter==="active"?u.active:!u.active);
@@ -1899,7 +1942,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
 
       {tab==="prizes"&&(<PrizesTab prizes={prizes} setPrizes={setPrizes} pf={pf} setPf={setPf} addPrize={addPrize} updPz={updPz} toast={toast} inp={inp}/>)}
 
-      {tab==="coins"&&(<CoinsTab allUsers={allUsers} coinSettings={coinSettings} onSaveCoinSettings={onSaveCoinSettings} resetAllCoins={resetAllCoins} reloadUsers={reloadUsers} toast={toast} inp={inp}/>)}
+      {tab==="coins"&&(<CoinsTab allUsers={allUsers} coinSettings={coinSettings} onSaveCoinSettings={onSaveCoinSettings} resetAllCoins={resetAllCoins} resetAllPoints={resetAllPoints} resetAllLevels={resetAllLevels} reloadUsers={reloadUsers} toast={toast} inp={inp}/>)}
 
       {tab==="kudosHistory"&&(
         <div>
