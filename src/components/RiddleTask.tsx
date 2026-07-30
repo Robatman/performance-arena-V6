@@ -72,6 +72,7 @@ function RiddleSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string;
   // Create form
   const [form, setForm] = useState({ week:'', question:'', a:'', b:'', c:'', d:'', correct:'A' })
   const [saving, setSaving] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState('')
 
   useEffect(() => { fetchAll() }, [])
@@ -133,8 +134,16 @@ function RiddleSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string;
   }
 
   async function submitAnswer() {
-    if (!selected || !activeRiddle) return
+    if (!selected || !activeRiddle || submitting) return
+    setSubmitting(true)
     try {
+      // Guard: check DB for an existing answer before inserting
+      const existing = await sbFetch(`agent_riddle_answers?riddle_id=eq.${activeRiddle.id}&game_id=eq.${encodeURIComponent(gameId)}&select=id`)
+      if (existing && existing.length > 0) {
+        await fetchAll()
+        showToast('Ya enviaste tu respuesta para este riddle')
+        return
+      }
       await sbFetch("agent_riddle_answers", { method:"POST", body: JSON.stringify({
         game_id: gameId, riddle_id: activeRiddle.id,
         answer: selected, correct: false, approved: false, points_awarded: 0
@@ -142,6 +151,7 @@ function RiddleSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string;
       setMyAnswer({ answer: selected, approved: false, correct: false })
       showToast('✅ Respuesta enviada — pendiente de revisión')
     } catch(e) { showToast('Error al enviar') }
+    finally { setSubmitting(false) }
   }
 
   async function approveAnswer(ans: any, approve: boolean) {
@@ -347,8 +357,8 @@ function RiddleSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string;
                       </div>
                     )
                   ))}
-                  <button onClick={submitAnswer} disabled={!selected} style={{width:"100%", padding:12, borderRadius:10, border:"none", background:selected?C.purple:"#c5cae9", color:"#fff", fontWeight:800, fontSize:14, cursor:selected?"pointer":"not-allowed", fontFamily:"inherit", marginTop:8}}>
-                    Enviar respuesta
+                  <button onClick={submitAnswer} disabled={!selected || submitting} style={{width:"100%", padding:12, borderRadius:10, border:"none", background:selected&&!submitting?C.purple:"#c5cae9", color:"#fff", fontWeight:800, fontSize:14, cursor:selected&&!submitting?"pointer":"not-allowed", fontFamily:"inherit", marginTop:8}}>
+                    {submitting ? 'Enviando...' : 'Enviar respuesta'}
                   </button>
                 </div>
               )}
@@ -377,6 +387,7 @@ function TaskSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; i
 
   const [form, setForm] = useState({ week:'', title:'', instructions:'' })
   const [saving, setSaving] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState('')
 
   useEffect(() => { fetchAll() }, [])
@@ -433,8 +444,16 @@ function TaskSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; i
   }
 
   async function submitTask() {
-    if (!activeTask || !description.trim()) return
+    if (!activeTask || description.trim().length < 20 || submitting) return
+    setSubmitting(true)
     try {
+      // Guard: check DB for an existing submission before inserting
+      const existing = await sbFetch(`agent_task_submissions?task_id=eq.${activeTask.id}&game_id=eq.${encodeURIComponent(gameId)}&select=id`)
+      if (existing && existing.length > 0) {
+        await fetchAll()
+        showToast('Ya entregaste esta task')
+        return
+      }
       await sbFetch("agent_task_submissions", { method:"POST", body: JSON.stringify({
         game_id: gameId, task_id: activeTask.id,
         description: description.trim(), approved: false, points_awarded: 0
@@ -442,6 +461,7 @@ function TaskSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; i
       setMySubmission({ description: description.trim(), approved: false })
       showToast('✅ Task entregada — pendiente de aprobación')
     } catch(e) { showToast('Error al entregar') }
+    finally { setSubmitting(false) }
   }
 
   async function approveSubmission(sub: any, approve: boolean) {
@@ -620,8 +640,8 @@ function TaskSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; i
                     <div style={{fontSize:22}}>📱</div>
                     <div style={{color:C.text, fontSize:13, lineHeight:1.5}}>Envía tu evidencia (foto o PDF) al WhatsApp que te indique tu coach</div>
                   </div>
-                  <button onClick={submitTask} disabled={description.trim().length < 20} style={{width:"100%", padding:12, borderRadius:10, border:"none", background:description.trim().length>=20?C.blue:"#c5cae9", color:"#fff", fontWeight:800, fontSize:14, cursor:description.trim().length>=20?"pointer":"not-allowed", fontFamily:"inherit"}}>
-                    Entregar Task
+                  <button onClick={submitTask} disabled={description.trim().length < 20 || submitting} style={{width:"100%", padding:12, borderRadius:10, border:"none", background:description.trim().length>=20&&!submitting?C.blue:"#c5cae9", color:"#fff", fontWeight:800, fontSize:14, cursor:description.trim().length>=20&&!submitting?"pointer":"not-allowed", fontFamily:"inherit"}}>
+                    {submitting ? 'Enviando...' : 'Entregar Task'}
                   </button>
                   {description.trim().length < 20 && description.length > 0 && <div style={{color:C.muted, fontSize:11, textAlign:"center", marginTop:6}}>Escribe al menos 20 caracteres</div>}
                 </div>
