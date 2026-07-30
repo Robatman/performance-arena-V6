@@ -1704,6 +1704,29 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const [bulletinItems,setBulletinItems]=useState(["","","",""]);
   const [allRedemptions,setAllRedemptions]=useState([]);
   const [kudosHistory,setKudosHistory]=useState([]);
+  const [userScoreMap,setUserScoreMap]=useState<Record<string,number>>({});
+  useEffect(()=>{
+    Promise.all([
+      sbFetch("weekly_metrics?select=game_id,qa_pts,aht_pts,attendance_pts").catch(()=>[]),
+      sbFetch("agent_riddle_answers?approved=eq.true&select=game_id").catch(()=>[]),
+      sbFetch("agent_task_submissions?approved=eq.true&select=game_id").catch(()=>[]),
+    ]).then(([kpiData,rdlData,tskData])=>{
+      const kpiMap:Record<string,number>={};
+      (kpiData||[]).forEach((r:any)=>{kpiMap[r.game_id]=(kpiMap[r.game_id]||0)+(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);});
+      const rdlMap:Record<string,number>={};
+      (rdlData||[]).forEach((r:any)=>{rdlMap[r.game_id]=(rdlMap[r.game_id]||0)+1;});
+      const tskMap:Record<string,number>={};
+      (tskData||[]).forEach((t:any)=>{tskMap[t.game_id]=(tskMap[t.game_id]||0)+1;});
+      const rc=coinSettings?.riddle_coins??2;const tc=coinSettings?.task_coins??2;
+      const map:Record<string,number>={};
+      allUsers.forEach(u=>{
+        const kudo=(u.kudos||0)+(u.gold_kudos||0)*5;
+        const ref=(u.referrals||[]).reduce((s:number,r:any)=>s+(r.approved?5:1),0);
+        map[u.game_id]=(kpiMap[u.game_id]||0)+(rdlMap[u.game_id]||0)*rc+(tskMap[u.game_id]||0)*tc+kudo+ref;
+      });
+      setUserScoreMap(map);
+    }).catch(()=>{});
+  },[allUsers.length]);
   useEffect(()=>{
     if(isSA){
       Promise.all([
@@ -1904,18 +1927,18 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
             {/* Stats grid */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:10}}>
               {[
+                {icon:"⭐",label:"Score",val:userScoreMap[u.game_id]??"-",color:C.blue,highlight:true},
                 {icon:"🪙",label:"Coins",val:u.coins||0,color:C.gold},
                 {icon:"👏",label:"Kudos",val:u.kudos||0,color:C.blue},
                 {icon:"🌟",label:"Gold K.",val:u.gold_kudos||0,color:"#f59e0b"},
-                {icon:"💰",label:"K.Coins",val:kudosCoins,color:C.gold},
                 {icon:"🧩",label:"Riddles",val:u.riddle_completed||0,color:C.purple},
                 {icon:"📋",label:"Tasks",val:u.task_completed||0,color:C.red},
                 {icon:"🤝",label:"Refs",val:(u.referrals||[]).length,color:C.green},
                 {icon:"💎",label:"Ref.Coins",val:refCoins,color:C.green},
               ].map(s=>(
-                <div key={s.label} style={{background:`${s.color}0e`,border:`1px solid ${s.color}22`,borderRadius:8,padding:"6px 8px",textAlign:"center"}}>
+                <div key={s.label} style={{background:s.highlight?`${s.color}18`:`${s.color}0e`,border:`1px solid ${s.highlight?s.color+"55":s.color+"22"}`,borderRadius:8,padding:"6px 8px",textAlign:"center",boxShadow:s.highlight?`0 0 0 1px ${s.color}22`:undefined}}>
                   <div style={{fontSize:14}}>{s.icon}</div>
-                  <div style={{color:s.color,fontWeight:900,fontSize:15,lineHeight:1.1}}>{s.val}</div>
+                  <div style={{color:s.color,fontWeight:900,fontSize:s.highlight?17:15,lineHeight:1.1}}>{s.val}</div>
                   <div style={{color:C.muted,fontSize:9,letterSpacing:0.5,marginTop:2}}>{s.label}</div>
                 </div>
               ))}
