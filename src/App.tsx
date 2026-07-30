@@ -1863,9 +1863,21 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
             </button>
           ))}
         </div>
-        {filtered.map(u=>(
-          <Card key={u.id} data-user-row={`${u.name} ${u.game_id||""} ${u.project||""}`} style={{marginBottom:10,opacity:u.active?1:0.7,border:`1.5px solid ${u.active?C.border:"#fca5a5"}`}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
+        {filtered.map(u=>{
+          const lvl=u.level||1;
+          const lm=LEVEL_META[lvl]||LEVEL_META[1];
+          const streak=u.consecutive_weeks_on_target||0;
+          const eliteWks=u.weeks_at_elite||0;
+          const hist=(u.level_history||[]).slice(-9);
+          const streakTarget=lvl===1?3:lvl===2?9:4;
+          const streakCur=lvl===3?eliteWks:streak;
+          const streakPct=Math.min((streakCur/streakTarget)*100,100);
+          const kudosCoins=(u.kudos||0)+(u.gold_kudos||0)*5;
+          const refCoins=((u.referrals||[]).reduce((s,r)=>s+(r.approved?5:1),0));
+          return(
+          <Card key={u.id} data-user-row={`${u.name} ${u.game_id||""} ${u.project||""}`} style={{marginBottom:10,opacity:u.active?1:0.7,border:`1.5px solid ${u.active?lm.color+"44":C.red+"55"}`}}>
+            {/* Header row */}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
               <Av av={u.avatar} sz={42} shop={DEFAULT_SHOP}/>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{color:C.text,fontWeight:700,fontSize:14}}>{u.name}{u.id===cu.id&&<span style={{color:C.blue,fontSize:10}}> (tu)</span>}</div>
@@ -1876,17 +1888,56 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                 <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:3}}>
                   <Tag color={u.role==="superadmin"?C.red:u.role==="admin"?C.blue:C.muted}>{(u.role||"user").toUpperCase()}</Tag>
                   <Tag color={u.active?C.green:C.red}>{u.active?"ACTIVO":"INACTIVO"}</Tag>
-                  <Bdg l={u.level||1}/>
+                  <Bdg l={lvl}/>
                 </div>
               </div>
               {isSA&&u.id!==cu.id&&(
                 <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
                   <Btn onClick={()=>toggleActive(u)} color={u.active?C.red:C.green} sm>{u.active?"Desactivar":"Activar"}</Btn>
-                  <Btn onClick={()=>{setResetId(resetId===u.id?null:u.id);setNewPw("");setCampaignEditId(null);}} color={resetId===u.id?"#6b7280":C.yellow} sm>{resetId===u.id?"Cancelar":"Contrasena"}</Btn>
+                  <Btn onClick={()=>{setResetId(resetId===u.id?null:u.id);setNewPw("");setCampaignEditId(null);}} color={resetId===u.id?"#6b7280":C.yellow} sm>{resetId===u.id?"Cancelar":"Contraseña"}</Btn>
                   <Btn onClick={()=>{setCampaignEditId(campaignEditId===u.id?null:u.id);setCampaignEditVal(u.project||"");setResetId(null);}} color={campaignEditId===u.id?"#6b7280":C.blue} sm>{campaignEditId===u.id?"Cerrar":"Campaña"}</Btn>
                   <Btn onClick={()=>setDelConfirm(u)} color={C.red} sm>Desactivar</Btn>
                 </div>
               )}
+            </div>
+
+            {/* Stats grid */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:10}}>
+              {[
+                {icon:"🪙",label:"Coins",val:u.coins||0,color:C.gold},
+                {icon:"👏",label:"Kudos",val:u.kudos||0,color:C.blue},
+                {icon:"🌟",label:"Gold K.",val:u.gold_kudos||0,color:"#f59e0b"},
+                {icon:"💰",label:"K.Coins",val:kudosCoins,color:C.gold},
+                {icon:"🧩",label:"Riddles",val:u.riddle_completed||0,color:C.purple},
+                {icon:"📋",label:"Tasks",val:u.task_completed||0,color:C.red},
+                {icon:"🤝",label:"Refs",val:(u.referrals||[]).length,color:C.green},
+                {icon:"💎",label:"Ref.Coins",val:refCoins,color:C.green},
+              ].map(s=>(
+                <div key={s.label} style={{background:`${s.color}0e`,border:`1px solid ${s.color}22`,borderRadius:8,padding:"6px 8px",textAlign:"center"}}>
+                  <div style={{fontSize:14}}>{s.icon}</div>
+                  <div style={{color:s.color,fontWeight:900,fontSize:15,lineHeight:1.1}}>{s.val}</div>
+                  <div style={{color:C.muted,fontSize:9,letterSpacing:0.5,marginTop:2}}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Streak progress */}
+            <div style={{background:`${lm.color}08`,border:`1px solid ${lm.color}20`,borderRadius:8,padding:"8px 10px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                <span style={{color:lm.color,fontSize:10,fontWeight:700,letterSpacing:1}}>
+                  {lvl<3?`RACHA: ${streakCur}/${streakTarget} semanas${lvl===1?" → RISING":" → ELITE"}`:`ELITE: ${eliteWks}/4 semanas`}
+                </span>
+                <span style={{color:C.muted,fontSize:9}}>{Math.round(streakPct)}%</span>
+              </div>
+              <div style={{display:"flex",gap:3,alignItems:"center",flexWrap:"wrap"}}>
+                {Array.from({length:streakTarget}).map((_,i)=>(
+                  <div key={i} style={{width:i<streakCur?12:9,height:i<streakCur?12:9,borderRadius:"50%",background:i<streakCur?lm.color:`${lm.color}28`,transition:"all 0.2s"}}/>
+                ))}
+                {hist.length>0&&<>
+                  <div style={{width:1,height:12,background:C.border,margin:"0 4px"}}/>
+                  {hist.map((h,i)=><div key={i} title={h.week||""} style={{width:8,height:8,borderRadius:"50%",background:h.on_target?"#22c55e":"#ef4444",opacity:0.5+i*0.06}}/>)}
+                </>}
+              </div>
             </div>
             {isSA&&campaignEditId===u.id&&(
               <div style={{marginTop:12,padding:"12px 14px",background:`${C.blue}08`,borderRadius:10,border:`1.5px solid ${C.blue}30`,display:"flex",gap:8,alignItems:"flex-end"}}>
@@ -1907,7 +1958,8 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
               </div>
             )}
           </Card>
-        ))}
+        );
+        })}
       </div>)}
 
       {tab==="kudos"&&(<Card>
