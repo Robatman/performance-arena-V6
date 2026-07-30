@@ -800,7 +800,7 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
   );
 }
 
-function Leaderboard({user,allUsers,shop,weeklyMetricsAll}){
+function Leaderboard({user,allUsers,shop,coinSettings={}}){
   const [lbSearch,setLbSearch]=useState("");
   const [levelFilter,setLevelFilter]=useState(null);
   const [rankings,setRankings]=useState([]);
@@ -810,17 +810,26 @@ function Leaderboard({user,allUsers,shop,weeklyMetricsAll}){
   useEffect(()=>{
     async function loadRankings(){
       try{
-        const res=await fetch(`${SUPABASE_URL}/rest/v1/weekly_metrics?select=game_id,total_pts,qa_pts,aht_pts,attendance_pts&order=game_id.asc`,{
-          headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}
-        });
-        const data=await res.json();
-        // Sum KPI score per agent (score = qa+aht+attendance, not total_pts which may include old logic)
+        const hdr={apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`};
+        const [kpiRes,rdlRes,tskRes]=await Promise.all([
+          fetch(`${SUPABASE_URL}/rest/v1/weekly_metrics?select=game_id,qa_pts,aht_pts,attendance_pts&order=game_id.asc`,{headers:hdr}),
+          fetch(`${SUPABASE_URL}/rest/v1/agent_riddle_answers?approved=eq.true&select=game_id`,{headers:hdr}),
+          fetch(`${SUPABASE_URL}/rest/v1/agent_task_submissions?approved=eq.true&select=game_id`,{headers:hdr}),
+        ]);
+        const [kpiData,rdlData,tskData]=await Promise.all([kpiRes.json(),rdlRes.json(),tskRes.json()]);
+        const rc=coinSettings?.riddle_coins??2;
+        const tc=coinSettings?.task_coins??2;
+        // Sum KPI score per agent
+        const kpiMap={};
+        (kpiData||[]).forEach((r)=>{kpiMap[r.game_id]=(kpiMap[r.game_id]||0)+(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);});
+        // Count approved riddles/tasks per agent
+        const rdlMap={};(rdlData||[]).forEach((r)=>{rdlMap[r.game_id]=(rdlMap[r.game_id]||0)+1;});
+        const tskMap={};(tskData||[]).forEach((t)=>{tskMap[t.game_id]=(tskMap[t.game_id]||0)+1;});
+        // Total score = KPI + riddles + tasks (same formula as Users tab)
         const totals={};
-        (data||[]).forEach((r)=>{
-          const kpi=(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);
-          totals[r.game_id]=(totals[r.game_id]||0)+kpi;
-        });
-        // Build from ALL active profiles, with pts from totals (0 if no metrics)
+        const allGameIds=new Set([...Object.keys(kpiMap),...Object.keys(rdlMap),...Object.keys(tskMap)]);
+        allGameIds.forEach(gid=>{totals[gid]=(kpiMap[gid]||0)+(rdlMap[gid]||0)*rc+(tskMap[gid]||0)*tc;});
+        // Build from ALL active profiles
         const activeUsers=allUsers.filter(u=>u.active);
         const findTotals=(u)=>{
           const byId=totals[u.game_id];
@@ -831,11 +840,9 @@ function Leaderboard({user,allUsers,shop,weeklyMetricsAll}){
           );
           return key?totals[key]:0;
         };
-        // Track which game_ids profiles cover (case-insensitive)
         const coveredIds=new Set(activeUsers.flatMap(u=>[
           (u.game_id||"").toLowerCase(),(u.username||"").toLowerCase()
         ].filter(Boolean)));
-        // Include metrics entries that have no matching profile (e.g. orphaned game_ids)
         const orphans=Object.entries(totals)
           .filter(([gid])=>!coveredIds.has(gid.toLowerCase()))
           .map(([game_id,pts])=>({game_id,pts,profile:null}));
@@ -1720,9 +1727,8 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
       const rc=coinSettings?.riddle_coins??2;const tc=coinSettings?.task_coins??2;
       const map:Record<string,number>={};
       allUsers.forEach(u=>{
-        const kudo=(u.kudos||0)+(u.gold_kudos||0)*5;
-        const ref=(u.referrals||[]).reduce((s:number,r:any)=>s+(r.approved?5:1),0);
-        map[u.game_id]=(kpiMap[u.game_id]||0)+(rdlMap[u.game_id]||0)*rc+(tskMap[u.game_id]||0)*tc+kudo+ref;
+        // Score = KPI + riddles + tasks (same formula as Leaderboard — no social coins)
+        map[u.game_id]=(kpiMap[u.game_id]||0)+(rdlMap[u.game_id]||0)*rc+(tskMap[u.game_id]||0)*tc;
       });
       setUserScoreMap(map);
     }).catch(()=>{});
@@ -2884,7 +2890,7 @@ export default function App(){
       {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps} isSA={isSA} availableWeeks={availableWeeks} selectedWeek={selectedWeek} lastEvaluatedWeek={lastEvaluatedWeek} onWeekChange={setSelectedWeek} bulletin={bulletin}/>}
       {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle" coinSettings={coinSettings}/>}
       {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task" coinSettings={coinSettings}/>}
-      {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop}/>}
+      {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop} coinSettings={coinSettings}/>}
       {screen==="rewards"&&<Rewards user={cu} prizes={prizes} {...scoreProps} weeklyMetrics={agentWeeklyMetrics} onRedeem={async p=>{
         const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals,coinSettings);
         const cost=p.points_cost||p.pts||0;
