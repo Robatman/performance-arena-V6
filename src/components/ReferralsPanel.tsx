@@ -210,7 +210,7 @@ export default function ReferralsPanel({
           referred_name: newRef.referred_name.trim(),
           referred_phone: newRef.referred_phone.trim() || null,
           referred_email: newRef.referred_email.trim() || null,
-          status: "pending_contact",
+          status: "pending",
           pts_awarded: 1,
           notes: newRef.notes.trim() || null,
           submitted_at: new Date().toISOString(),
