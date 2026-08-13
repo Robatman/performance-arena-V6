@@ -16,7 +16,12 @@ async function sbFetch(path: string, options: any = {}) {
     ...options,
   });
   const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const msg = data?.message || data?.error_description || data?.error || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return data;
 }
 
 type ReferralStatus =
