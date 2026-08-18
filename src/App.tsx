@@ -202,7 +202,7 @@ const rp=(u)=>((u.referrals||[]).reduce((s,r)=>s+(r.approved?5:1),0));
 const gs=(u)=>{const perf=(u.weekly_perf||[]).reduce((s,w)=>s+w.tot,0);const wks=Math.max((u.weekly_perf||[]).length,1);const rdl=u.riddle_completed===wks?10:0;const tp=(u.task_completed||0)/wks;const tsk=tp>=1?10:tp>=0.75?5:tp>=0.5?1:0;return{perf,rdl,tsk,kp:kp(u),rp:rp(u),total:perf+rdl+tsk+kp(u)+rp(u)};};
 
 function adaptProfile(p){return{id:p.id,name:p.full_name,username:p.username,password_hash:p.password_hash,role:p.role==="usuario"?"user":p.role,project:p.team||"",active:p.is_active,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},level:p.monthly_level||p.level||1,puzzlePieces:(p.puzzle_pieces||[]).length,perfectMonths:p.perfect_months||0,kudos:p.kudos||0,goldKudos:p.gold_kudos||0,gold_kudos:p.gold_kudos||0,referrals:p.referrals||[],weekly_perf:p.weekly_perf||[],weeklyPerf:p.weekly_perf||[],riddle_completed:p.riddle_completed||0,riddleCompleted:p.riddle_completed||0,task_completed:p.task_completed||0,taskCompleted:p.task_completed||0,monthsHistory:p.months_history||[],ownedItems:p.owned_items||[],rewards:p.rewards||[],game_id:p.game_id||"",needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,kudosLog:p.kudos_log||[],points_total:p.points_total||0,coins:p.coins||0,monthly_level:p.monthly_level||1,coach_id:p.coach_id||"",qa_coach:p.qa_coach||"",appType:"agents",consecutive_weeks_on_target:p.consecutive_weeks_on_target||0,weeks_at_elite:p.weeks_at_elite||0,level_history:p.level_history||[]};}
-function adaptStaffProfile(p){return{id:p.id,gameId:p.game_id||"",username:p.username,name:p.full_name||p.username||"",password_hash:p.password_hash,role:p.role,project:(p.project||"").trim(),managerId:p.manager_id,active:p.is_active,needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},ownedItems:p.owned_items||[],level:p.level||1,appType:"staff"};}
+function adaptStaffProfile(p){return{id:p.id,gameId:p.game_id||"",username:p.username,name:p.full_name||p.username||"",password_hash:p.password_hash,role:p.role,project:(p.project||"").trim(),managerId:p.manager_id,active:p.is_active,needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},ownedItems:p.owned_items||[],coins:p.coins||0,level:p.level||1,appType:"staff"};}
 
 // ─── UI ATOMS ─────────────────────────────────────────────────────────────────
 function Av({av,sz=80,shop}){const items=shop||DEFAULT_SHOP;const base=BASES.find(b=>b.id===(av?.base||"b1"));const hair=items.find(i=>i.id===av?.hair);const acc=items.find(i=>i.id===av?.accessory);const out=items.find(i=>i.id===av?.outfit);const bg=items.find(i=>i.id===av?.background);const bm={g1:"linear-gradient(135deg,#0a0a40,#1a1aff)",g2:"linear-gradient(135deg,#ff6b35,#f00)",g3:"linear-gradient(135deg,#00d4ff,#0057ff)",g4:"linear-gradient(135deg,#ff9ff3,#ffd700)",g5:"linear-gradient(135deg,#22c55e,#0ea5e9)",g6:"linear-gradient(135deg,#1e1b4b,#f59e0b)",g7:"linear-gradient(135deg,#0369a1,#06b6d4)",g8:"linear-gradient(135deg,#7f1d1d,#f97316)"};const bgs=bg?(bm[bg.id]||`linear-gradient(135deg,${C.bg},${C.bgDk})`):(`linear-gradient(135deg,${C.bg},${C.bgDk})`);return(<div style={{width:sz,height:sz,borderRadius:"50%",background:bgs,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",overflow:"hidden",flexShrink:0,position:"relative",border:`2.5px solid ${C.blue}`,boxShadow:`0 0 0 1px ${C.border}`}}>{out&&<div style={{position:"absolute",bottom:0,left:0,right:0,height:"40%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.22}}>{out.emoji}</div>}<div style={{fontSize:sz*0.42,lineHeight:1,zIndex:2}}>{base?.emoji||"😊"}</div>{hair&&<div style={{position:"absolute",top:-2,fontSize:sz*0.26,zIndex:3}}>{hair.emoji}</div>}{acc&&<div style={{position:"absolute",top:"28%",right:"5%",fontSize:sz*0.22,zIndex:4}}>{acc.emoji}</div>}</div>);}
@@ -2496,16 +2496,54 @@ function StaffProfile({user,onUpdate,toast}){const [av,setAv]=useState(user.avat
 
 function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
   const [showExcel,setShowExcel]=useState(false);
+  const [form,setForm]=useState({gameId:"",password:"",role:"team_coach",project:""});
+  const [filter,setFilter]=useState("active");
+  const [loading,setLoading]=useState(false);
+  const [expandedId,setExpandedId]=useState(null);
+  const [expandMode,setExpandMode]=useState(null);
+  const [stats,setStats]=useState({});
+  const [statsLoading,setStatsLoading]=useState(true);
+  const [editForm,setEditForm]=useState({});
+  const [grantForm,setGrantForm]=useState({});
+  const [resetId,setResetId]=useState(null);
+  const [newPw,setNewPw]=useState("");
   const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};
-  const blank={gameId:"",password:"",role:"team_coach",project:""};
-  const [form,setForm]=useState(blank);const [filter,setFilter]=useState("active");
-  const [resetId,setResetId]=useState(null);const [newPw,setNewPw]=useState("");const [loading,setLoading]=useState(false);
   const roleColor={team_coach:S.accent,quality_coach:S.green,training_coach:S.purple,manager:S.yellow,training_manager:"#f97316",superadmin:S.red};
-  const createStaff=async()=>{if(!form.gameId.trim()||!form.password.trim()||!form.project.trim()){toast("Complete Game ID, password and project");return;}if(allStaff.find(s=>s.gameId===form.gameId.trim())){toast("Error: Game ID already exists");return;}setLoading(true);try{await staffDb.create({game_id:form.gameId.trim(),username:form.gameId.trim(),full_name:form.gameId.trim(),password_hash:form.password,role:form.role,project:form.project,is_active:true,level:1,coins:0});await reloadStaff();setForm(blank);toast(`${form.gameId} created`);}catch(e){toast("Error: "+e.message);}setLoading(false);};
+  const qBtn=(active,color)=>({padding:"5px 9px",borderRadius:7,border:`1px solid ${active?color:S.border}`,background:active?`${color}22`:S.bgCard,color:active?color:S.muted,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"});
+  const SRC={auto_kpi:"📊",manual_bonus:"💰",coaching_session:"🎯",innovation:"🚀",store_purchase:"🛒"};
+
+  useEffect(()=>{loadStats();},[allStaff.length]);
+
+  const loadStats=async()=>{
+    setStatsLoading(true);
+    const [acts,sessions,kudos,ptsLog]=await Promise.all([
+      sbFetch("staff_activities?select=staff_game_id,status&limit=2000").catch(()=>[]),
+      sbFetch("coaching_sessions?select=coach_game_id,status&limit=2000").catch(()=>[]),
+      sbFetch("staff_kudos?select=recipient_id,kudo_type&status=eq.approved&limit=2000").catch(()=>[]),
+      sbFetch("staff_points_log?select=staff_game_id,points,description,source,created_at,week&status=eq.approved&order=created_at.desc&limit=3000").catch(()=>[]),
+    ]);
+    const map={};
+    allStaff.forEach(u=>{
+      const gid=u.gameId;
+      const uActs=(acts||[]).filter(a=>a.staff_game_id===gid);
+      const uSess=(sessions||[]).filter(s=>s.coach_game_id===gid);
+      const uKudos=(kudos||[]).filter(k=>k.recipient_id===u.id);
+      const uLog=(ptsLog||[]).filter(p=>p.staff_game_id===gid);
+      map[gid]={approved:uActs.filter(a=>a.status==="approved").length,pending:uActs.filter(a=>a.status==="pending").length,sessions:uSess.filter(s=>s.status==="completed").length,kudos:uKudos.length,log:uLog.slice(0,15)};
+    });
+    setStats(map);setStatsLoading(false);
+  };
+
+  const createStaff=async()=>{if(!form.gameId.trim()||!form.password.trim()||!form.project.trim()){toast("Complete Game ID, password and project");return;}if(allStaff.find(s=>s.gameId===form.gameId.trim())){toast("Error: Game ID already exists");return;}setLoading(true);try{await staffDb.create({game_id:form.gameId.trim(),username:form.gameId.trim(),full_name:form.gameId.trim(),password_hash:form.password,role:form.role,project:form.project,is_active:true,level:1,coins:0});await reloadStaff();setForm({gameId:"",password:"",role:"team_coach",project:""});toast(`${form.gameId} created`);}catch(e){toast("Error: "+e.message);}setLoading(false);};
   const toggleActive=async(u)=>{try{await staffDb.update(u.id,{is_active:!u.active});await reloadStaff();toast(u.active?"Deactivated":"Activated");}catch(e){toast("Error");}};
   const deleteStaff=async(u)=>{if(!window.confirm(`Delete ${u.gameId}? This cannot be undone.`))return;try{await sbFetch(`staff_profiles?id=eq.${u.id}`,{method:"DELETE"});await reloadStaff();toast(`${u.gameId} deleted`);}catch(e){toast("Error: "+e.message);}};
   const savePw=async(u)=>{if(!newPw.trim()||newPw.length<4){toast("Minimum 4 characters");return;}try{await staffDb.update(u.id,{password_hash:newPw.trim(),needs_pw_change:true,temp_pw:newPw.trim()});await reloadStaff();setResetId(null);setNewPw("");toast("Password set");}catch(e){toast("Error");}};
+  const saveEdit=async(u)=>{const ef=editForm[u.gameId]||{};try{await staffDb.update(u.id,{role:ef.role||u.role,project:ef.project??u.project});await reloadStaff();toast(`Updated ${u.gameId}`);setExpandedId(null);setExpandMode(null);}catch(e){toast("Error: "+e.message);}};
+  const resetStats=async(u)=>{if(!window.confirm(`Reset coins AND points for ${u.gameId}?`))return;try{await sbFetch(`staff_profiles?id=eq.${u.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({coins:0})});const curPts=u.monthPts||0;if(curPts>0)await sbFetch("staff_points_log",{method:"POST",prefer:"return=minimal",body:JSON.stringify({staff_game_id:u.gameId,points:-curPts,source:"manual_bonus",description:`🔄 Reset (SA: ${cu.gameId})`,status:"approved",created_at:new Date().toISOString()})});await reloadStaff();await loadStats();toast(`Reset: ${u.gameId}`);}catch(e){toast("Error: "+e.message);}};
+  const grantPoints=async(u)=>{const gf=grantForm[u.gameId]||{};const pts=Number(gf.pts);if(!pts||!gf.reason?.trim()){toast("Completa puntos y motivo");return;}try{await sbFetch("staff_points_log",{method:"POST",prefer:"return=minimal",body:JSON.stringify({staff_game_id:u.gameId,points:pts,source:"manual_bonus",description:`💰 ${gf.reason} (SA: ${cu.gameId})`,status:"approved",granted_by:cu.gameId,created_at:new Date().toISOString()})});await sbFetch(`staff_profiles?id=eq.${u.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({coins:(u.coins||0)+pts})});await reloadStaff();await loadStats();setGrantForm(p=>({...p,[u.gameId]:{}}));toast(`+${pts} → ${u.gameId}`);}catch(e){toast("Error: "+e.message);}};
+  const toggleExpand=(gid,mode)=>{if(expandedId===gid&&expandMode===mode){setExpandedId(null);setExpandMode(null);}else{setExpandedId(gid);setExpandMode(mode);}};
   const filtered=allStaff.filter(u=>filter==="active"?u.active:!u.active);
+
   return(
     <div style={{paddingBottom:100,background:S.bg,minHeight:"100vh"}}>
       {showExcel&&<ExcelUpload onClose={async()=>{setShowExcel(false);await reloadStaff();}}/>}
@@ -2533,34 +2571,114 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
           </button>
         ))}
       </div>
-      {filtered.map(u=>(
-        <SCard key={u.id} style={{marginBottom:10,opacity:u.active?1:0.6}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:40,height:40,borderRadius:"50%",background:`${roleColor[u.role]||S.accent}22`,border:`1px solid ${roleColor[u.role]||S.accent}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{ROLE_EMOJI[u.role]||"👤"}</div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{color:S.text,fontWeight:700,fontSize:14}}>{u.name}</div>
-              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:3}}>
-                <STag color={roleColor[u.role]||S.accent}>{STAFF_ROLES[u.role]}</STag>
-                <STag color={S.muted}>{u.project}</STag>
-                <STag color={u.active?S.green:S.red}>{u.active?"ACTIVE":"INACTIVE"}</STag>
+      {filtered.map(u=>{
+        const st=stats[u.gameId]||{};
+        const isExp=expandedId===u.gameId;
+        const ef=editForm[u.gameId]||{};
+        const gf=grantForm[u.gameId]||{};
+        const rc=roleColor[u.role]||S.accent;
+        return(
+          <SCard key={u.id} style={{marginBottom:10,opacity:u.active?1:0.65,border:`1px solid ${isExp?`${rc}44`:S.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:40,height:40,borderRadius:"50%",background:`${rc}22`,border:`1px solid ${rc}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{ROLE_EMOJI[u.role]||"👤"}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{color:S.text,fontWeight:700,fontSize:14}}>{u.name}</div>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:3}}>
+                  <STag color={rc}>{STAFF_ROLES[u.role]}</STag>
+                  <STag color={S.muted}>{u.project}</STag>
+                  <STag color={u.active?S.green:S.red}>{u.active?"ACTIVE":"INACTIVE"}</STag>
+                </div>
               </div>
+              {u.id!==cu.id&&(
+                <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
+                  <SBtn onClick={()=>toggleActive(u)} color={u.active?S.red:S.green} sm>{u.active?"Deactivate":"Activate"}</SBtn>
+                  <SBtn onClick={()=>{setResetId(resetId===u.id?null:u.id);setNewPw("");}} color={S.yellow} sm>Password</SBtn>
+                  <SBtn onClick={()=>deleteStaff(u)} color={S.red} sm>Delete</SBtn>
+                </div>
+              )}
             </div>
-            {u.id!==cu.id&&(
-              <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
-                <SBtn onClick={()=>toggleActive(u)} color={u.active?S.red:S.green} sm>{u.active?"Deactivate":"Activate"}</SBtn>
-                <SBtn onClick={()=>{setResetId(resetId===u.id?null:u.id);setNewPw("");}} color={S.yellow} sm>Password</SBtn>
-                <SBtn onClick={()=>deleteStaff(u)} color={S.red} sm>Delete</SBtn>
+            {/* Stats grid */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginTop:12}}>
+              {[
+                {icon:"🪙",label:"Coins",val:u.coins??0,color:S.yellow},
+                {icon:"📊",label:"Puntos",val:u.monthPts??0,color:S.green},
+                {icon:"⚡",label:"Act OK",val:statsLoading?"-":(st.approved??0),color:S.accent},
+                {icon:"🎯",label:"Sessions",val:statsLoading?"-":(st.sessions??0),color:S.purple},
+                {icon:"👏",label:"Kudos",val:statsLoading?"-":(st.kudos??0),color:"#f472b6"},
+              ].map(item=>(
+                <div key={item.label} style={{background:`${item.color}12`,border:`1px solid ${item.color}28`,borderRadius:8,padding:"6px 4px",textAlign:"center"}}>
+                  <div style={{fontSize:14}}>{item.icon}</div>
+                  <div style={{color:item.color,fontWeight:900,fontSize:16,lineHeight:1.2}}>{item.val}</div>
+                  <div style={{color:S.muted,fontSize:9,marginTop:1}}>{item.label}</div>
+                </div>
+              ))}
+            </div>
+            {!statsLoading&&(st.pending||0)>0&&(
+              <div style={{marginTop:8,display:"inline-block",padding:"3px 10px",background:`${S.yellow}18`,borderRadius:6,border:`1px solid ${S.yellow}33`,fontSize:11,color:S.yellow}}>
+                ⏳ {st.pending} actividad{st.pending!==1?"es":""} pendiente{st.pending!==1?"s":""}
               </div>
             )}
-          </div>
-          {resetId===u.id&&(
-            <div style={{marginTop:12,padding:"12px 14px",background:`${S.yellow}18`,borderRadius:10,border:`1px solid ${S.yellow}44`,display:"flex",gap:8,alignItems:"flex-end"}}>
-              <div style={{flex:1}}><div style={{color:S.yellow,fontSize:11,fontWeight:700,marginBottom:4}}>TEMP PASSWORD</div><input type="text" value={newPw} onChange={e=>setNewPw(e.target.value)} style={inp}/></div>
-              <SBtn onClick={()=>savePw(u)} color={S.green} sm>Save</SBtn>
-            </div>
-          )}
-        </SCard>
-      ))}
+            {/* Action buttons */}
+            {u.id!==cu.id&&(
+              <div style={{display:"flex",gap:5,marginTop:10,flexWrap:"wrap"}}>
+                <button onClick={()=>toggleExpand(u.gameId,"history")} style={qBtn(isExp&&expandMode==="history",S.accent)}>📋 Historial</button>
+                <button onClick={()=>{toggleExpand(u.gameId,"grant");setGrantForm(p=>({...p,[u.gameId]:{pts:"",reason:""}}));}} style={qBtn(isExp&&expandMode==="grant",S.green)}>💰 Dar puntos</button>
+                <button onClick={()=>{toggleExpand(u.gameId,"edit");setEditForm(p=>({...p,[u.gameId]:{role:u.role,project:u.project}}));}} style={qBtn(isExp&&expandMode==="edit",S.yellow)}>✏️ Editar</button>
+                <button onClick={()=>resetStats(u)} style={qBtn(false,"#f97316")}>🔄 Reset</button>
+              </div>
+            )}
+            {/* Password reset */}
+            {resetId===u.id&&(
+              <div style={{marginTop:10,padding:"12px 14px",background:`${S.yellow}18`,borderRadius:10,border:`1px solid ${S.yellow}44`,display:"flex",gap:8,alignItems:"flex-end"}}>
+                <div style={{flex:1}}><div style={{color:S.yellow,fontSize:11,fontWeight:700,marginBottom:4}}>TEMP PASSWORD</div><input type="text" value={newPw} onChange={e=>setNewPw(e.target.value)} style={inp}/></div>
+                <SBtn onClick={()=>savePw(u)} color={S.green} sm>Save</SBtn>
+                <SBtn onClick={()=>setResetId(null)} color={S.muted} sm>✕</SBtn>
+              </div>
+            )}
+            {/* Historial */}
+            {isExp&&expandMode==="history"&&(
+              <div style={{marginTop:12,borderTop:`1px solid ${S.border}`,paddingTop:12}}>
+                <div style={{color:S.muted,fontSize:10,fontWeight:700,letterSpacing:1,marginBottom:8}}>HISTORIAL DE PUNTOS (últimos 15)</div>
+                {(st.log||[]).length===0&&<div style={{color:S.muted,fontSize:12}}>Sin registros.</div>}
+                {(st.log||[]).map((p,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:i<(st.log||[]).length-1?`1px solid ${S.border}`:"none"}}>
+                    <div>
+                      <div style={{color:S.text,fontSize:12}}>{SRC[p.source]||"•"} {(p.description||"").replace(/^[📊💰🎯🚀🛒🔄]\s*/,"")}</div>
+                      <div style={{color:S.muted,fontSize:10}}>{new Date(p.created_at).toLocaleDateString("es-MX")}{p.week?` · ${p.week}`:""}</div>
+                    </div>
+                    <span style={{color:p.points>=0?S.green:S.red,fontWeight:900,fontSize:13,flexShrink:0,marginLeft:8}}>{p.points>=0?"+":""}{p.points}🪙</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Dar puntos */}
+            {isExp&&expandMode==="grant"&&(
+              <div style={{marginTop:12,borderTop:`1px solid ${S.border}`,paddingTop:12}}>
+                <div style={{color:S.muted,fontSize:10,fontWeight:700,letterSpacing:1,marginBottom:8}}>OTORGAR PUNTOS</div>
+                <div style={{display:"grid",gridTemplateColumns:"90px 1fr",gap:8,marginBottom:8}}>
+                  <div><div style={{color:S.muted,fontSize:10,marginBottom:3}}>PUNTOS</div><input type="number" value={gf.pts||""} onChange={e=>setGrantForm(p=>({...p,[u.gameId]:{...gf,pts:e.target.value}}))} style={inp} placeholder="10"/></div>
+                  <div><div style={{color:S.muted,fontSize:10,marginBottom:3}}>MOTIVO</div><input value={gf.reason||""} onChange={e=>setGrantForm(p=>({...p,[u.gameId]:{...gf,reason:e.target.value}}))} style={inp} placeholder="Descripción del bono"/></div>
+                </div>
+                <SBtn onClick={()=>grantPoints(u)} color={S.green} style={{width:"100%"}} sm>Otorgar puntos</SBtn>
+              </div>
+            )}
+            {/* Editar */}
+            {isExp&&expandMode==="edit"&&(
+              <div style={{marginTop:12,borderTop:`1px solid ${S.border}`,paddingTop:12}}>
+                <div style={{color:S.muted,fontSize:10,fontWeight:700,letterSpacing:1,marginBottom:8}}>EDITAR USUARIO</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                  <div><div style={{color:S.muted,fontSize:10,marginBottom:3}}>ROL</div><select value={ef.role||u.role} onChange={e=>setEditForm(p=>({...p,[u.gameId]:{...ef,role:e.target.value}}))} style={inp}>{Object.entries(STAFF_ROLES).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
+                  <div><div style={{color:S.muted,fontSize:10,marginBottom:3}}>PROYECTO</div><input value={ef.project??u.project} onChange={e=>setEditForm(p=>({...p,[u.gameId]:{...ef,project:e.target.value}}))} style={inp}/></div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <SBtn onClick={()=>saveEdit(u)} color={S.green} sm style={{flex:1}}>Guardar</SBtn>
+                  <SBtn onClick={()=>setExpandedId(null)} color={S.muted} sm>Cancelar</SBtn>
+                </div>
+              </div>
+            )}
+          </SCard>
+        );
+      })}
     </div>
   );
 }
