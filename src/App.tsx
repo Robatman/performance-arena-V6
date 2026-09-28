@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import ExcelUpload from "./components/ExcelUpload";
 import ReferralsPanel from "./components/ReferralsPanel";
 import OperationsDashboard from "./components/OperationsDashboard";
@@ -53,9 +53,6 @@ const db = {
   clearBulletin: (id) => sbFetch(`weekly_bulletin?id=eq.${id}`, {method:"PATCH", body:JSON.stringify({activities:[]})}),
   getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&select=id,user_id,reward_id,points_spent,status,redeemed_at,reward_name&order=redeemed_at.desc`),
   getAllRedemptions: () => sbFetch(`reward_redemptions?select=id,user_id,reward_id,points_spent,coins_spent,status,redeemed_at,reward_name&order=redeemed_at.desc&limit=500`),
-  // Coins history
-  addCoinsTransaction: (d) => sbFetch("coins_transactions", { method: "POST", body: JSON.stringify(d) }),
-  getCoinsHistory: (uid) => sbFetch(`coins_transactions?agent_id=eq.${uid}&order=created_at.desc&limit=50`),
   // Weekly metrics
   getWeeklyMetrics: (gameId) => sbFetch(`weekly_metrics?game_id=eq.${encodeURIComponent(gameId)}&select=*&order=week.asc`),
   getAllWeeklyMetrics: () => sbFetch(`weekly_metrics?select=*&order=game_id.asc`),
@@ -195,11 +192,6 @@ const INNOVATION_CATS={ai_project:{label:"AI Project",emoji:"🤖",pts:15,adminO
 
 const lc=(l)=>LEVEL_META[l]?.color||C.muted;
 const ln=(l)=>LEVEL_META[l]?.name||"";
-const kp=(u)=>(u.kudos||0)+(u.gold_kudos||0)*5;
-const rp=(u)=>((u.referrals||[]).reduce((s,r)=>s+(r.approved?5:1),0));
-
-// Legacy gs() kept for compatibility — use calcScoreCoins for new logic
-const gs=(u)=>{const perf=(u.weekly_perf||[]).reduce((s,w)=>s+w.tot,0);const wks=Math.max((u.weekly_perf||[]).length,1);const rdl=u.riddle_completed===wks?10:0;const tp=(u.task_completed||0)/wks;const tsk=tp>=1?10:tp>=0.75?5:tp>=0.5?1:0;return{perf,rdl,tsk,kp:kp(u),rp:rp(u),total:perf+rdl+tsk+kp(u)+rp(u)};};
 
 function adaptProfile(p){return{id:p.id,name:p.full_name,username:p.username,password_hash:p.password_hash,role:p.role==="usuario"?"user":p.role,project:p.team||"",active:p.is_active,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},level:p.monthly_level||p.level||1,puzzlePieces:(p.puzzle_pieces||[]).length,perfectMonths:p.perfect_months||0,kudos:p.kudos||0,goldKudos:p.gold_kudos||0,gold_kudos:p.gold_kudos||0,referrals:p.referrals||[],weekly_perf:p.weekly_perf||[],weeklyPerf:p.weekly_perf||[],riddle_completed:p.riddle_completed||0,riddleCompleted:p.riddle_completed||0,task_completed:p.task_completed||0,taskCompleted:p.task_completed||0,monthsHistory:p.months_history||[],ownedItems:p.owned_items||[],rewards:p.rewards||[],game_id:p.game_id||"",needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,kudosLog:p.kudos_log||[],points_total:p.points_total||0,coins:p.coins||0,monthly_level:p.monthly_level||1,coach_id:p.coach_id||"",qa_coach:p.qa_coach||"",appType:"agents",consecutive_weeks_on_target:p.consecutive_weeks_on_target||0,weeks_at_elite:p.weeks_at_elite||0,level_history:p.level_history||[]};}
 function adaptStaffProfile(p){return{id:p.id,gameId:p.game_id||"",username:p.username,name:p.full_name||p.username||"",password_hash:p.password_hash,role:p.role,project:(p.project||"").trim(),managerId:p.manager_id,active:p.is_active,needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},ownedItems:p.owned_items||[],coins:p.coins||0,level:p.level||1,appType:"staff"};}
@@ -231,12 +223,26 @@ function ScorePill({label,val,color,icon}){
 }
 
 // ─── LEVEL PROGRESS CARD ─────────────────────────────────────────────────────
-function LevelProgressCard({level=1, streak=0, weeksAtElite=0, levelHistory=[], totalCoins=0}){
+function LevelProgressCard({level=1, streak=0, weeksAtElite=0, levelHistory=[], totalCoins=0, onClick, expanded=false}){
   const lm = LEVEL_META[level] || LEVEL_META[1];
   const target = level === 1 ? 3 : level === 2 ? 9 : 4;
   const current = level === 3 ? weeksAtElite : streak;
 
+  const recentHistory = (levelHistory||[]).slice(-9);
+  const lastWeek = recentHistory[recentHistory.length-1];
+  const prevWeek = recentHistory[recentHistory.length-2];
+  const justDropped = lastWeek && prevWeek && lastWeek.level < prevWeek.level;
+
   const getMsg = () => {
+    // A drop that just happened reads differently depending on WHY it happened
+    // (the ELITE 4-week cycle completing on a good week vs. an actual bad week
+    // breaking the streak) — both are true facts read off level_history, not
+    // invented coaching advice.
+    if (justDropped) {
+      if (lastWeek.on_target) return "🏁 Ciclo ELITE completo — el trono fue reclamado. Vuelves al inicio, ¿tienes lo que se necesita para reconquistarlo?";
+      if (prevWeek.level === 3) return "☠️ Caída desde ELITE — de la cima al inicio en una semana. 3 semanas perfectas para recuperar RISING.";
+      if (prevWeek.level === 2) return "💥 ¡RISING perdido! Una semana fuera de meta y volviste a ROOKIE. El contador se reinicia.";
+    }
     if (level === 1) {
       if (streak === 0) return "¡Empieza tu racha! 3 semanas perfectas para ser RISING";
       if (streak === 2) return "¡Casi! 1 semana más y serás RISING";
@@ -252,10 +258,8 @@ function LevelProgressCard({level=1, streak=0, weeksAtElite=0, levelHistory=[], 
     return `ELITE semana ${weeksAtElite}/4 — ${4-weeksAtElite} semana${4-weeksAtElite===1?"":"s"} restante${4-weeksAtElite===1?"":"s"}`;
   };
 
-  const recentHistory = (levelHistory||[]).slice(-9);
-
   return(
-    <Card style={{marginBottom:12,background:`linear-gradient(135deg,${C.blue} 0%,${C.blueDk} 60%,${C.red} 100%)`,border:"none",color:"#fff"}}>
+    <Card onClick={onClick} style={{marginBottom:12,background:`linear-gradient(135deg,${C.blue} 0%,${C.blueDk} 60%,${C.red} 100%)`,border:"none",color:"#fff"}}>
       {/* Header */}
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14}}>
         <div>
@@ -298,67 +302,74 @@ function LevelProgressCard({level=1, streak=0, weeksAtElite=0, levelHistory=[], 
           ))}
         </div>
       )}
+
+      {onClick&&(
+        <div style={{textAlign:"center",marginTop:10,color:"rgba(255,255,255,0.55)",fontSize:11,fontWeight:700}}>
+          {expanded?"▴ Ocultar detalle":"▾ Ver por qué"}
+        </div>
+      )}
     </Card>
   );
 }
 
-// ─── SCORE BREAKDOWN CARD ─────────────────────────────────────────────────────
-function ScoreBreakdownCard({sc}){
-  const rows = [
-    { icon:"🎯", label:"KPI (QA+AHT+Att)", val:sc.kpiScore, color:C.blue, desc:"métricas semanales", forScore:true },
-    { icon:"🧠", label:"Riddles aprobados", val:sc.riddleScore, color:C.purple, desc:`${sc.riddleScore/2|0} riddles × 2pts`, forScore:true },
-    { icon:"📋", label:"Tasks aprobadas",  val:sc.taskScore,   color:C.red,   desc:`${sc.taskScore/2|0} tasks × 2pts`,   forScore:true },
-    { icon:"👏", label:"Kudos",            val:sc.kudosCoins,  color:C.gold,  desc:"solo cuentan como coins", forScore:false },
-    { icon:"🤝", label:"Referidos",        val:sc.refCoins,    color:C.green, desc:"solo cuentan como coins", forScore:false },
-  ];
+// ─── WEEK DETAIL CARD — "why did I go up/down" ──────────────────────────────
+// Replaces the old ScoreBreakdownCard: agents no longer see a raw "Score"
+// number mixed with "Coins" (two currencies that only confused the main
+// screen). Instead, tapping the level card reveals the real reason behind
+// this week's result — QA/AHT/Attendance vs. their actual goals, the data
+// ExcelUpload already captures (qa_pct/qa_goal/aht/aht_goal/attendance_status)
+// but that never reached the agent's own screen before.
+function fmtAht(sec){
+  if(sec===null||sec===undefined) return "—";
+  const m=Math.floor(sec/60), s=Math.round(sec%60);
+  return `${m}:${String(s).padStart(2,"0")}`;
+}
 
+function MetricRow({icon,label,note,pts}){
+  const ok=pts===5, warn=pts===2;
+  const statusIcon=ok?"✅":warn?"⚠️":"❌";
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${C.border}`}}>
+      <span style={{fontSize:16,width:22}}>{icon}</span>
+      <div style={{flex:1}}>
+        <div style={{color:C.text,fontWeight:700,fontSize:13}}>{label}</div>
+        <div style={{color:C.muted,fontSize:11}}>{note}</div>
+      </div>
+      <span style={{fontSize:15}}>{statusIcon}</span>
+    </div>
+  );
+}
+
+function WeekDetailCard({week}){
+  if(!week){
+    return(
+      <Card style={{marginBottom:12,textAlign:"center",padding:24}}>
+        <div style={{color:C.muted,fontSize:13}}>Aún no hay una semana evaluada.</div>
+      </Card>
+    );
+  }
+  const rows=[
+    {icon:"🎯",label:"QA",note:`${week.qa_pct??"—"}% (meta ${week.qa_goal??"—"}%)`,pts:week.qa_pts},
+    {icon:"⏱️",label:"AHT",note:`${fmtAht(week.aht)} (meta ${fmtAht(week.aht_goal)})`,pts:week.aht_pts},
+    {icon:"📅",label:"Attendance",note:
+      week.attendance_status==="excused"?"Semana excusada":
+      week.attendance_status==="perfect"?"Asistencia perfecta":
+      week.attendance_status==="late"?`${week.tardies||1} tardanza`:
+      `${week.absences||0} falta(s) · ${week.tardies||0} tardanza(s)`,
+      pts:week.attendance_pts},
+  ];
+  const allPerfect=rows.every(r=>r.pts===5);
+  const failing=rows.filter(r=>r.pts!==5).map(r=>r.label);
   return(
     <Card style={{marginBottom:12}}>
-      <div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:12,fontWeight:700}}>DESGLOSE DE PUNTOS</div>
-
-      {/* Score section */}
-      <div style={{background:`${C.blue}08`,borderRadius:10,padding:"10px 12px",marginBottom:8,border:`1px solid ${C.blue}20`}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{color:C.blue,fontWeight:800,fontSize:12,letterSpacing:1}}>📊 SCORE (determina nivel)</div>
-          <div style={{color:C.blue,fontWeight:900,fontSize:16}}>{sc.score} pts</div>
-        </div>
-        {rows.filter(r=>r.forScore).map(r=>(
-          <div key={r.label} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-            <span style={{fontSize:14,width:20}}>{r.icon}</span>
-            <div style={{flex:1}}>
-              <span style={{color:C.text,fontSize:13,fontWeight:600}}>{r.label}</span>
-              <span style={{color:C.muted,fontSize:11}}> · {r.desc}</span>
-            </div>
-            <span style={{color:r.color,fontWeight:800,fontSize:14}}>{r.val}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Coins extras section */}
-      <div style={{background:`${C.gold}08`,borderRadius:10,padding:"10px 12px",border:`1px solid ${C.gold}20`}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{color:C.gold,fontWeight:800,fontSize:12,letterSpacing:1}}>🪙 COINS EXTRA (solo tienda)</div>
-          <div style={{color:C.gold,fontWeight:900,fontSize:16}}>{sc.kudosCoins + sc.refCoins}</div>
-        </div>
-        {rows.filter(r=>!r.forScore).map(r=>(
-          <div key={r.label} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-            <span style={{fontSize:14,width:20}}>{r.icon}</span>
-            <div style={{flex:1}}>
-              <span style={{color:C.text,fontSize:13,fontWeight:600}}>{r.label}</span>
-              <span style={{color:C.muted,fontSize:11}}> · {r.desc}</span>
-            </div>
-            <span style={{color:r.color,fontWeight:800,fontSize:14}}>{r.val}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Total coins */}
-      <div style={{marginTop:10,padding:"10px 12px",background:`${C.gold}12`,borderRadius:10,border:`1.5px solid ${C.gold}40`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          <span style={{fontSize:18}}>🪙</span>
-          <span style={{color:C.text,fontWeight:800,fontSize:14}}>Total Coins</span>
-        </div>
-        <span style={{color:C.gold,fontWeight:900,fontSize:20}}>{sc.coins}</span>
+      <div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:6,fontWeight:700}}>POR QUÉ{week.week?` · ${week.week}`:""}</div>
+      {rows.map(r=><MetricRow key={r.label} {...r}/>)}
+      <div style={{marginTop:12,padding:"10px 12px",borderRadius:10,background:allPerfect?`${C.green}10`:`${C.red}08`,border:`1px solid ${allPerfect?C.green:C.red}30`}}>
+        {allPerfect?(
+          <div style={{color:C.green,fontWeight:700,fontSize:13}}>🔥 15/15 — esta es la semana que suma para tu racha.</div>
+        ):(
+          <div style={{color:C.red,fontWeight:700,fontSize:13}}>{failing.join(" y ")} no llegó a meta esta semana — coméntalo con tu coach para ver qué ajustar.</div>
+        )}
       </div>
     </Card>
   );
@@ -704,20 +715,13 @@ function BulletinCard({bulletin}){
 }
 
 function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, coinSettings={}, totalCoins=0, level=1, streak=0, weeksAtElite=0, levelHistory=[]}){
-  const sc = calcScoreCoins(
-    weeklyMetrics,
-    riddleAnswers,
-    taskSubmissions,
-    user.kudos,
-    user.gold_kudos,
-    user.referrals,
-    coinSettings
-  );
+  const [showWeekDetail, setShowWeekDetail] = useState(false);
 
   return(
     <div style={{paddingBottom:100}}>
-      {/* Level + Score card */}
-      <LevelProgressCard level={level} streak={streak} weeksAtElite={weeksAtElite} levelHistory={levelHistory} totalCoins={totalCoins}/>
+      {/* Level card — tap to see WHY this week went the way it did */}
+      <LevelProgressCard level={level} streak={streak} weeksAtElite={weeksAtElite} levelHistory={levelHistory} totalCoins={totalCoins} expanded={showWeekDetail} onClick={()=>setShowWeekDetail(v=>!v)}/>
+      {showWeekDetail&&<WeekDetailCard week={(weeklyMetrics||[])[(weeklyMetrics||[]).length-1]}/>}
 
       {isSA&&availableWeeks.length>0&&(<Card style={{marginBottom:12,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:2}}>SEMANA VISUALIZADA</div><div style={{color:C.blue,fontWeight:700,fontSize:13}}>Última evaluada: {availableWeeks[0]}</div></div><select value={selectedWeek} onChange={e=>onWeekChange(e.target.value)} style={{border:`1.5px solid ${C.border}`,borderRadius:8,padding:"7px 11px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,cursor:"pointer"}}>{availableWeeks.map(w=><option key={w} value={w}>{w}</option>)}</select></div></Card>)}
       {!isSA&&lastEvaluatedWeek&&(<Card style={{marginBottom:12,padding:"10px 14px",background:`${C.blue}06`,border:`1.5px solid ${C.blue}20`}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>📅</span><div style={{color:C.muted,fontSize:12}}>Última semana evaluada: <strong style={{color:C.blue}}>{lastEvaluatedWeek}</strong></div></div></Card>)}
@@ -735,9 +739,6 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
           <div style={{color:C.gold,fontWeight:900,fontSize:22}}>{user.perfectMonths} ★</div>
         </div>
       </Card>
-
-      {/* Score breakdown */}
-      <ScoreBreakdownCard sc={sc}/>
 
       {/* Mi equipo */}
       <Card style={{marginBottom:12,border:`1.5px solid ${C.blue}22`}}>
@@ -800,7 +801,16 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
   );
 }
 
-function Leaderboard({user,allUsers,shop,coinSettings={}}){
+// Small up/down movement indicator vs. last evaluated week. `delta` is in
+// RANK positions (positive = moved up, i.e. rank number got smaller).
+function RankDelta({delta}){
+  if(delta===null||delta===undefined) return <span style={{color:C.muted,fontSize:11,fontWeight:700}}>—</span>;
+  if(delta===0) return <span style={{color:C.muted,fontSize:11,fontWeight:700}}>▬ 0</span>;
+  const up=delta>0;
+  return <span style={{color:up?"#22c55e":"#ef4444",fontSize:11,fontWeight:700}}>{up?"▲":"▼"} {Math.abs(delta)}</span>;
+}
+
+function Leaderboard({user,allUsers,shop,coinSettings={},lastEvaluatedWeek}){
   const [lbSearch,setLbSearch]=useState("");
   const [levelFilter,setLevelFilter]=useState(null);
   const [rankings,setRankings]=useState([]);
@@ -812,58 +822,142 @@ function Leaderboard({user,allUsers,shop,coinSettings={}}){
       try{
         const hdr={apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`};
         const [kpiRes,rdlRes,tskRes]=await Promise.all([
-          fetch(`${SUPABASE_URL}/rest/v1/weekly_metrics?select=game_id,qa_pts,aht_pts,attendance_pts&order=game_id.asc`,{headers:hdr}),
+          fetch(`${SUPABASE_URL}/rest/v1/weekly_metrics?select=game_id,week,qa_pts,aht_pts,attendance_pts&order=game_id.asc`,{headers:hdr}),
           fetch(`${SUPABASE_URL}/rest/v1/agent_riddle_answers?approved=eq.true&select=game_id`,{headers:hdr}),
           fetch(`${SUPABASE_URL}/rest/v1/agent_task_submissions?approved=eq.true&select=game_id`,{headers:hdr}),
         ]);
         const [kpiData,rdlData,tskData]=await Promise.all([kpiRes.json(),rdlRes.json(),tskRes.json()]);
         const rc=coinSettings?.riddle_coins??2;
         const tc=coinSettings?.task_coins??2;
-        // Sum KPI score per agent
-        const kpiMap={};
-        (kpiData||[]).forEach((r)=>{kpiMap[r.game_id]=(kpiMap[r.game_id]||0)+(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);});
-        // Count approved riddles/tasks per agent
+
+        // Sum KPI score per agent — once with every week (current standing) and
+        // once excluding the most recently uploaded week (last week's standing),
+        // so we can show whether each agent moved up or down the ranking.
+        // Riddles/tasks aren't split by week here, so this is an approximation
+        // driven mainly by the weekly KPI upload — the same signal the level
+        // streak itself is based on.
+        const kpiMapAll={},kpiMapPrev={};
+        (kpiData||[]).forEach((r)=>{
+          const pts=(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);
+          kpiMapAll[r.game_id]=(kpiMapAll[r.game_id]||0)+pts;
+          if(!lastEvaluatedWeek||r.week!==lastEvaluatedWeek) kpiMapPrev[r.game_id]=(kpiMapPrev[r.game_id]||0)+pts;
+        });
         const rdlMap={};(rdlData||[]).forEach((r)=>{rdlMap[r.game_id]=(rdlMap[r.game_id]||0)+1;});
         const tskMap={};(tskData||[]).forEach((t)=>{tskMap[t.game_id]=(tskMap[t.game_id]||0)+1;});
-        // Total score = KPI + riddles + tasks (same formula as Users tab)
-        const totals={};
-        const allGameIds=new Set([...Object.keys(kpiMap),...Object.keys(rdlMap),...Object.keys(tskMap)]);
-        allGameIds.forEach(gid=>{totals[gid]=(kpiMap[gid]||0)+(rdlMap[gid]||0)*rc+(tskMap[gid]||0)*tc;});
-        // Build from ALL active profiles
+
+        const buildTotals=(kpiMap)=>{
+          const totals={};
+          const ids=new Set([...Object.keys(kpiMap),...Object.keys(rdlMap),...Object.keys(tskMap)]);
+          ids.forEach(gid=>{totals[gid]=(kpiMap[gid]||0)+(rdlMap[gid]||0)*rc+(tskMap[gid]||0)*tc;});
+          return totals;
+        };
+        const totals=buildTotals(kpiMapAll);
+        const totalsPrev=buildTotals(kpiMapPrev);
+
         const activeUsers=allUsers.filter(u=>u.active);
-        const findTotals=(u)=>{
-          const byId=totals[u.game_id];
+        const findIn=(map,u)=>{
+          const byId=map[u.game_id];
           if(byId!==undefined)return byId;
-          const key=Object.keys(totals).find(k=>
+          const key=Object.keys(map).find(k=>
             k.toLowerCase()===(u.game_id||"").toLowerCase()||
             k.toLowerCase()===(u.username||"").toLowerCase()
           );
-          return key?totals[key]:0;
+          return key?map[key]:0;
         };
         const coveredIds=new Set(activeUsers.flatMap(u=>[
           (u.game_id||"").toLowerCase(),(u.username||"").toLowerCase()
         ].filter(Boolean)));
         const orphans=Object.entries(totals)
           .filter(([gid])=>!coveredIds.has(gid.toLowerCase()))
-          .map(([game_id,pts])=>({game_id,pts,profile:null}));
+          .map(([game_id,pts])=>({game_id,pts,ptsPrev:totalsPrev[game_id]||0,profile:null}));
         const ranked=[
-          ...activeUsers.map(u=>({game_id:u.game_id||u.username,pts:findTotals(u),profile:u})),
+          ...activeUsers.map(u=>({game_id:u.game_id||u.username,pts:findIn(totals,u),ptsPrev:findIn(totalsPrev,u),profile:u})),
           ...orphans,
         ].sort((a,b)=>b.pts-a.pts);
-        setRankings(ranked);
+
+        // Rank as of last week, from the SAME set sorted by ptsPrev, to compute
+        // the delta in rank positions (not just points).
+        const rankedPrev=[...ranked].sort((a,b)=>b.ptsPrev-a.ptsPrev);
+        const prevRankByGameId={};
+        rankedPrev.forEach((r,i)=>{prevRankByGameId[r.game_id]=i+1;});
+        const withDelta=ranked.map((r,i)=>({
+          ...r,
+          delta:lastEvaluatedWeek?(prevRankByGameId[r.game_id]-(i+1)):null,
+        }));
+        setRankings(withDelta);
       }catch(e){console.error(e);}
       setLoading(false);
     }
     loadRankings();
-  },[allUsers]);
+  },[allUsers,lastEvaluatedWeek]);
+
+  const filtered=rankings.filter(r=>(!lbSearch||(r.game_id.toLowerCase().includes(lbSearch.toLowerCase())||(r.profile?.username||"").toLowerCase().includes(lbSearch.toLowerCase())))&&(!levelFilter||r.profile?.level===levelFilter));
+  const podium=!lbSearch&&!levelFilter?filtered.slice(0,3):[];
+  const rest=!lbSearch&&!levelFilter?filtered.slice(3):filtered;
+  const myEntry=rankings.find(r=>r.profile?.game_id===user.game_id);
+  const myRank=myEntry?rankings.indexOf(myEntry)+1:null;
+  const nextUp=myRank&&myRank>1?rankings[myRank-2]:null;
+
+  const podiumOrder=podium.length===3?[podium[1],podium[0],podium[2]]:podium; // 2nd, 1st, 3rd for the classic podium layout
+  const podiumHeights=podium.length===3?[172,212,152]:[];
+  const podiumBorder=["#cbd5e1","#fde68a","#f0997b"];
+  const podiumTextBg=["#cbd5e1","#fde68a","#f0997b"];
 
   return(
     <div style={{paddingBottom:100}}>
-      <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.red},${C.blue})`,border:"none",textAlign:"center"}}>
-        <div style={{fontSize:34}}>🏆</div>
-        <div style={{color:"#fff",fontWeight:800,fontSize:20}}>LEADERBOARD</div>
-        <div style={{color:"rgba(255,255,255,0.55)",fontSize:12}}>Score del mes (KPI + Riddles + Tasks)</div>
+      <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.blue},${C.red})`,border:"none"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:podium.length===3?18:0}}>
+          <div>
+            <div style={{color:"#fff",fontWeight:900,fontSize:20,letterSpacing:1}}>🏆 RANKING</div>
+            <div style={{color:"rgba(255,255,255,0.6)",fontSize:11,marginTop:2}}>Score: KPI + Riddles + Tasks</div>
+          </div>
+        </div>
+        {podium.length===3&&(
+          <div style={{display:"flex",alignItems:"flex-end",justifyContent:"center",gap:8}}>
+            {podiumOrder.map((r,idx)=>{
+              const rank=idx===1?1:idx===0?2:3; // 2nd,1st,3rd order → real rank
+              const u=r.profile;
+              const isMe=u?.game_id===user.game_id;
+              const isFirst=rank===1;
+              return(
+                <div key={r.game_id} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:podiumHeights[idx],width:isFirst?114:106}}>
+                  {isFirst&&<div style={{fontSize:22,marginBottom:6,color:"#fde68a"}}>★</div>}
+                  <div style={{position:"relative",marginBottom:8}}>
+                    <Av av={u?.avatar} sz={isFirst?76:56} shop={shop}/>
+                    <div style={{position:"absolute",top:-6,left:-6,width:isFirst?24:22,height:isFirst?24:22,borderRadius:"50%",background:podiumTextBg[rank-1],color:rank===2?"#0a0a40":rank===1?"#78350f":"#4a1b0c",fontWeight:900,fontSize:11,display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid rgba(255,255,255,0.5)"}}>{rank}</div>
+                  </div>
+                  <div style={{color:"#fff",fontWeight:isFirst?800:700,fontSize:isFirst?15:13,textAlign:"center",maxWidth:106,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u?.name||r.game_id}{isMe&&" (TÚ)"}</div>
+                  <div style={{color:"#fde68a",fontWeight:900,fontSize:isFirst?19:16,marginTop:2}}>{r.pts}</div>
+                  <div style={{marginTop:2}}><RankDelta delta={r.delta}/></div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
+
+      {myRank&&(
+        <Card style={{marginBottom:14,border:`1.5px solid ${C.blue}`,background:`${C.blue}08`}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <Av av={myEntry?.profile?.avatar} sz={40} shop={shop}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{color:C.muted,fontSize:11,fontWeight:700}}>Tu posición</div>
+              <div style={{color:C.text,fontWeight:800,fontSize:15}}>#{myRank} · {myEntry.pts} pts</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              {nextUp?(
+                <>
+                  <div style={{color:C.blue,fontWeight:800,fontSize:12}}>{Math.max(0,(nextUp.pts-myEntry.pts)+1)} pts</div>
+                  <div style={{color:C.muted,fontSize:10}}>para subir 1 puesto</div>
+                </>
+              ):(
+                <div style={{color:C.gold,fontWeight:800,fontSize:12}}>🥇 ¡Vas primero!</div>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
       <div style={{marginBottom:8}}>
         <input value={lbSearch} onChange={e=>setLbSearch(e.target.value)} placeholder="🔍 Buscar agente..." style={{width:"100%",border:`1.5px solid ${C.border}`,borderRadius:10,padding:"9px 14px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
       </div>
@@ -873,20 +967,25 @@ function Leaderboard({user,allUsers,shop,coinSettings={}}){
         ))}
       </div>
       {loading&&<div style={{textAlign:"center",padding:40,color:C.muted}}>Cargando ranking...</div>}
-      {!loading&&rankings.filter(r=>(!lbSearch||(r.game_id.toLowerCase().includes(lbSearch.toLowerCase())||(r.profile?.username||"").toLowerCase().includes(lbSearch.toLowerCase())))&&(!levelFilter||r.profile?.level===levelFilter)).map((r,i)=>{
+      {!loading&&rest.map((r)=>{
         const u=r.profile;
         const isMe=u?.game_id===user.game_id;
+        const i=rankings.indexOf(r);
+        const streak=u?.consecutive_weeks_on_target||0;
         return(
           <div key={r.game_id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",marginBottom:8,borderRadius:14,background:isMe?`${C.blue}10`:C.card,border:`1.5px solid ${isMe?C.blue:C.border}`,boxShadow:isMe?`0 0 14px ${C.blue}2a`:"none"}}>
-            <div style={{width:30,textAlign:"center",fontWeight:900,color:i<3?"#f59e0b":C.muted,fontSize:i<3?20:14}}>{i<3?medals[i]:`#${i+1}`}</div>
+            <div style={{width:26,textAlign:"center",fontWeight:900,color:C.muted,fontSize:13}}>#{i+1}</div>
             <Av av={u?.avatar} sz={42} shop={shop}/>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{color:C.text,fontWeight:700,fontSize:14}}>{u?.name||r.game_id}{isMe&&<span style={{color:C.blue,fontSize:11}}> - TU</span>}</div>
-              <Bdg l={u?.level||1}/>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
+                <Bdg l={u?.level||1}/>
+                {streak>0?<span style={{color:C.gold,fontSize:11,fontWeight:700}}>🔥 {streak} sem</span>:<span style={{color:C.muted,fontSize:11}}>sin racha</span>}
+              </div>
             </div>
             <div style={{textAlign:"right"}}>
-              <div style={{color:C.blue,fontWeight:900,fontSize:19}}>{r.pts}</div>
-              <div style={{color:C.muted,fontSize:11}}>score</div>
+              <div style={{color:C.blue,fontWeight:900,fontSize:17}}>{r.pts}</div>
+              <RankDelta delta={r.delta}/>
             </div>
           </div>
         );
@@ -895,10 +994,6 @@ function Leaderboard({user,allUsers,shop,coinSettings={}}){
     </div>
   );
 }
-
-function RiddleScreen(){const [sel,setSel]=useState(null);const [done,setDone]=useState(false);const [res,setRes]=useState(null);const RIDDLE={question:"Cual accion genera mayor reduccion de errores operativos en un equipo?",options:[{id:"a",text:"Esperar a que el error vuelva"},{id:"b",text:"Documentar causa raiz y crear plan preventivo"},{id:"c",text:"Rotar al agente con mas errores"},{id:"d",text:"Ignorar si no afecta el KPI"}],correct:"b",pts:2};return(<div style={{paddingBottom:100}}><Card style={{marginBottom:14,background:`${C.blue}12`,border:`1.5px solid ${C.blue}44`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:30}}>🧠</div><div style={{color:C.blue,fontWeight:800,fontSize:16,marginTop:3}}>Riddle Semana 4</div></div><div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:900,fontSize:20}}>+{RIDDLE.pts}</div><div style={{color:C.muted,fontSize:11}}>puntos score</div></div></div><div style={{color:C.muted,fontSize:12,marginTop:6}}>2 dias restantes - 1 intento</div></Card>{!done?(<Card><div style={{color:C.text,fontWeight:700,fontSize:15,lineHeight:1.55,marginBottom:18}}>{RIDDLE.question}</div><div style={{display:"flex",flexDirection:"column",gap:9,marginBottom:18}}>{RIDDLE.options.map(o=>(<div key={o.id} onClick={()=>setSel(o.id)} style={{padding:"12px 14px",borderRadius:11,border:`2px solid ${sel===o.id?C.blue:C.border}`,background:sel===o.id?`${C.blue}0e`:C.bg,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}><div style={{width:26,height:26,borderRadius:"50%",background:sel===o.id?C.blue:"#e8eaf6",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:12,color:sel===o.id?"#fff":C.muted,flexShrink:0}}>{o.id.toUpperCase()}</div><span style={{color:C.text,fontSize:14}}>{o.text}</span></div>))}</div><Btn onClick={()=>{setDone(true);setRes(sel===RIDDLE.correct?"correct":"incorrect");}} disabled={!sel} color={C.blue} style={{width:"100%",padding:12}}>ENVIAR RESPUESTA</Btn></Card>):(<Card style={{textAlign:"center"}}><div style={{fontSize:58,marginBottom:10}}>{res==="correct"?"✅":"❌"}</div><div style={{color:res==="correct"?C.green:C.red,fontWeight:800,fontSize:19,marginBottom:8}}>{res==="correct"?"Respuesta Correcta!":"Respuesta Incorrecta"}</div><div style={{color:C.muted,fontSize:14,marginBottom:16}}>{res==="correct"?"Enviado al admin para verificacion. +2 pts al score cuando sea aprobado.":"La respuesta correcta era B."}</div></Card>)}</div>);}
-
-function TaskScreen(){const [desc,setDesc]=useState("");const [file,setFile]=useState(null);const [done,setDone]=useState(false);const ref=useRef();const TASK={title:"Plan de Mejora con IA",instructions:"Usa cualquier herramienta de IA para crear un plan de mejora sobre un problema real de tu operacion. Incluye:\n- Problema identificado\n- Propuesta de mejora\n- Como la IA te ayudo\n- Impacto esperado en KPIs",pts:2};return(<div style={{paddingBottom:100}}><Card style={{marginBottom:14,background:`${C.red}12`,border:`1.5px solid ${C.red}44`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><div><div style={{fontSize:30}}>📋</div><div style={{color:C.red,fontWeight:800,fontSize:16,marginTop:3}}>{TASK.title}</div></div><div style={{textAlign:"right"}}><div style={{color:C.red,fontWeight:900,fontSize:20}}>+{TASK.pts}</div><div style={{color:C.muted,fontSize:11}}>puntos score</div></div></div></Card>{!done?(<><Card style={{marginBottom:12}}><div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:8}}>INSTRUCCIONES</div><div style={{color:C.text,fontSize:14,lineHeight:1.65,whiteSpace:"pre-line"}}>{TASK.instructions}</div></Card><Card style={{marginBottom:12}}><textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Describe brevemente que hiciste (min. 50 caracteres)..." rows={4} style={{width:"100%",border:`1.5px solid ${C.border}`,borderRadius:9,padding:"10px 13px",fontSize:14,outline:"none",color:C.text,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",background:C.bg,marginBottom:6}}/><div style={{color:C.muted,fontSize:11,marginBottom:12}}>{desc.length} caracteres</div><div onClick={()=>ref.current?.click()} style={{border:`2px dashed ${file?"#16a34a":C.border}`,borderRadius:11,padding:20,textAlign:"center",cursor:"pointer",background:file?C.greenBg:C.bg}}>{file?<><div style={{fontSize:26}}>✅</div><div style={{color:C.green,fontWeight:700,marginTop:4}}>{file.name}</div></>:<><div style={{fontSize:26}}>📄</div><div style={{color:C.muted,fontWeight:700,marginTop:4}}>Subir PDF o imagen</div></>}<input ref={ref} type="file" accept=".pdf,image/*" style={{display:"none"}} onChange={e=>setFile(e.target.files[0])}/></div></Card><Btn onClick={()=>setDone(true)} disabled={desc.length<50||!file} color={C.red} style={{width:"100%",padding:12}}>ENVIAR TAREA</Btn></>):(<Card style={{textAlign:"center"}}><div style={{fontSize:58,marginBottom:10}}>📬</div><div style={{color:C.red,fontWeight:800,fontSize:19,marginBottom:8}}>Tarea Enviada!</div><div style={{color:C.muted,fontSize:13}}>+2 pts al score cuando el admin apruebe</div></Card>)}</div>);}
 
 function PrizeCard({p,coins,onRedeem,locked=false,userLevel=1}){
   const cost=p.pts||p.points_cost||0;
@@ -945,7 +1040,6 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
     db.getMyRedemptions(user.id).then(d=>setMyRedemptions(d||[])).catch(()=>{});
   },[user.id]);
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings);
-  const maxScore=calcMaxScore(sc.weekCount,riddleCount,taskCount);
   const totalSpent=myRedemptions.filter(r=>['pending','approved','delivered'].includes(r.status)).reduce((s,r)=>s+(r.points_spent||r.coins_spent||0),0);
   const coins=Math.max(0,sc.coins-totalSpent);
   const handleRedeem=async p=>{await onRedeem(p);db.getMyRedemptions(user.id).then(d=>setMyRedemptions(d||[])).catch(()=>{});};
@@ -1028,9 +1122,9 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
             </div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginBottom:2}}>SCORE DEL MES</div>
-            <div style={{color:"#fff",fontWeight:800,fontSize:16}}>{sc.score} <span style={{fontSize:11,opacity:0.6}}>/ {maxScore}</span></div>
-            <div style={{color:"rgba(255,255,255,0.5)",fontSize:10}}>Nivel {level} · llave de acceso 🔑</div>
+            <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginBottom:2}}>TU NIVEL</div>
+            <div style={{color:"#fff",fontWeight:800,fontSize:16}}>LVL {level}</div>
+            <div style={{color:"rgba(255,255,255,0.5)",fontSize:10}}>llave de acceso 🔑</div>
           </div>
         </div>
       </div>
@@ -1273,12 +1367,8 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
         <div style={{display:"flex",justifyContent:"center",marginBottom:10}}><Av av={av} sz={100} shop={shop}/></div>
         <div style={{color:C.text,fontWeight:800,fontSize:18}}>{user.name}</div>
         <div style={{marginTop:4}}><Bdg l={level}/></div>
-        {/* Score vs Coins */}
+        {/* Coins */}
         <div style={{display:"flex",justifyContent:"center",gap:12,marginTop:12}}>
-          <div style={{background:`${C.blue}10`,border:`1px solid ${C.blue}30`,borderRadius:10,padding:"8px 14px",textAlign:"center"}}>
-            <div style={{color:C.blue,fontWeight:900,fontSize:18}}>{sc.score}</div>
-            <div style={{color:C.muted,fontSize:10,letterSpacing:0.5}}>SCORE</div>
-          </div>
           <div style={{background:`${C.gold}10`,border:`1px solid ${C.gold}30`,borderRadius:10,padding:"8px 14px",textAlign:"center"}}>
             <div style={{display:"flex",alignItems:"center",gap:4}}>
               <span style={{fontSize:14}}>🪙</span>
@@ -3011,7 +3101,7 @@ export default function App(){
       {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps} isSA={isSA} availableWeeks={availableWeeks} selectedWeek={selectedWeek} lastEvaluatedWeek={lastEvaluatedWeek} onWeekChange={setSelectedWeek} bulletin={bulletin}/>}
       {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle" coinSettings={coinSettings}/>}
       {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task" coinSettings={coinSettings}/>}
-      {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop} coinSettings={coinSettings}/>}
+      {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop} coinSettings={coinSettings} lastEvaluatedWeek={lastEvaluatedWeek}/>}
       {screen==="rewards"&&<Rewards user={cu} prizes={prizes} {...scoreProps} weeklyMetrics={agentWeeklyMetrics} onRedeem={async p=>{
         const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals,coinSettings);
         const cost=p.points_cost||p.pts||0;
