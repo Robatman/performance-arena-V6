@@ -1441,7 +1441,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
   </div>);
 }
 
-function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllCoins,resetAllPoints,resetAllLevels,reloadUsers,toast,inp}){
+function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllPoints,resetAllLevels,reloadUsers,toast,inp}){
   const [calcCoins,setCalcCoins]=useState(null);
   const [loading,setLoading]=useState(false);
   const [syncing,setSyncing]=useState(false);
@@ -1496,24 +1496,22 @@ function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllCoins,resetA
 
   return(<div>
     <CoinSettingsCard coinSettings={coinSettings} onSave={onSaveCoinSettings} inp={inp}/>
-    <Card style={{marginBottom:14,background:`${C.gold}08`,border:`1.5px solid ${C.gold}30`}}>
-      <div style={{fontSize:24,marginBottom:8}}>🪙</div>
-      <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:4}}>Gestión de Coins</div>
-      <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>
-        Los coins se reinician cada trimestre (Ene-Mar / Abr-Jun / Jul-Sep / Oct-Dic).<br/>
-        Esta acción pondrá los coins de TODOS los agentes activos en 0.
-      </div>
-      <Btn onClick={resetAllCoins} color={C.red} style={{width:"100%",padding:12}}>🔄 REINICIAR COINS (TRIMESTRAL)</Btn>
-    </Card>
-
+    {/* "Reiniciar coins (trimestral)" se quitó de aquí: el saldo del agente se calcula
+        en vivo desde todo el historial (KPI+riddles+tasks+kudos+referidos), así que la
+        única forma real de ponerlo en 0 es borrar esas mismas fuentes — exactamente lo
+        que ya hace "Reiniciar Puntos" abajo. Tener dos botones idénticos con nombres
+        distintos solo confundía al admin. Si en el futuro se quiere un reset de coins
+        independiente del historial de KPI/nivel (p.ej. trimestral sin tocar la
+        temporada completa), eso necesita un saldo con fecha de corte propio — ver el
+        doc de rediseño, sección "Qué va faltando decidir/diseñar". */}
     <Card style={{marginBottom:14,background:`${C.red}08`,border:`1.5px solid ${C.red}30`}}>
       <div style={{fontSize:24,marginBottom:8}}>📊</div>
-      <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:4}}>Reiniciar Puntos</div>
+      <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:4}}>Reiniciar Temporada (Puntos y Coins)</div>
       <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>
-        Borra las métricas semanales (KPI), riddles, tasks y kudos de todos los agentes.<br/>
+        Borra las métricas semanales (KPI), riddles, tasks, kudos y referidos de todos los agentes — esto pone su saldo de coins en 0.<br/>
         Úsalo al iniciar una nueva temporada. <strong style={{color:C.red}}>No se puede deshacer.</strong>
       </div>
-      <Btn onClick={resetAllPoints} color={C.red} style={{width:"100%",padding:12}}>⚠️ REINICIAR PUNTOS (TEMPORADA NUEVA)</Btn>
+      <Btn onClick={resetAllPoints} color={C.red} style={{width:"100%",padding:12}}>⚠️ REINICIAR TEMPORADA</Btn>
     </Card>
 
     <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}30`}}>
@@ -1771,34 +1769,19 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const addPrize=async()=>{if(!pf.name.trim()){toast("Escribe el nombre");return;}try{await db.createPrize({name:pf.name,emoji:pf.emoji||"🎁",points_cost:pf.pts,coins_cost:pf.pts,stock:pf.stock,category:"general",is_active:true,min_level:pf.minLevel,description:pf.description.trim()||null});const updated=await db.getPrizes();setPrizes(updated||[]);setPf({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1,description:""});toast("Premio anadido");}catch(e){toast("Error al crear premio");}};
   const updPz=async(id,field,val)=>{const dbField=field==="pts"?"points_cost":field==="stock"?"stock":field==="minLevel"?"min_level":field;try{await db.updatePrize(id,{[dbField]:val});const updated=await db.getPrizes();setPrizes(updated||[]);}catch(e){toast("Error");}};
 
-  // Coins reset (quarterly)
+  // Reset de temporada (puntos + coins juntos)
   //
-  // IMPORTANT: the "coins" a store screen shows the agent is never read from
-  // profiles.coins — it's calculated live every time from ALL-time history
-  // (calcScoreCoins: weekly_metrics + riddle/task approvals + kudos + referrals,
-  // minus every non-cancelled redemption ever made). Because of that, the ONLY
-  // way to actually zero what an agent can spend is to clear the same sources
-  // resetAllPoints already clears below — there is no separate "coins-only"
-  // ledger to reset. The old version of this button just set profiles.coins=0
-  // (a field nothing reads for the real balance) and deleted redemptions,
-  // which un-spent everything without touching the earned total — agents could
-  // come out of a "reset" with MORE spendable coins than before. This now does
-  // the same verified-correct wipe as resetAllPoints so it actually reaches 0.
-  // Level/streak fields are never touched here — coins and level stay independent.
-  const resetAllCoins=async()=>{
-    if(!window.confirm("¿Reiniciar coins de TODOS los agentes? Esto borra el historial de KPI/riddles/tasks/kudos/referidos que alimenta el saldo (el nivel NO se toca). Esta acción no se puede deshacer."))return;
-    try{
-      await Promise.all([
-        sbFetch("weekly_metrics?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
-        sbFetch("agent_riddle_answers?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
-        sbFetch("agent_task_submissions?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
-      ]);
-      await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({kudos:0,gold_kudos:0,coins:0,referrals:[]}),prefer:"return=minimal"});
-      await sbFetch("reward_redemptions?user_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null);
-      await reloadUsers();toast("✓ Coins reiniciados para todos los agentes");
-    }catch(e){toast("Error al reiniciar coins");}
-  };
-
+  // El saldo de coins que ve el agente nunca se lee de profiles.coins — se
+  // calcula en vivo desde todo el historial (calcScoreCoins: weekly_metrics +
+  // riddle/task aprobados + kudos + referidos, menos cada canje no cancelado).
+  // Por eso no existe un "reset de coins" independiente: la única forma real
+  // de poner el saldo en 0 es borrar estas mismas fuentes. Antes había un
+  // segundo botón ("Reiniciar coins trimestral") que solo ponía profiles.coins=0
+  // (campo que nadie lee para el saldo real) y borraba los canjes — eso podía
+  // dejar al agente con MÁS coins gastables que antes del "reset". Se quitó
+  // ese botón para no tener dos acciones distintas que en la práctica hacían
+  // lo mismo (una bien, otra mal) — ver el doc de rediseño si en el futuro se
+  // quiere un reset de coins de verdad independiente del historial de KPI/nivel.
   const resetAllPoints=async()=>{
     if(!window.confirm("¿Reiniciar PUNTOS de TODOS los agentes?\n\nEsto borrará:\n• Métricas semanales (KPI)\n• Riddles y Tasks aprobadas\n• Kudos, Gold Kudos y Referidos\n\nEsta acción NO se puede deshacer."))return;
     try{
@@ -2032,7 +2015,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
 
       {tab==="prizes"&&(<PrizesTab prizes={prizes} setPrizes={setPrizes} pf={pf} setPf={setPf} addPrize={addPrize} updPz={updPz} toast={toast} inp={inp}/>)}
 
-      {tab==="coins"&&(<CoinsTab allUsers={allUsers} coinSettings={coinSettings} onSaveCoinSettings={onSaveCoinSettings} resetAllCoins={resetAllCoins} resetAllPoints={resetAllPoints} resetAllLevels={resetAllLevels} reloadUsers={reloadUsers} toast={toast} inp={inp}/>)}
+      {tab==="coins"&&(<CoinsTab allUsers={allUsers} coinSettings={coinSettings} onSaveCoinSettings={onSaveCoinSettings} resetAllPoints={resetAllPoints} resetAllLevels={resetAllLevels} reloadUsers={reloadUsers} toast={toast} inp={inp}/>)}
 
       {tab==="niveles"&&(<div>
         <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
