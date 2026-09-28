@@ -402,6 +402,13 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
         const streak: number = prof.consecutive_weeks_on_target || 0;
         const eliteWeeks: number = prof.weeks_at_elite || 0;
         const history: any[] = prof.level_history || [];
+        // Idempotency guard: re-uploading a week already applied to this agent's
+        // streak must not double-count it (same pattern as the auto-KPI block below,
+        // which already deletes-before-inserting to stay idempotent).
+        if (history.some(h => h.week === week)) {
+          errs.push(`ℹ️ Nivel ${a.game_id}: la semana ${week} ya estaba aplicada a su racha — se omitió para no duplicarla`);
+          continue;
+        }
         const onTarget = a.qa_pts === 5 && a.aht_pts === 5 && a.attendance_pts === 5;
         let newLevel = currentLevel;
         let newStreak = streak;

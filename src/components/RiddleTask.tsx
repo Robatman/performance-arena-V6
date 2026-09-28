@@ -90,11 +90,16 @@ function RiddleSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string;
       if (active) {
         const ans = await sbFetch(`agent_riddle_answers?riddle_id=eq.${active.id}&game_id=eq.${gameId}&select=*`)
         setMyAnswer((ans || [])[0] || null)
+      } else {
+        setMyAnswer(null)
+      }
 
-        if (isAdmin) {
-          const pending = await sbFetch(`agent_riddle_answers?riddle_id=eq.${active.id}&approved=eq.false&select=*&order=answered_at.asc`)
-          setPendingAnswers(pending || [])
-        }
+      if (isAdmin) {
+        // Pending answers across ALL riddles, not just the currently active one —
+        // otherwise switching riddles hides older pending answers forever and their
+        // points never get awarded (they still exist in the DB, just invisible).
+        const pending = await sbFetch(`agent_riddle_answers?approved=eq.false&select=*&order=answered_at.asc`)
+        setPendingAnswers(pending || [])
       }
     } catch(e) { console.error(e) }
     setLoading(false)
@@ -155,9 +160,12 @@ function RiddleSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string;
   }
 
   async function approveAnswer(ans: any, approve: boolean) {
+    // The pending list now spans every riddle, not just the active one — look up
+    // this answer's own riddle instead of assuming it belongs to activeRiddle.
+    const riddleForAns = riddles.find((r: any) => r.id === ans.riddle_id) || activeRiddle
     try {
       if (approve) {
-        const points = activeRiddle?.points || coinSettings?.riddle_coins || 2
+        const points = riddleForAns?.points || coinSettings?.riddle_coins || 2
         await sbFetch(`agent_riddle_answers?id=eq.${ans.id}`, {
           method:"PATCH", body: JSON.stringify({ approved: true, correct: true, points_awarded: points })
         })
@@ -184,7 +192,7 @@ function RiddleSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string;
             await sbFetch('notifications', { method:"POST", prefer:"return=minimal", body: JSON.stringify({
               recipient_id: agentProfiles[0].id,
               title: "❌ Respuesta de Riddle incorrecta",
-              message: `Tu respuesta al Riddle "${activeRiddle?.question?.substring(0,60) || 'de esta semana'}" no fue correcta. ¡Puedes volver a intentarlo! 💪`,
+              message: `Tu respuesta al Riddle "${riddleForAns?.question?.substring(0,60) || 'de esta semana'}" no fue correcta. ¡Puedes volver a intentarlo! 💪`,
               type: "info", is_read: false,
             })})
           }
@@ -226,21 +234,25 @@ function RiddleSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string;
                   <div style={{color:C.muted}}>No hay respuestas pendientes</div>
                 </div>
               ) : (
-                pendingAnswers.map(ans => (
+                pendingAnswers.map(ans => {
+                  const r = riddles.find((x: any) => x.id === ans.riddle_id)
+                  return (
                   <div key={ans.id} style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:16, marginBottom:10}}>
                     <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10}}>
                       <div>
                         <div style={{color:C.text, fontWeight:800, fontSize:15}}>🎮 {ans.game_id}</div>
+                        {r && <div style={{color:C.muted, fontSize:11, marginTop:2}}>{r.active ? '🟢' : '⏸️'} {r.week ? `${r.week} · ` : ''}{(r.question||'').slice(0,60)}{(r.question||'').length>60?'…':''}</div>}
                         <div style={{color:C.muted, fontSize:12, marginTop:2}}>Respondió: <strong style={{color:C.purple}}>Opción {ans.answer}</strong></div>
                         <div style={{color:C.muted, fontSize:11, marginTop:2}}>{new Date(ans.answered_at).toLocaleString()}</div>
                       </div>
                     </div>
                     <div style={{display:"flex", gap:8}}>
-                      <button onClick={() => approveAnswer(ans, true)} style={{flex:1, padding:"9px 0", borderRadius:9, border:"none", background:C.green, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>✅ Correcto (+{activeRiddle?.points||2}pts)</button>
+                      <button onClick={() => approveAnswer(ans, true)} style={{flex:1, padding:"9px 0", borderRadius:9, border:"none", background:C.green, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>✅ Correcto (+{r?.points||coinSettings?.riddle_coins||2}pts)</button>
                       <button onClick={() => approveAnswer(ans, false)} style={{flex:1, padding:"9px 0", borderRadius:9, border:"none", background:C.red, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>❌ Incorrecto (0pts)</button>
                     </div>
                   </div>
-                ))
+                  )
+                })
               )}
             </div>
           )}
@@ -405,11 +417,16 @@ function TaskSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; i
       if (active) {
         const sub = await sbFetch(`agent_task_submissions?task_id=eq.${active.id}&game_id=eq.${gameId}&select=*`)
         setMySubmission((sub || [])[0] || null)
+      } else {
+        setMySubmission(null)
+      }
 
-        if (isAdmin) {
-          const pending = await sbFetch(`agent_task_submissions?task_id=eq.${active.id}&approved=eq.false&select=*&order=submitted_at.asc`)
-          setPendingSubs(pending || [])
-        }
+      if (isAdmin) {
+        // Pending submissions across ALL tasks, not just the currently active one —
+        // otherwise switching tasks hides older pending submissions forever and their
+        // points never get awarded (they still exist in the DB, just invisible).
+        const pending = await sbFetch(`agent_task_submissions?approved=eq.false&select=*&order=submitted_at.asc`)
+        setPendingSubs(pending || [])
       }
     } catch(e) { console.error(e) }
     setLoading(false)
@@ -465,6 +482,9 @@ function TaskSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; i
   }
 
   async function approveSubmission(sub: any, approve: boolean) {
+    // The pending list now spans every task, not just the active one — look up
+    // this submission's own task instead of assuming it belongs to activeTask.
+    const taskForSub = tasks.find((t: any) => t.id === sub.task_id) || activeTask
     try {
       if (approve) {
         const points = coinSettings?.task_coins || 2
@@ -494,7 +514,7 @@ function TaskSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; i
             await sbFetch('notifications', { method:"POST", prefer:"return=minimal", body: JSON.stringify({
               recipient_id: agentProfiles[0].id,
               title: "❌ Entrega de Task rechazada",
-              message: `Tu entrega para la Task "${activeTask?.title || 'de esta semana'}" no fue aceptada. Revisa los requisitos y vuelve a intentarlo. 💪`,
+              message: `Tu entrega para la Task "${taskForSub?.title || 'de esta semana'}" no fue aceptada. Revisa los requisitos y vuelve a intentarlo. 💪`,
               type: "info", is_read: false,
             })})
           }
@@ -533,10 +553,13 @@ function TaskSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; i
                   <div style={{fontSize:40, marginBottom:8}}>✅</div>
                   <div style={{color:C.muted}}>No hay entregas pendientes</div>
                 </div>
-              ) : pendingSubs.map(sub => (
+              ) : pendingSubs.map(sub => {
+                const t = tasks.find((x: any) => x.id === sub.task_id)
+                return (
                 <div key={sub.id} style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:16, marginBottom:10}}>
                   <div style={{marginBottom:10}}>
                     <div style={{color:C.text, fontWeight:800, fontSize:15}}>🎮 {sub.game_id}</div>
+                    {t && <div style={{color:C.muted, fontSize:11, marginTop:2}}>{t.active ? '🟢' : '⏸️'} {t.week ? `${t.week} · ` : ''}{t.title}</div>}
                     <div style={{color:C.muted, fontSize:11, marginTop:2}}>{new Date(sub.submitted_at).toLocaleString()}</div>
                     {sub.description && <div style={{color:C.text, fontSize:13, marginTop:8, padding:"10px 12px", background:C.bg, borderRadius:9, lineHeight:1.6}}>{sub.description}</div>}
                   </div>
@@ -545,7 +568,8 @@ function TaskSection({ gameId, isAdmin, coinSettings = {} }: { gameId: string; i
                     <button onClick={() => approveSubmission(sub, false)} style={{flex:1, padding:"9px 0", borderRadius:9, border:"none", background:C.red, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>❌ Rechazar</button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
 

@@ -1772,24 +1772,44 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const updPz=async(id,field,val)=>{const dbField=field==="pts"?"points_cost":field==="stock"?"stock":field==="minLevel"?"min_level":field;try{await db.updatePrize(id,{[dbField]:val});const updated=await db.getPrizes();setPrizes(updated||[]);}catch(e){toast("Error");}};
 
   // Coins reset (quarterly)
+  //
+  // IMPORTANT: the "coins" a store screen shows the agent is never read from
+  // profiles.coins — it's calculated live every time from ALL-time history
+  // (calcScoreCoins: weekly_metrics + riddle/task approvals + kudos + referrals,
+  // minus every non-cancelled redemption ever made). Because of that, the ONLY
+  // way to actually zero what an agent can spend is to clear the same sources
+  // resetAllPoints already clears below — there is no separate "coins-only"
+  // ledger to reset. The old version of this button just set profiles.coins=0
+  // (a field nothing reads for the real balance) and deleted redemptions,
+  // which un-spent everything without touching the earned total — agents could
+  // come out of a "reset" with MORE spendable coins than before. This now does
+  // the same verified-correct wipe as resetAllPoints so it actually reaches 0.
+  // Level/streak fields are never touched here — coins and level stay independent.
   const resetAllCoins=async()=>{
-    if(!window.confirm("¿Reiniciar coins de TODOS los agentes? Esta acción no se puede deshacer."))return;
-    try{
-      await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({coins:0}),prefer:"return=minimal"});
-      await sbFetch("reward_redemptions?user_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null);
-      await reloadUsers();toast("✓ Coins y canjes reiniciados");
-    }catch(e){toast("Error al reiniciar coins");}
-  };
-
-  const resetAllPoints=async()=>{
-    if(!window.confirm("¿Reiniciar PUNTOS de TODOS los agentes?\n\nEsto borrará:\n• Métricas semanales (KPI)\n• Riddles y Tasks aprobadas\n• Kudos y Gold Kudos\n\nEsta acción NO se puede deshacer."))return;
+    if(!window.confirm("¿Reiniciar coins de TODOS los agentes? Esto borra el historial de KPI/riddles/tasks/kudos/referidos que alimenta el saldo (el nivel NO se toca). Esta acción no se puede deshacer."))return;
     try{
       await Promise.all([
         sbFetch("weekly_metrics?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
         sbFetch("agent_riddle_answers?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
         sbFetch("agent_task_submissions?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
       ]);
-      await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({kudos:0,gold_kudos:0,coins:0}),prefer:"return=minimal"});
+      await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({kudos:0,gold_kudos:0,coins:0,referrals:[]}),prefer:"return=minimal"});
+      await sbFetch("reward_redemptions?user_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null);
+      await reloadUsers();toast("✓ Coins reiniciados para todos los agentes");
+    }catch(e){toast("Error al reiniciar coins");}
+  };
+
+  const resetAllPoints=async()=>{
+    if(!window.confirm("¿Reiniciar PUNTOS de TODOS los agentes?\n\nEsto borrará:\n• Métricas semanales (KPI)\n• Riddles y Tasks aprobadas\n• Kudos, Gold Kudos y Referidos\n\nEsta acción NO se puede deshacer."))return;
+    try{
+      await Promise.all([
+        sbFetch("weekly_metrics?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
+        sbFetch("agent_riddle_answers?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
+        sbFetch("agent_task_submissions?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
+      ]);
+      // referrals:[] closes the "coins de referidos nunca se resetean" gap —
+      // without it this array survives every reset forever.
+      await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({kudos:0,gold_kudos:0,coins:0,referrals:[]}),prefer:"return=minimal"});
       await sbFetch("reward_redemptions?user_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null);
       await reloadUsers();toast("✓ Puntos reiniciados para todos los agentes");
     }catch(e){toast("Error al reiniciar puntos");}
