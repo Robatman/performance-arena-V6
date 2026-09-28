@@ -188,13 +188,18 @@ const BASES=[{id:"b1",emoji:"😊",label:"Sonriente"},{id:"b2",emoji:"😎",labe
 const DEFAULT_METRICS=[{id:"qa",name:"QA Score",type:"kpi",max:5,active:true,desc:">meta=5, =meta=2, <meta=0"},{id:"aht",name:"AHT",type:"kpi",max:5,active:true,desc:"<meta=5, =meta=2, >meta=0"},{id:"att",name:"Attendance",type:"special",max:5,active:true,desc:"Perfect=5, 1 tarde=2, falta/2tard=0"},{id:"rdl",name:"Riddle",type:"activity",max:2,active:true,desc:"2pts por riddle aprobado"},{id:"tsk",name:"Task",type:"activity",max:2,active:true,desc:"2pts por task aprobada"},{id:"kdo",name:"Kudos",type:"social",max:999,active:true,desc:"1 kudo=1 coin, 1 gold=5 coins"},{id:"ref",name:"Referidos",type:"social",max:999,active:true,desc:"Enviado=1 coin, aprobado=5 coins total"}];
 const STAFF_ROLES={team_coach:"Team Coach",quality_coach:"Quality Coach",training_coach:"Training Coach",manager:"Manager",training_manager:"Training Manager",superadmin:"Super Admin"};
 const ROLE_EMOJI={team_coach:"🎯",quality_coach:"🔍",training_coach:"🎓",manager:"👔",training_manager:"📚",superadmin:"⚡"};
+// Screens an admin can individually show/hide per staff member. "report" and
+// "admin" are superadmin-only regardless (never listed here) so this can only
+// ever narrow what a role would already see, never grant more than the role
+// allows — a null/missing navPermissions means "no restriction, use role default".
+const STAFF_NAV_ITEMS=[{id:"dashboard",label:"Home"},{id:"leaderboard",label:"Rankings"},{id:"kudos",label:"Kudos"},{id:"innovation",label:"Projects"},{id:"sessions",label:"Sessions"},{id:"activities",label:"Actividades"},{id:"staffnotifs",label:"Avisos"},{id:"store",label:"Tienda"},{id:"profile",label:"Profile"}];
 const INNOVATION_CATS={ai_project:{label:"AI Project",emoji:"🤖",pts:15,adminOnly:true},process_improvement:{label:"Process Improvement",emoji:"💡",pts:10,adminOnly:false},initiative:{label:"Initiative",emoji:"🚀",pts:8,adminOnly:false},floor_support:{label:"Floor Support",emoji:"🎓",pts:5,adminOnly:false},mentorship:{label:"Mentorship",emoji:"🤝",pts:5,adminOnly:false}};
 
 const lc=(l)=>LEVEL_META[l]?.color||C.muted;
 const ln=(l)=>LEVEL_META[l]?.name||"";
 
 function adaptProfile(p){return{id:p.id,name:p.full_name,username:p.username,password_hash:p.password_hash,role:p.role==="usuario"?"user":p.role,project:p.team||"",active:p.is_active,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},level:p.monthly_level||p.level||1,puzzlePieces:(p.puzzle_pieces||[]).length,perfectMonths:p.perfect_months||0,kudos:p.kudos||0,goldKudos:p.gold_kudos||0,gold_kudos:p.gold_kudos||0,referrals:p.referrals||[],weekly_perf:p.weekly_perf||[],weeklyPerf:p.weekly_perf||[],riddle_completed:p.riddle_completed||0,riddleCompleted:p.riddle_completed||0,task_completed:p.task_completed||0,taskCompleted:p.task_completed||0,monthsHistory:p.months_history||[],ownedItems:p.owned_items||[],rewards:p.rewards||[],game_id:p.game_id||"",needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,kudosLog:p.kudos_log||[],points_total:p.points_total||0,coins:p.coins||0,monthly_level:p.monthly_level||1,coach_id:p.coach_id||"",qa_coach:p.qa_coach||"",appType:"agents",consecutive_weeks_on_target:p.consecutive_weeks_on_target||0,weeks_at_elite:p.weeks_at_elite||0,level_history:p.level_history||[]};}
-function adaptStaffProfile(p){return{id:p.id,gameId:p.game_id||"",username:p.username,name:p.full_name||p.username||"",password_hash:p.password_hash,role:p.role,project:(p.project||"").trim(),managerId:p.manager_id,active:p.is_active,needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},ownedItems:p.owned_items||[],coins:p.coins||0,level:p.level||1,appType:"staff"};}
+function adaptStaffProfile(p){return{id:p.id,gameId:p.game_id||"",username:p.username,name:p.full_name||p.username||"",password_hash:p.password_hash,role:p.role,project:(p.project||"").trim(),managerId:p.manager_id,active:p.is_active,needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},ownedItems:p.owned_items||[],coins:p.coins||0,level:p.level||1,navPermissions:p.nav_permissions||null,appType:"staff"};}
 
 // ─── UI ATOMS ─────────────────────────────────────────────────────────────────
 function Av({av,sz=80,shop}){const items=shop||DEFAULT_SHOP;const base=BASES.find(b=>b.id===(av?.base||"b1"));const hair=items.find(i=>i.id===av?.hair);const acc=items.find(i=>i.id===av?.accessory);const out=items.find(i=>i.id===av?.outfit);const bg=items.find(i=>i.id===av?.background);const bm={g1:"linear-gradient(135deg,#0a0a40,#1a1aff)",g2:"linear-gradient(135deg,#ff6b35,#f00)",g3:"linear-gradient(135deg,#00d4ff,#0057ff)",g4:"linear-gradient(135deg,#ff9ff3,#ffd700)",g5:"linear-gradient(135deg,#22c55e,#0ea5e9)",g6:"linear-gradient(135deg,#1e1b4b,#f59e0b)",g7:"linear-gradient(135deg,#0369a1,#06b6d4)",g8:"linear-gradient(135deg,#7f1d1d,#f97316)"};const bgs=bg?(bm[bg.id]||`linear-gradient(135deg,${C.bg},${C.bgDk})`):(`linear-gradient(135deg,${C.bg},${C.bgDk})`);return(<div style={{width:sz,height:sz,borderRadius:"50%",background:bgs,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",overflow:"hidden",flexShrink:0,position:"relative",border:`2.5px solid ${C.blue}`,boxShadow:`0 0 0 1px ${C.border}`}}>{out&&<div style={{position:"absolute",bottom:0,left:0,right:0,height:"40%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.22}}>{out.emoji}</div>}<div style={{fontSize:sz*0.42,lineHeight:1,zIndex:2}}>{base?.emoji||"😊"}</div>{hair&&<div style={{position:"absolute",top:-2,fontSize:sz*0.26,zIndex:3}}>{hair.emoji}</div>}{acc&&<div style={{position:"absolute",top:"28%",right:"5%",fontSize:sz*0.22,zIndex:4}}>{acc.emoji}</div>}</div>);}
@@ -555,41 +560,46 @@ function PublicView({users,prizes,onBack}){
 }
 
 function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
-  const [name,setName]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);const [mode,setMode]=useState("agents");const [wide,setWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
+  const [name,setName]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);const [wide,setWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
   useEffect(()=>{const h=()=>setWide(window.innerWidth>=900);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
+  // Single login: no more "which arena" tab to pick beforehand — the account
+  // itself lives in exactly one table (profiles = agente, staff_profiles =
+  // staff), never both, so we just check both and route to whichever matches.
   const go=async()=>{
-    if(!name.trim()||!pw.trim()){setErr(mode==="agents"?"Escribe tu nombre y contrasena":"Enter your username and password");return;}
+    if(!name.trim()||!pw.trim()){setErr("Escribe tu usuario y contraseña");return;}
     setLoading(true);setErr("");
     try{
-      if(mode==="agents"){
-        const results=await db.login(name.trim());
-        if(!results||results.length===0){setErr("Nombre o contrasena incorrectos.");setLoading(false);return;}
-        const profile=results[0];
-        if(profile.password_hash!==pw){setErr("Nombre o contrasena incorrectos.");setLoading(false);return;}
-        if(!profile.is_active){setErr("Cuenta desactivada.");setLoading(false);return;}
-        onLoginAgent(adaptProfile(profile));
-      }else{
-        const results=await staffDb.login(name.trim());
-        if(!results||results.length===0){setErr("Invalid username or password.");setLoading(false);return;}
-        const profile=results[0];
-        if(profile.password_hash!==pw){setErr("Invalid username or password.");setLoading(false);return;}
-        if(!profile.is_active){setErr("Account disabled.");setLoading(false);return;}
-        onLoginStaff(adaptStaffProfile(profile));
+      const [agentResults,staffResults]=await Promise.all([
+        db.login(name.trim()).catch(()=>[]),
+        staffDb.login(name.trim()).catch(()=>[]),
+      ]);
+      const agentMatch=(agentResults||[]).find(p=>p.password_hash===pw);
+      const staffMatch=(staffResults||[]).find(p=>p.password_hash===pw);
+      if(agentMatch&&staffMatch){
+        // Same username+password valid in both tables — a data setup mistake,
+        // not something safe to silently guess between. Surface it instead.
+        setErr("Tu usuario existe en dos perfiles distintos. Contacta a tu admin.");
+        setLoading(false);return;
       }
-    }catch(e){setErr("Connection error. Please try again.");}
+      if(agentMatch){
+        if(!agentMatch.is_active){setErr("Cuenta desactivada.");setLoading(false);return;}
+        onLoginAgent(adaptProfile(agentMatch));
+      }else if(staffMatch){
+        if(!staffMatch.is_active){setErr("Cuenta desactivada.");setLoading(false);return;}
+        onLoginStaff(adaptStaffProfile(staffMatch));
+      }else{
+        setErr("Usuario o contraseña incorrectos.");
+      }
+    }catch(e){setErr("Error de conexión. Intenta de nuevo.");}
     setLoading(false);
   };
-  const isStaff=mode==="staff";
-  const inp={width:"100%",border:`1.5px solid ${isStaff?S.border:C.border}`,borderRadius:9,padding:"12px 14px",fontSize:15,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:isStaff?S.bg:C.bg,color:isStaff?S.text:C.text};
+  const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:9,padding:"12px 14px",fontSize:15,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:C.bg,color:C.text};
   const features=[["🏆","Leaderboard en tiempo real","Compite con tu equipo semana a semana"],["🎁","Canjea premios exclusivos","Usa tus coins por recompensas reales"],["📊","Sigue tu progreso mensual","KPIs, riddles y tareas en un solo lugar"],["🔔","Notificaciones de logros","Sube de nivel y recibe reconocimientos"]];
-  const tabBar=<div style={{display:"flex",background:isStaff?S.bgCard:"#e8eaf6",borderRadius:12,padding:4,marginBottom:24,border:`1px solid ${isStaff?S.border:C.border}`}}>
-    {["agents","staff"].map(m=><button key={m} onClick={()=>{setMode(m);setErr("");setName("");setPw("");}} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:mode===m?(m==="staff"?S.accent:C.blue):"transparent",color:mode===m?"#fff":isStaff?S.muted:C.muted,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}}>{m==="agents"?"🏆 Performance Arena":"⚡ Staff Arena"}</button>)}
-  </div>;
-  const formCard=<div style={{background:isStaff?S.bgCard:C.card,border:`1.5px solid ${isStaff?S.border:C.border}`,borderRadius:16,padding:"24px 20px"}}>
-    <div style={{marginBottom:16}}><div style={{color:isStaff?S.muted:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>{isStaff?"USERNAME":"TU NOMBRE"}</div><input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder={isStaff?"Your username":"Escribe tu nombre"} style={inp}/></div>
-    <div style={{marginBottom:20}}><div style={{color:isStaff?S.muted:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>{isStaff?"PASSWORD":"CONTRASENA"}</div><input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder={isStaff?"Your password":"Tu contrasena"} style={inp}/></div>
-    {err&&<div style={{color:isStaff?S.red:C.red,fontSize:13,marginBottom:14,textAlign:"center",fontWeight:600,padding:"8px 12px",background:isStaff?`${S.red}22`:C.red2,borderRadius:8}}>{err}</div>}
-    <button onClick={go} disabled={loading} style={{width:"100%",padding:14,fontSize:15,background:loading?(isStaff?S.border:"#c5cae9"):(isStaff?S.accent:C.blue),color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:1}}>{loading?"...":(isStaff?"SIGN IN":"ENTRAR")}</button>
+  const formCard=<div style={{background:C.card,border:`1.5px solid ${C.border}`,borderRadius:16,padding:"24px 20px"}}>
+    <div style={{marginBottom:16}}><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>TU USUARIO</div><input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Escribe tu usuario" style={inp}/></div>
+    <div style={{marginBottom:20}}><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>CONTRASEÑA</div><input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Tu contraseña" style={inp}/></div>
+    {err&&<div style={{color:C.red,fontSize:13,marginBottom:14,textAlign:"center",fontWeight:600,padding:"8px 12px",background:C.red2,borderRadius:8}}>{err}</div>}
+    <button onClick={go} disabled={loading} style={{width:"100%",padding:14,fontSize:15,background:loading?"#c5cae9":C.blue,color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:1}}>{loading?"...":"ENTRAR"}</button>
   </div>;
   const lgStyle=<style>{`
     *{box-sizing:border-box;margin:0;padding:0}
@@ -603,22 +613,6 @@ function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
     .lg-float{animation:lgFloat 3.5s ease-in-out infinite}
     .lg-pulse{animation:lgPulse 2s ease-in-out infinite}
   `}</style>;
-  if(isStaff){return(
-    <>{lgStyle}
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:S.bg}}>
-      <div style={{width:"100%",maxWidth:440,animation:"lgFadeUp 0.45s ease both"}}>
-        {tabBar}
-        <div style={{textAlign:"center",marginBottom:28}}>
-          <div style={{display:"flex",justifyContent:"center",marginBottom:12}} className="lg-float"><StaffLogo sz={64}/></div>
-          <div style={{fontSize:28,fontWeight:900,color:S.text,letterSpacing:2,animation:"lgFadeUp 0.45s ease 0.1s both"}}>STAFF</div>
-          <div style={{fontSize:28,fontWeight:900,color:S.accent,letterSpacing:2,animation:"lgFadeUp 0.45s ease 0.15s both"}}>ARENA</div>
-          <div style={{color:S.muted,fontSize:12,marginTop:6,animation:"lgFadeUp 0.45s ease 0.2s both"}}>Staff Performance System</div>
-        </div>
-        <div style={{animation:"lgFadeUp 0.45s ease 0.25s both"}}>{formCard}</div>
-      </div>
-    </div>
-    </>
-  );}
   return(
     <>{lgStyle}
     <div style={{minHeight:"100vh",background:"#fff"}}>
@@ -673,7 +667,6 @@ function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
 
           {/* RIGHT: login form */}
           <div style={{flex:"0 1 400px",minWidth:280,animationDelay:"0.3s"}} className="lg-hero-item">
-            {tabBar}
             <div style={{marginBottom:22}}>
               <div style={{color:C.text,fontWeight:900,fontSize:22,marginBottom:4}}>Bienvenido de vuelta</div>
               <div style={{color:C.muted,fontSize:14}}>Inicia sesión para ver tu progreso</div>
@@ -2598,6 +2591,7 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
   const [statsLoading,setStatsLoading]=useState(true);
   const [editForm,setEditForm]=useState({});
   const [grantForm,setGrantForm]=useState({});
+  const [permsForm,setPermsForm]=useState({});
   const [resetId,setResetId]=useState(null);
   const [newPw,setNewPw]=useState("");
   const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};
@@ -2632,6 +2626,13 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
   const deleteStaff=async(u)=>{if(!window.confirm(`Delete ${u.gameId}? This cannot be undone.`))return;try{await sbFetch(`staff_profiles?id=eq.${u.id}`,{method:"DELETE"});await reloadStaff();toast(`${u.gameId} deleted`);}catch(e){toast("Error: "+e.message);}};
   const savePw=async(u)=>{if(!newPw.trim()||newPw.length<4){toast("Minimum 4 characters");return;}try{await staffDb.update(u.id,{password_hash:newPw.trim(),needs_pw_change:true,temp_pw:newPw.trim()});await reloadStaff();setResetId(null);setNewPw("");toast("Password set");}catch(e){toast("Error");}};
   const saveEdit=async(u)=>{const ef=editForm[u.gameId]||{};try{await staffDb.update(u.id,{role:ef.role||u.role,project:ef.project??u.project});await reloadStaff();toast(`Updated ${u.gameId}`);setExpandedId(null);setExpandMode(null);}catch(e){toast("Error: "+e.message);}};
+  const savePerms=async(u)=>{
+    const selected=permsForm[u.gameId]||[];
+    // All boxes checked = no restriction (store null) instead of the full list,
+    // so a new nav item added later shows up for them automatically.
+    const value=selected.length>=STAFF_NAV_ITEMS.length?null:selected;
+    try{await staffDb.update(u.id,{nav_permissions:value});await reloadStaff();toast(`Permisos actualizados: ${u.gameId}`);setExpandedId(null);setExpandMode(null);}catch(e){toast("Error: "+e.message);}
+  };
   const resetStats=async(u)=>{if(!window.confirm(`Reset coins AND points for ${u.gameId}?`))return;try{await sbFetch(`staff_profiles?id=eq.${u.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({coins:0})});const curPts=u.monthPts||0;if(curPts>0)await sbFetch("staff_points_log",{method:"POST",prefer:"return=minimal",body:JSON.stringify({staff_game_id:u.gameId,points:-curPts,source:"manual_bonus",description:`🔄 Reset (SA: ${cu.gameId})`,status:"approved",created_at:new Date().toISOString()})});await reloadStaff();await loadStats();toast(`Reset: ${u.gameId}`);}catch(e){toast("Error: "+e.message);}};
   const grantPoints=async(u)=>{const gf=grantForm[u.gameId]||{};const pts=Number(gf.pts);if(!pts||!gf.reason?.trim()){toast("Completa puntos y motivo");return;}try{await sbFetch("staff_points_log",{method:"POST",prefer:"return=minimal",body:JSON.stringify({staff_game_id:u.gameId,points:pts,source:"manual_bonus",description:`💰 ${gf.reason} (SA: ${cu.gameId})`,status:"approved",granted_by:cu.gameId,created_at:new Date().toISOString()})});await sbFetch(`staff_profiles?id=eq.${u.id}`,{method:"PATCH",prefer:"return=minimal",body:JSON.stringify({coins:(u.coins||0)+pts})});await reloadStaff();await loadStats();setGrantForm(p=>({...p,[u.gameId]:{}}));toast(`+${pts} → ${u.gameId}`);}catch(e){toast("Error: "+e.message);}};
   const toggleExpand=(gid,mode)=>{if(expandedId===gid&&expandMode===mode){setExpandedId(null);setExpandMode(null);}else{setExpandedId(gid);setExpandMode(mode);}};
@@ -2717,6 +2718,7 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
                 <button onClick={()=>toggleExpand(u.gameId,"history")} style={qBtn(isExp&&expandMode==="history",S.accent)}>📋 Historial</button>
                 <button onClick={()=>{toggleExpand(u.gameId,"grant");setGrantForm(p=>({...p,[u.gameId]:{pts:"",reason:""}}));}} style={qBtn(isExp&&expandMode==="grant",S.green)}>💰 Dar puntos</button>
                 <button onClick={()=>{toggleExpand(u.gameId,"edit");setEditForm(p=>({...p,[u.gameId]:{role:u.role,project:u.project}}));}} style={qBtn(isExp&&expandMode==="edit",S.yellow)}>✏️ Editar</button>
+                <button onClick={()=>{toggleExpand(u.gameId,"perms");setPermsForm(p=>({...p,[u.gameId]:u.navPermissions||STAFF_NAV_ITEMS.map(n=>n.id)}));}} style={qBtn(isExp&&expandMode==="perms",S.purple)}>🔐 Permisos</button>
                 <button onClick={()=>resetStats(u)} style={qBtn(false,"#f97316")}>🔄 Reset</button>
               </div>
             )}
@@ -2765,6 +2767,34 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <SBtn onClick={()=>saveEdit(u)} color={S.green} sm style={{flex:1}}>Guardar</SBtn>
+                  <SBtn onClick={()=>setExpandedId(null)} color={S.muted} sm>Cancelar</SBtn>
+                </div>
+              </div>
+            )}
+            {/* Permisos por persona */}
+            {isExp&&expandMode==="perms"&&(
+              <div style={{marginTop:12,borderTop:`1px solid ${S.border}`,paddingTop:12}}>
+                <div style={{color:S.muted,fontSize:10,fontWeight:700,letterSpacing:1,marginBottom:4}}>QUÉ PUEDE VER {u.gameId}</div>
+                <div style={{color:S.muted,fontSize:11,marginBottom:10}}>Desmarca lo que no necesite ver — nunca puede ganar acceso a más de lo que su rol ya permite.</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+                  {STAFF_NAV_ITEMS.map(item=>{
+                    const checked=(permsForm[u.gameId]||[]).includes(item.id);
+                    return(
+                      <label key={item.id} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 8px",borderRadius:7,background:checked?`${S.purple}18`:S.bg,border:`1px solid ${checked?S.purple:S.border}`,cursor:"pointer",fontSize:12,color:checked?S.text:S.muted}}>
+                        <input type="checkbox" checked={checked} onChange={e=>{
+                          setPermsForm(p=>{
+                            const cur=p[u.gameId]||[];
+                            const next=e.target.checked?[...cur,item.id]:cur.filter(id=>id!==item.id);
+                            return {...p,[u.gameId]:next};
+                          });
+                        }}/>
+                        {item.label}
+                      </label>
+                    );
+                  })}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <SBtn onClick={()=>savePerms(u)} color={S.purple} sm style={{flex:1}}>Guardar permisos</SBtn>
                   <SBtn onClick={()=>setExpandedId(null)} color={S.muted} sm>Cancelar</SBtn>
                 </div>
               </div>
@@ -3020,7 +3050,7 @@ export default function App(){
     const isManager=cu?.role==="manager"||cu?.role==="training_manager"||cu?.role==="superadmin";
     const isSAorManager=cu?.role==="superadmin"||cu?.role==="manager";
     const isYurito=cu?.gameId==="YURITO";
-    const staffNav=isYurito?[{id:"dashboard",icon:"🏠",label:"Home"},{id:"kudos",icon:"👏",label:"Kudos"}]:[
+    const staffNavByRole=isYurito?[{id:"dashboard",icon:"🏠",label:"Home"},{id:"kudos",icon:"👏",label:"Kudos"}]:[
       {id:"dashboard",icon:"🏠",label:"Home"},
       {id:"leaderboard",icon:"🏆",label:"Rankings"},
       {id:"kudos",icon:"👏",label:"Kudos"},
@@ -3031,6 +3061,9 @@ export default function App(){
       {id:"store",icon:"🏪",label:"Tienda"},
       {id:"profile",icon:"🎨",label:"Profile"},
       ...(cu?.role==="superadmin"?[{id:"report",icon:"📊",label:"Reporte"},{id:"admin",icon:"⚙️",label:"Admin"}]:[])];
+    // Per-person permissions can only NARROW what the role already sees — never
+    // grant more — and "report"/"admin" (superadmin-only) are never filterable.
+    const staffNav=(!cu?.navPermissions||isYurito)?staffNavByRole:staffNavByRole.filter(item=>item.id==="report"||item.id==="admin"||cu.navPermissions.includes(item.id));
     const staffTitles={dashboard:"Dashboard",leaderboard:"Leaderboard",kudos:"Kudos",innovation:"Innovation & AI",sessions:"Coaching Sessions",activities:"Actividades & Puntos",store:"Staff Store",report:"Reporte de Puntos",profile:"Profile",admin:"Admin Panel"};
     return<>
       <style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif;background:${S.bg}}input,select,textarea{font-family:inherit}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>

@@ -96,7 +96,9 @@ interface UploadSummary { week: string; agents_processed: number; agents_created
 interface MissingAgent {
   game_id: string;
   project: string;
-  action: "vacation" | "sick_leave" | "termination" | "skip" | "";
+  full_name?: string;
+  action: "vacation" | "sick_leave" | "termination" | "promoted" | "skip" | "";
+  staffRole?: string;
 }
 
 const isMSL = (v: any) => String(v ?? "").trim().toUpperCase() === "MSL";
@@ -186,9 +188,9 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
     try { const ex = await dbGet("weekly_metrics", `week=eq.${encodeURIComponent(week)}&limit=1&select=id`); setWeekAlreadyLoaded(Array.isArray(ex) && ex.length > 0); } catch { setWeekAlreadyLoaded(false); }
 
     let existingIds = new Set<string>();
-    let activeProfiles: {game_id:string, team:string}[] = [];
+    let activeProfiles: {game_id:string, team:string, full_name?:string}[] = [];
     try {
-      const p = await dbGet("profiles", "select=game_id,team&is_active=eq.true");
+      const p = await dbGet("profiles", "select=game_id,team,full_name&is_active=eq.true");
       activeProfiles = Array.isArray(p) ? p : [];
       existingIds = new Set(activeProfiles.map((x:any)=>String(x.game_id).trim().toUpperCase()));
       setAllActiveProfiles(activeProfiles);
@@ -276,7 +278,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
         const excelIds = new Set(processed.map(a => a.game_id.toUpperCase()));
         const missing: MissingAgent[] = activeProfiles
           .filter((p:any) => !excelIds.has(String(p.game_id).trim().toUpperCase()))
-          .map((p:any) => ({ game_id: String(p.game_id).trim(), project: String(p.team||"").trim(), action: "" }));
+          .map((p:any) => ({ game_id: String(p.game_id).trim(), project: String(p.team||"").trim(), full_name: String(p.full_name||"").trim(), action: "", staffRole: "team_coach" }));
         setMissingAgents(missing);
 
         setAgents(processed); setCoaches(parsedCoaches); setStage("preview");
@@ -294,6 +296,9 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
 
   const updateMissingAction = (gid: string, action: MissingAgent["action"]) =>
     setMissingAgents(prev => prev.map(a => a.game_id===gid ? {...a, action} : a));
+
+  const updateMissingStaffRole = (gid: string, staffRole: string) =>
+    setMissingAgents(prev => prev.map(a => a.game_id===gid ? {...a, staffRole} : a));
 
   const selectAllMissingAction = (action: MissingAgent["action"]) =>
     setMissingAgents(prev => prev.map(a => ({...a, action})));
@@ -332,6 +337,22 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
       try {
         if (m.action === "termination") {
           await dbPatch("profiles", `game_id=eq.${encodeURIComponent(m.game_id)}`, {is_active:false});
+        } else if (m.action === "promoted") {
+          // Agent → staff: close the agent account (same as a normal baja — no
+          // need to carry Performance Arena history over, they now run through
+          // a different process as staff) and open a staff account for them so
+          // nobody has to remember to create it separately afterward.
+          await dbPatch("profiles", `game_id=eq.${encodeURIComponent(m.game_id)}`, {is_active:false});
+          try {
+            await dbInsert("staff_profiles", {
+              game_id: m.game_id, username: m.game_id, full_name: m.full_name || m.game_id,
+              password_hash: DEFAULT_PASSWORD, needs_pw_change: true, temp_pw: DEFAULT_PASSWORD,
+              role: m.staffRole || "team_coach", project: m.project || "",
+              is_active: true, level: 1, coins: 0,
+            });
+          } catch(e2:any) {
+            if (!e2.message?.includes("duplicate") && !e2.message?.includes("unique")) errs.push(`Alta staff ${m.game_id}: ${e2.message}`);
+          }
         } else if (m.action === "vacation" || m.action === "sick_leave" || m.action === "skip") {
           // Insert a zero-metric row so the week is tracked but with excused status
           await dbInsert("weekly_metrics", {
@@ -723,7 +744,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
                   </div>
                 </div>
                 <p style={{color:"#94a3b8",fontSize:12,margin:"0 0 10px"}}>
-                  Define qué pasó con cada uno. <b style={{color:"#fbbf24"}}>Baja</b> = desactiva la cuenta. <b style={{color:"#60a5fa"}}>MSL/Vacaciones</b> = registra semana excusada. <b style={{color:"#94a3b8"}}>Ignorar</b> = no hace nada esta semana.
+                  Define qué pasó con cada uno. <b style={{color:"#fbbf24"}}>Baja</b> = desactiva la cuenta. <b style={{color:"#60a5fa"}}>MSL/Vacaciones</b> = registra semana excusada. <b style={{color:"#a78bfa"}}>Promovido a Staff</b> = desactiva su cuenta de agente y crea su cuenta de staff con el rol elegido. <b style={{color:"#94a3b8"}}>Ignorar</b> = no hace nada esta semana.
                 </p>
                 <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:280,overflowY:"auto"}}>
                   {missingAgents.map((m,i)=>(
@@ -739,8 +760,19 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
                         <option value="vacation">🏖️ Vacaciones</option>
                         <option value="sick_leave">🏥 Sick Leave / MSL</option>
                         <option value="termination">📤 Baja (desactivar cuenta)</option>
+                        <option value="promoted">⬆️ Promovido a Staff</option>
                         <option value="skip">⏭️ Ignorar esta semana</option>
                       </select>
+                      {m.action==="promoted"&&(
+                        <select value={m.staffRole||"team_coach"} onChange={e=>updateMissingStaffRole(m.game_id,e.target.value)}
+                          style={{background:"#1e293b",border:"1px solid #334155",borderRadius:6,padding:"5px 8px",color:"#a78bfa",fontSize:12,cursor:"pointer",outline:"none"}}>
+                          <option value="team_coach">🎯 Team Coach</option>
+                          <option value="quality_coach">🔍 Quality Coach</option>
+                          <option value="training_coach">🎓 Training Coach</option>
+                          <option value="manager">👔 Manager</option>
+                          <option value="training_manager">📚 Training Manager</option>
+                        </select>
+                      )}
                     </div>
                   ))}
                 </div>
