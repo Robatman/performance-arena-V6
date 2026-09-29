@@ -234,7 +234,8 @@ export default function Activities({ gameId, isAdmin }: Props) {
               <div style={{color:C.purple, fontSize:11, letterSpacing:2, fontWeight:700, marginBottom:14}}>NUEVA ACTIVIDAD</div>
               <div style={{marginBottom:10}}>
                 <div style={{color:C.muted, fontSize:11, marginBottom:4}}>TÍTULO</div>
-                <input value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} style={inp} placeholder="ej. Halloween 2026"/>
+                <input value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} style={inp} placeholder="ej. 🎃 Halloween 2026"/>
+                <div style={{color:C.muted, fontSize:10, marginTop:4}}>Si el título empieza con un emoji, ese será el ícono de su burbuja en el Inicio.</div>
               </div>
               <div style={{marginBottom:14}}>
                 <div style={{color:C.muted, fontSize:11, marginBottom:4}}>DESCRIPCIÓN (opcional)</div>
@@ -302,6 +303,65 @@ export default function Activities({ gameId, isAdmin }: Props) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── BURBUJAS (Inicio del agente) ─────────────────────────────────────────
+// Una burbuja flotante por actividad abierta. El emoji sale del título si
+// empieza con uno ("🎃 Halloween"), así el admin lo elige sin campo nuevo ni
+// cambio de base de datos; si no, 🎉. Tocar una lleva a la pestaña Actividades.
+const LEADING_EMOJI = /^\s*(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)\s*/u;
+export function activityEmoji(title: string) {
+  const m = LEADING_EMOJI.exec(title || "");
+  return { emoji: m ? m[1] : "🎉", label: (title || "").replace(LEADING_EMOJI, "").trim() || title };
+}
+
+export function ActivityBubbles({ gameId, onOpen }: { gameId: string; onOpen: () => void }) {
+  const [acts, setActs] = useState<any[]>([]);
+  const [regs, setRegs] = useState<Record<string, any>>({});
+  useEffect(() => {
+    (async () => {
+      try {
+        const a = await sbFetch("activities?active=eq.true&select=id,title&order=created_at.desc");
+        setActs(a || []);
+        if (gameId) {
+          const r = await sbFetch(`activity_registrations?game_id=eq.${encodeURIComponent(gameId)}&select=activity_id,status`);
+          setRegs(Object.fromEntries((r || []).map((x: any) => [x.activity_id, x])));
+        }
+      } catch (e) { console.error(e); }
+    })();
+  }, [gameId]);
+
+  if (acts.length === 0) return null;
+  const MAX = 5;
+  const shown = acts.slice(0, MAX);
+  const extra = acts.length - shown.length;
+  const bubble = (key: string, top: React.ReactNode, sub: string, delay: number, done?: boolean) => (
+    <button key={key} onClick={onOpen} className="act-bubble" style={{
+      width: 96, height: 96, borderRadius: "50%", border: `2px solid ${done ? C.green : "rgba(255,255,255,0.45)"}`,
+      background: done ? "rgba(22,163,74,0.35)" : "rgba(255,255,255,0.16)", backdropFilter: "blur(4px)",
+      color: "#fff", cursor: "pointer", fontFamily: "inherit", padding: 6,
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      animation: `actFloat 3.4s ease-in-out ${delay}s infinite`,
+    }}>
+      <div style={{ fontSize: 30, lineHeight: 1 }}>{top}</div>
+      <div style={{ fontSize: 10, fontWeight: 800, marginTop: 4, lineHeight: 1.15, maxWidth: 80, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const }}>{sub}</div>
+    </button>
+  );
+  return (
+    <div style={{ background: `linear-gradient(135deg,${C.purple},${C.blue})`, borderRadius: 16, padding: "14px 12px 18px", marginBottom: 12 }}>
+      <style>{`@keyframes actFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}} .act-bubble:active{transform:scale(.94)}`}</style>
+      <div style={{ color: "#fff", fontWeight: 900, fontSize: 15, marginBottom: 2, paddingLeft: 6 }}>🎉 Actividades abiertas</div>
+      <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 11, marginBottom: 12, paddingLeft: 6 }}>Toca una burbuja para participar</div>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 14 }}>
+        {shown.map((a, i) => {
+          const { emoji, label } = activityEmoji(a.title);
+          const done = !!regs[a.id];
+          return bubble(a.id, done ? "✅" : emoji, label, i * 0.4, done);
+        })}
+        {extra > 0 && bubble("more", `+${extra}`, "ver todas", MAX * 0.4)}
+      </div>
     </div>
   );
 }

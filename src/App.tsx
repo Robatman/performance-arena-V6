@@ -4,7 +4,7 @@ import ExcelUpload from "./components/ExcelUpload";
 import ReferralsPanel from "./components/ReferralsPanel";
 import OperationsDashboard from "./components/OperationsDashboard";
 import RiddleTask from "./components/RiddleTask";
-import Activities from "./components/Activities";
+import Activities, { ActivityBubbles } from "./components/Activities";
 import CoachingSessions from "./components/CoachingSessions";
 import StaffStore from "./components/StaffStore";
 import StaffPointsReport from "./components/StaffPointsReport";
@@ -549,7 +549,7 @@ function BulletinCard({bulletin}){
   );
 }
 
-function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, coinSettings={}, totalCoins=0, level=1, streak=0, weeksAtElite=0, levelHistory=[]}){
+function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, onOpenActivities, coinSettings={}, totalCoins=0, level=1, streak=0, weeksAtElite=0, levelHistory=[]}){
   const [showWeekDetail, setShowWeekDetail] = useState(false);
 
   return(
@@ -560,6 +560,7 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
 
       {isSA&&availableWeeks.length>0&&(<Card style={{marginBottom:12,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:2}}>SEMANA VISUALIZADA</div><div style={{color:C.blue,fontWeight:700,fontSize:13}}>Última evaluada: {availableWeeks[0]}</div></div><select value={selectedWeek} onChange={e=>onWeekChange(e.target.value)} style={{border:`1.5px solid ${C.border}`,borderRadius:8,padding:"7px 11px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,cursor:"pointer"}}>{availableWeeks.map(w=><option key={w} value={w}>{w}</option>)}</select></div></Card>)}
       {!isSA&&lastEvaluatedWeek&&(<Card style={{marginBottom:12,padding:"10px 14px",background:`${C.blue}06`,border:`1.5px solid ${C.blue}20`}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>📅</span><div style={{color:C.muted,fontSize:12}}>Última semana evaluada: <strong style={{color:C.blue}}>{lastEvaluatedWeek}</strong></div></div></Card>)}
+      {onOpenActivities&&<ActivityBubbles gameId={user.game_id||user.username||""} onOpen={onOpenActivities}/>}
       <BulletinCard bulletin={bulletin}/>
       {/* Avatar + identity card */}
       <Card style={{marginBottom:12,display:"flex",alignItems:"center",gap:14}}>
@@ -3011,7 +3012,7 @@ export default function App(){
       </div>
     </div>
     <div style={{marginLeft:isWide?188:0,padding:isWide?"20px 28px 40px":"14px 14px 0",animation:"fadeIn 0.25s ease"}}>
-      {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps} isSA={isSA} availableWeeks={availableWeeks} selectedWeek={selectedWeek} lastEvaluatedWeek={lastEvaluatedWeek} onWeekChange={setSelectedWeek} bulletin={bulletin}/>}
+      {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps} isSA={isSA} availableWeeks={availableWeeks} selectedWeek={selectedWeek} lastEvaluatedWeek={lastEvaluatedWeek} onWeekChange={setSelectedWeek} bulletin={bulletin} onOpenActivities={()=>setScreen("activities")}/>}
       {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle" coinSettings={coinSettings}/>}
       {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task" coinSettings={coinSettings}/>}
       {screen==="activities"&&<Activities gameId={cu.game_id||cu.username||""} isAdmin={isSA}/>}
