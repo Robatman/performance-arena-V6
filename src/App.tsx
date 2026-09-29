@@ -1821,6 +1821,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const [resetId,setResetId]=useState(null);const [newPw,setNewPw]=useState("");
   const [campaignEditId,setCampaignEditId]=useState(null);const [campaignEditVal,setCampaignEditVal]=useState("");
   const [delConfirm,setDelConfirm]=useState(null);const [loading,setLoading]=useState(false);
+  const [promoteId,setPromoteId]=useState(null);const [promoteRole,setPromoteRole]=useState("team_coach");
 
   const createUser=async()=>{
     if(!form.name.trim()||!form.password.trim()){toast("Completa nombre y contrasena");return;}
@@ -1837,6 +1838,21 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const toggleActive=async(u)=>{try{await db.updateUser(u.id,{is_active:!u.active});await reloadUsers();toast(u.active?"Usuario desactivado":"Usuario activado");}catch(e){toast("Error");}};
   const savePw=async(u)=>{if(!newPw.trim()||newPw.trim().length<4){toast("Minimo 4 caracteres");return;}try{await db.updateUser(u.id,{password_hash:newPw.trim(),needs_pw_change:true,temp_pw:newPw.trim()});await reloadUsers();setResetId(null);setNewPw("");toast("Contrasena temporal asignada.");}catch(e){toast("Error");}};
   const saveCampaign=async(u)=>{try{await db.updateUser(u.id,{team:campaignEditVal.trim()||null});await reloadUsers();setCampaignEditId(null);setCampaignEditVal("");toast(`Campaña de ${u.name} actualizada`);}catch(e){toast("Error al guardar campaña");}};
+  // Same "promote" the Excel upload offers for an absent agent, but reachable
+  // any day from here — closes/deactivates the agent account and opens a
+  // staff one with the chosen role, without waiting for the next Excel.
+  const promoteToStaff=async(u)=>{
+    try{
+      await db.updateUser(u.id,{is_active:false});
+      await sbFetch("staff_profiles",{method:"POST",body:JSON.stringify({
+        game_id:u.game_id||u.name, username:u.game_id||u.name, full_name:u.name,
+        password_hash:"Centris2026", needs_pw_change:true, temp_pw:"Centris2026",
+        role:promoteRole, project:u.project||"", is_active:true, level:1, coins:0,
+      })});
+      await reloadUsers();setPromoteId(null);
+      toast(`${u.name} promovido a Staff (${STAFF_ROLES[promoteRole]||promoteRole})`);
+    }catch(e){toast("Error al promover: "+e.message);}
+  };
 
   const [kf,setKf]=useState({toId:"",gold:false,reason:""});
   const sendKudo=async()=>{
@@ -2077,12 +2093,28 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
               {isSA&&u.id!==cu.id&&(
                 <div style={{display:"flex",flexDirection:"column",gap:5,flexShrink:0}}>
                   <Btn onClick={()=>toggleActive(u)} color={u.active?C.red:C.green} sm>{u.active?"Desactivar":"Activar"}</Btn>
-                  <Btn onClick={()=>{setResetId(resetId===u.id?null:u.id);setNewPw("");setCampaignEditId(null);}} color={resetId===u.id?"#6b7280":C.yellow} sm>{resetId===u.id?"Cancelar":"Contraseña"}</Btn>
-                  <Btn onClick={()=>{setCampaignEditId(campaignEditId===u.id?null:u.id);setCampaignEditVal(u.project||"");setResetId(null);}} color={campaignEditId===u.id?"#6b7280":C.blue} sm>{campaignEditId===u.id?"Cerrar":"Campaña"}</Btn>
+                  <Btn onClick={()=>{setResetId(resetId===u.id?null:u.id);setNewPw("");setCampaignEditId(null);setPromoteId(null);}} color={resetId===u.id?"#6b7280":C.yellow} sm>{resetId===u.id?"Cancelar":"Contraseña"}</Btn>
+                  <Btn onClick={()=>{setCampaignEditId(campaignEditId===u.id?null:u.id);setCampaignEditVal(u.project||"");setResetId(null);setPromoteId(null);}} color={campaignEditId===u.id?"#6b7280":C.blue} sm>{campaignEditId===u.id?"Cerrar":"Campaña"}</Btn>
+                  {u.active&&<Btn onClick={()=>{setPromoteId(promoteId===u.id?null:u.id);setResetId(null);setCampaignEditId(null);}} color={promoteId===u.id?"#6b7280":C.purple} sm>{promoteId===u.id?"Cancelar":"⬆️ Promover"}</Btn>}
                   <Btn onClick={()=>setDelConfirm(u)} color={C.red} sm>Desactivar</Btn>
                 </div>
               )}
             </div>
+
+            {promoteId===u.id&&(
+              <div style={{marginTop:10,padding:"12px 14px",background:`${C.purple}10`,borderRadius:10,border:`1px solid ${C.purple}44`}}>
+                <div style={{color:C.purple,fontSize:11,fontWeight:700,marginBottom:8}}>PROMOVER A STAFF — se desactiva su cuenta de agente y se crea la de staff</div>
+                <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+                  <div style={{flex:1}}>
+                    <div style={{color:C.muted,fontSize:10,marginBottom:3}}>PUESTO</div>
+                    <select value={promoteRole} onChange={e=>setPromoteRole(e.target.value)} style={inp}>
+                      {Object.entries(STAFF_ROLES).filter(([k])=>k!=="superadmin").map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
+                  <Btn onClick={()=>promoteToStaff(u)} color={C.purple} sm>Confirmar</Btn>
+                </div>
+              </div>
+            )}
 
             {/* Stats grid */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:10}}>
