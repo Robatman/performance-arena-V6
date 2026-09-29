@@ -578,10 +578,14 @@ function PublicView({users,prizes,onBack}){
 
 function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
   const [name,setName]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);const [wide,setWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
+  const [dualChoice,setDualChoice]=useState(null); // {agentMatch, staffMatch} when the same login is valid in both tables
   useEffect(()=>{const h=()=>setWide(window.innerWidth>=900);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
   // Single login: no more "which arena" tab to pick beforehand — the account
-  // itself lives in exactly one table (profiles = agente, staff_profiles =
-  // staff), never both, so we just check both and route to whichever matches.
+  // itself normally lives in exactly one table (profiles = agente,
+  // staff_profiles = staff), so we just check both and route to whichever
+  // matches. A person who deliberately holds both an agent-admin AND a
+  // staff-admin account (same username/password on purpose) gets a small
+  // chooser instead of a hard error — never a silent guess either way.
   const go=async()=>{
     if(!name.trim()||!pw.trim()){setErr("Escribe tu usuario y contraseña");return;}
     setLoading(true);setErr("");
@@ -593,9 +597,7 @@ function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
       const agentMatch=(agentResults||[]).find(p=>p.password_hash===pw);
       const staffMatch=(staffResults||[]).find(p=>p.password_hash===pw);
       if(agentMatch&&staffMatch){
-        // Same username+password valid in both tables — a data setup mistake,
-        // not something safe to silently guess between. Surface it instead.
-        setErr("Tu usuario existe en dos perfiles distintos. Contacta a tu admin.");
+        setDualChoice({agentMatch,staffMatch});
         setLoading(false);return;
       }
       if(agentMatch){
@@ -610,14 +612,29 @@ function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
     }catch(e){setErr("Error de conexión. Intenta de nuevo.");}
     setLoading(false);
   };
+  const enterAs=(which)=>{
+    if(!dualChoice)return;
+    if(which==="agent")onLoginAgent(adaptProfile(dualChoice.agentMatch));
+    else onLoginStaff(adaptStaffProfile(dualChoice.staffMatch));
+  };
   const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:9,padding:"12px 14px",fontSize:15,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:C.bg,color:C.text};
   const features=[["🏆","Leaderboard en tiempo real","Compite con tu equipo semana a semana"],["🎁","Canjea premios exclusivos","Usa tus coins por recompensas reales"],["📊","Sigue tu progreso mensual","KPIs, riddles y tareas en un solo lugar"],["🔔","Notificaciones de logros","Sube de nivel y recibe reconocimientos"]];
-  const formCard=<div style={{background:C.card,border:`1.5px solid ${C.border}`,borderRadius:16,padding:"24px 20px"}}>
-    <div style={{marginBottom:16}}><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>TU USUARIO</div><input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Escribe tu usuario" style={inp}/></div>
-    <div style={{marginBottom:20}}><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>CONTRASEÑA</div><input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Tu contraseña" style={inp}/></div>
-    {err&&<div style={{color:C.red,fontSize:13,marginBottom:14,textAlign:"center",fontWeight:600,padding:"8px 12px",background:C.red2,borderRadius:8}}>{err}</div>}
-    <button onClick={go} disabled={loading} style={{width:"100%",padding:14,fontSize:15,background:loading?"#c5cae9":C.blue,color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:1}}>{loading?"...":"ENTRAR"}</button>
-  </div>;
+  const formCard=dualChoice?(
+    <div style={{background:C.card,border:`1.5px solid ${C.border}`,borderRadius:16,padding:"24px 20px"}}>
+      <div style={{color:C.text,fontWeight:800,fontSize:15,marginBottom:6,textAlign:"center"}}>Tienes dos cuentas</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:18,textAlign:"center"}}>Este usuario existe como agente y como staff. ¿A cuál quieres entrar?</div>
+      <button onClick={()=>enterAs("agent")} style={{width:"100%",padding:14,fontSize:14,background:C.blue,color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:"pointer",fontFamily:"inherit",marginBottom:10}}>🏆 Entrar como Agente ({dualChoice.agentMatch.full_name||name})</button>
+      <button onClick={()=>enterAs("staff")} style={{width:"100%",padding:14,fontSize:14,background:S.accent,color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:"pointer",fontFamily:"inherit",marginBottom:10}}>⚡ Entrar como Staff ({dualChoice.staffMatch.full_name||name})</button>
+      <button onClick={()=>setDualChoice(null)} style={{width:"100%",padding:10,fontSize:13,background:"transparent",color:C.muted,border:"none",cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+    </div>
+  ):(
+    <div style={{background:C.card,border:`1.5px solid ${C.border}`,borderRadius:16,padding:"24px 20px"}}>
+      <div style={{marginBottom:16}}><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>TU USUARIO</div><input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Escribe tu usuario" style={inp}/></div>
+      <div style={{marginBottom:20}}><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>CONTRASEÑA</div><input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Tu contraseña" style={inp}/></div>
+      {err&&<div style={{color:C.red,fontSize:13,marginBottom:14,textAlign:"center",fontWeight:600,padding:"8px 12px",background:C.red2,borderRadius:8}}>{err}</div>}
+      <button onClick={go} disabled={loading} style={{width:"100%",padding:14,fontSize:15,background:loading?"#c5cae9":C.blue,color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:1}}>{loading?"...":"ENTRAR"}</button>
+    </div>
+  );
   const lgStyle=<style>{`
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:"Segoe UI",system-ui,sans-serif;background:#fff}
