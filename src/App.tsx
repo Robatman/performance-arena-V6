@@ -429,6 +429,13 @@ function PublicView({users,prizes,onBack}){
   const activePrizes=(prizes||[]).filter(p=>p.is_active!==false);
   const totalAgents=(users||[]).filter(u=>u.active).length;
   const topScore=rankings[0]?.pts||0;
+  // Show a teaser, not the whole thing — showing everything for free removes
+  // the one reason ("ver más") someone would bother logging in.
+  const VISIBLE_RANK=5, VISIBLE_PRIZES=3;
+  const visibleRankings=rankings.slice(0,VISIBLE_RANK);
+  const lockedRankCount=Math.max(0,rankings.length-VISIBLE_RANK);
+  const visiblePrizes=activePrizes.slice(0,VISIBLE_PRIZES);
+  const lockedPrizeCount=Math.max(0,activePrizes.length-VISIBLE_PRIZES);
   return(
     <>
     <style>{`
@@ -485,8 +492,18 @@ function PublicView({users,prizes,onBack}){
         </div>
       </div>
 
+      {/* Early CTA — right under the hero, before any list, so it's seen even
+          by someone who never scrolls further. The teaser rows below still
+          make the case, but this one doesn't wait for it. */}
+      <div style={{maxWidth:1140,margin:"0 auto",padding:wide?"20px 32px 0":"16px 16px 0"}}>
+        <div style={{background:`linear-gradient(135deg,${C.blue},${C.red})`,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
+          <div style={{color:"#fff",fontWeight:700,fontSize:14}}>🚀 {totalAgents} agentes ya compitiendo — entra y ve dónde quedas tú.</div>
+          <button onClick={onBack} style={{padding:"9px 20px",borderRadius:9,border:"none",background:"#fff",color:C.blue,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Iniciar Sesión →</button>
+        </div>
+      </div>
+
       {/* ── CONTENT ── */}
-      <div style={{maxWidth:1140,margin:"0 auto",padding:wide?"32px 32px 60px":"0 0 60px"}}>
+      <div style={{maxWidth:1140,margin:"0 auto",padding:wide?"20px 32px 60px":"0 0 60px"}}>
         {/* mobile tab switcher */}
         {!wide&&<div style={{display:"flex",borderBottom:`1.5px solid ${C.border}`,background:"#fff",position:"sticky",top:0,zIndex:10}}>
           {[["leaderboard","🏆 Rankings"],["rewards","🎁 Premios"]].map(([v,l])=>(
@@ -507,7 +524,7 @@ function PublicView({users,prizes,onBack}){
                 </div>
               </div>}
               {loading&&<div style={{textAlign:"center",padding:48,color:C.muted,fontSize:14}}>Cargando ranking…</div>}
-              {!loading&&rankings.map((r,i)=>{
+              {!loading&&visibleRankings.map((r,i)=>{
                 const u=r.profile;
                 const isTop3=i<3;
                 return(
@@ -526,6 +543,13 @@ function PublicView({users,prizes,onBack}){
                 );
               })}
               {!loading&&rankings.length===0&&<div style={{textAlign:"center",padding:48,color:C.muted}}>No hay datos de ranking aún.</div>}
+              {!loading&&lockedRankCount>0&&(
+                <div onClick={onBack} style={{marginTop:4,padding:"18px 16px",borderRadius:14,border:`1.5px dashed ${C.border}`,textAlign:"center",cursor:"pointer",background:`${C.blue}05`}}>
+                  <div style={{fontSize:22,marginBottom:4}}>🔒</div>
+                  <div style={{color:C.text,fontWeight:700,fontSize:13}}>+{lockedRankCount} agentes más — y tu propio lugar en la tabla</div>
+                  <div style={{color:C.blue,fontWeight:700,fontSize:12,marginTop:4}}>Inicia sesión para verlo →</div>
+                </div>
+              )}
             </div>
           )}
 
@@ -540,7 +564,7 @@ function PublicView({users,prizes,onBack}){
                 </div>
               </div>}
               {activePrizes.length===0&&<div style={{textAlign:"center",padding:48,color:C.muted}}>No hay premios disponibles.</div>}
-              {activePrizes.map((p,i)=>{
+              {visiblePrizes.map((p,i)=>{
                 const hasStock=p.stock===-1||(p.stock||0)>0;
                 const minLv=p.min_level||p.minLevel||1;
                 return(
@@ -558,6 +582,12 @@ function PublicView({users,prizes,onBack}){
                   </div>
                 );
               })}
+              {lockedPrizeCount>0&&(
+                <div onClick={onBack} style={{padding:"16px",borderRadius:14,border:`1.5px dashed ${C.border}`,textAlign:"center",cursor:"pointer",background:`${C.gold}06`,marginBottom:9}}>
+                  <div style={{fontSize:20,marginBottom:4}}>🔒</div>
+                  <div style={{color:C.text,fontWeight:700,fontSize:13}}>+{lockedPrizeCount} premios más por ver</div>
+                </div>
+              )}
               {/* CTA */}
               <div style={{marginTop:18,padding:"22px 20px",borderRadius:16,background:`linear-gradient(135deg,${C.blue}0d,${C.red}0d)`,border:`1.5px solid ${C.blue}25`,textAlign:"center"}}>
                 <div style={{fontSize:32,marginBottom:8}}>🚀</div>
