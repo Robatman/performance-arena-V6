@@ -401,168 +401,7 @@ function Toast({msg,onClose}){useEffect(()=>{if(msg){const t=setTimeout(onClose,
 
 function TempPwModal({user,onSave,dark=false}){const [p1,setP1]=useState("");const [p2,setP2]=useState("");const [err,setErr]=useState("");const save=()=>{if(p1.length<4){setErr(dark?"Minimum 4 characters":"Minimo 4 caracteres");return;}if(p1!==p2){setErr(dark?"Passwords do not match":"Las contrasenas no coinciden");return;}onSave(p1);};const inp={width:"100%",border:`1.5px solid ${dark?S.border:C.border}`,borderRadius:9,padding:"11px 14px",fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:dark?S.bg:C.bg,color:dark?S.text:C.text};return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:dark?S.bgCard:C.card,border:`1px solid ${dark?S.border:C.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:380}}><div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:42,marginBottom:8}}>🔑</div><div style={{color:dark?S.accent:C.blue,fontWeight:800,fontSize:18,marginBottom:6}}>{dark?"Password Change Required":"Cambio de Contrasena"}</div><div style={{color:dark?S.muted:C.muted,fontSize:13}}>{dark?`Hi ${user.name}, please set your new password.`:`Hola ${user.name}, crea tu nueva contrasena.`}</div></div><div style={{marginBottom:12}}><div style={{color:dark?S.muted:C.muted,fontSize:11,marginBottom:4}}>NEW PASSWORD</div><input type="password" value={p1} onChange={e=>setP1(e.target.value)} style={inp}/></div><div style={{marginBottom:16}}><div style={{color:dark?S.muted:C.muted,fontSize:11,marginBottom:4}}>CONFIRM PASSWORD</div><input type="password" value={p2} onChange={e=>setP2(e.target.value)} onKeyDown={e=>e.key==="Enter"&&save()} style={inp}/></div>{err&&<div style={{color:S.red,fontSize:13,marginBottom:10,textAlign:"center",fontWeight:600}}>{err}</div>}{dark?<SBtn onClick={save} style={{width:"100%",padding:12}}>SAVE PASSWORD</SBtn>:<Btn onClick={save} color={C.blue} style={{width:"100%",padding:12}}>GUARDAR</Btn>}</div></div>);}
 
-function PublicView({users,prizes,onBack}){
-  const [tab,setTab]=useState("leaderboard");
-  const [wide,setWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
-  const shop=DEFAULT_SHOP;const medals=["🥇","🥈","🥉"];
-  useEffect(()=>{const h=()=>setWide(window.innerWidth>=900);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
-  const activePrizes=(prizes||[]).filter(p=>p.is_active!==false);
-  const totalAgents=(users||[]).filter(u=>u.active).length;
-  // Nothing about individual agents is shown before login — only aggregates
-  // and a teaser of prizes, so "ver más" is the reason to log in.
-  const VISIBLE_PRIZES=3;
-  const visiblePrizes=activePrizes.slice(0,VISIBLE_PRIZES);
-  const lockedPrizeCount=Math.max(0,activePrizes.length-VISIBLE_PRIZES);
-  return(
-    <>
-    <style>{`
-      *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:"Segoe UI",system-ui,sans-serif;background:#fff}
-      @keyframes pvFadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
-      @keyframes pvFloat{0%,100%{transform:translateY(0px)}50%{transform:translateY(-10px)}}
-      @keyframes pvPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
-      @keyframes pvSlideIn{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
-      @keyframes pvOrbit{0%{transform:rotate(0deg) translateX(90px) rotate(0deg)}100%{transform:rotate(360deg) translateX(90px) rotate(-360deg)}}
-      .pv-hero-item{animation:pvFadeUp 0.55s ease both}
-      .pv-row{animation:pvSlideIn 0.4s ease both}
-      .pv-float{animation:pvFloat 3.5s ease-in-out infinite}
-      .pv-pulse{animation:pvPulse 2s ease-in-out infinite}
-    `}</style>
-    <div style={{minHeight:"100vh",background:"#fff"}}>
-
-      {/* ── HERO ── */}
-      <div style={{background:"linear-gradient(135deg,#0a0a40 0%,#1a1aff 55%,#e8282a 100%)",padding:"0 20px 52px",position:"relative",overflow:"hidden"}}>
-        {/* decorative blobs */}
-        <div style={{position:"absolute",top:-80,right:-80,width:300,height:300,borderRadius:"50%",background:"rgba(255,255,255,0.04)",pointerEvents:"none"}} className="pv-float"/>
-        <div style={{position:"absolute",bottom:-100,left:-100,width:360,height:360,borderRadius:"50%",background:"rgba(255,255,255,0.03)",pointerEvents:"none",animationDelay:"1.5s"}} className="pv-float"/>
-        <div style={{position:"absolute",top:"50%",left:"50%",width:500,height:500,borderRadius:"50%",background:"rgba(255,255,255,0.025)",transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>
-
-        {/* top nav */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 0 32px",position:"relative",zIndex:2}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <Logo sz={40}/>
-            <div>
-              <div style={{fontFamily:"Georgia,serif",fontSize:17,fontWeight:900,color:"#fff",letterSpacing:2,lineHeight:1.1}}>PERFORMANCE</div>
-              <div style={{fontFamily:"Georgia,serif",fontSize:17,fontWeight:900,color:"#ffd700",letterSpacing:2,lineHeight:1.1}}>ARENA</div>
-            </div>
-          </div>
-          <button onClick={onBack} style={{padding:"11px 24px",borderRadius:10,border:"1.5px solid rgba(255,255,255,0.35)",background:"rgba(255,255,255,0.1)",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",backdropFilter:"blur(6px)",transition:"background 0.2s"}} onMouseOver={e=>(e.currentTarget.style.background="rgba(255,255,255,0.2)")} onMouseOut={e=>(e.currentTarget.style.background="rgba(255,255,255,0.1)")}>
-            Iniciar Sesión →
-          </button>
-        </div>
-
-        {/* hero content */}
-        <div style={{textAlign:"center",position:"relative",zIndex:2}}>
-          <div style={{fontSize:60,marginBottom:14}} className="pv-float">🏆</div>
-          <div className="pv-hero-item" style={{fontFamily:"Georgia,serif",fontSize:wide?48:34,fontWeight:900,color:"#fff",letterSpacing:3,marginBottom:10,animationDelay:"0.1s"}}>LEADERBOARD</div>
-          <div className="pv-hero-item" style={{color:"rgba(255,255,255,0.7)",fontSize:15,marginBottom:36,animationDelay:"0.2s"}}>Compite, sube de nivel y canjea premios reales</div>
-          {/* stats */}
-          <div className="pv-hero-item" style={{display:"flex",justifyContent:"center",gap:wide?48:24,flexWrap:"wrap",animationDelay:"0.3s"}}>
-            {[{icon:"👥",val:totalAgents,label:"Agentes activos"},{icon:"🎁",val:activePrizes.length,label:"Premios"}].map(s=>(
-              <div key={s.label} style={{textAlign:"center"}}>
-                <div style={{fontSize:26,marginBottom:4}}>{s.icon}</div>
-                <div style={{color:"#fff",fontWeight:900,fontSize:30,lineHeight:1}} className="pv-pulse">{s.val}</div>
-                <div style={{color:"rgba(255,255,255,0.55)",fontSize:12,marginTop:4}}>{s.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Early CTA — right under the hero, before any list, so it's seen even
-          by someone who never scrolls further. The teaser rows below still
-          make the case, but this one doesn't wait for it. */}
-      <div style={{maxWidth:1140,margin:"0 auto",padding:wide?"20px 32px 0":"16px 16px 0"}}>
-        <div style={{background:`linear-gradient(135deg,${C.blue},${C.red})`,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
-          <div style={{color:"#fff",fontWeight:700,fontSize:14}}>🚀 {totalAgents} agentes ya compitiendo — entra y ve dónde quedas tú.</div>
-          <button onClick={onBack} style={{padding:"9px 20px",borderRadius:9,border:"none",background:"#fff",color:C.blue,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Iniciar Sesión →</button>
-        </div>
-      </div>
-
-      {/* ── CONTENT ── */}
-      <div style={{maxWidth:1140,margin:"0 auto",padding:wide?"20px 32px 60px":"0 0 60px"}}>
-        {/* mobile tab switcher */}
-        {!wide&&<div style={{display:"flex",borderBottom:`1.5px solid ${C.border}`,background:"#fff",position:"sticky",top:0,zIndex:10}}>
-          {[["leaderboard","🏆 Rankings"],["rewards","🎁 Premios"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setTab(v)} style={{flex:1,padding:"14px 0",border:"none",borderBottom:`3px solid ${tab===v?C.blue:"transparent"}`,background:"transparent",color:tab===v?C.blue:C.muted,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"color 0.2s"}}>{l}</button>
-          ))}
-        </div>}
-
-        <div style={{display:"flex",gap:32,alignItems:"flex-start",padding:wide?"0":"16px 16px 0"}}>
-
-          {/* LEFT: Leaderboard */}
-          {(wide||tab==="leaderboard")&&(
-            <div style={{flex:1,minWidth:0}}>
-              {wide&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-                <span style={{fontSize:26}}>🏆</span>
-                <div>
-                  <div style={{color:C.text,fontWeight:900,fontSize:20}}>Rankings del Mes</div>
-                  <div style={{color:C.muted,fontSize:13}}>Score acumulado: KPI + Riddles + Tareas</div>
-                </div>
-              </div>}
-              <div onClick={onBack} style={{padding:"44px 24px",borderRadius:16,border:`1.5px dashed ${C.border}`,textAlign:"center",cursor:"pointer",background:`${C.blue}05`}}>
-                <div style={{fontSize:40,marginBottom:10}}>🔒</div>
-                <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:6}}>El ranking es solo para agentes</div>
-                <div style={{color:C.muted,fontSize:13,marginBottom:16}}>Inicia sesión para ver la tabla y tu propio lugar en ella.</div>
-                <div style={{color:C.blue,fontWeight:700,fontSize:13}}>Iniciar Sesión →</div>
-              </div>
-            </div>
-          )}
-
-          {/* RIGHT: Prizes */}
-          {(wide||tab==="rewards")&&(
-            <div style={{flex:wide?"0 0 380px":1,minWidth:0}}>
-              {wide&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-                <span style={{fontSize:26}}>🎁</span>
-                <div>
-                  <div style={{color:C.text,fontWeight:900,fontSize:20}}>Premios Disponibles</div>
-                  <div style={{color:C.muted,fontSize:13}}>Canjea coins por recompensas reales</div>
-                </div>
-              </div>}
-              {activePrizes.length===0&&<div style={{textAlign:"center",padding:48,color:C.muted}}>No hay premios disponibles.</div>}
-              {visiblePrizes.map((p,i)=>{
-                const hasStock=p.stock===-1||(p.stock||0)>0;
-                const minLv=p.min_level||p.minLevel||1;
-                return(
-                  <div key={p.id} className="pv-row" style={{display:"flex",alignItems:"center",gap:13,padding:"14px 16px",marginBottom:9,borderRadius:14,background:"#fff",border:`1.5px solid ${C.border}`,opacity:hasStock?1:0.45,animationDelay:`${Math.min(i,12)*35}ms`,boxShadow:"0 1px 8px rgba(0,0,0,0.05)"}}>
-                    <span style={{fontSize:32,flexShrink:0}}>{p.emoji||"🎁"}</span>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{color:C.text,fontWeight:700,fontSize:14}}>{p.name}</div>
-                      {p.description&&<div style={{color:C.muted,fontSize:12,marginTop:2}}>{p.description}</div>}
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:7}}>
-                        <span style={{padding:"2px 9px",borderRadius:6,background:`${C.gold}18`,color:C.gold,fontSize:12,fontWeight:700}}>🪙 {p.points_cost||0}</span>
-                        {minLv>1&&<span style={{padding:"2px 9px",borderRadius:6,background:`${C.blue}14`,color:C.blue,fontSize:12,fontWeight:700}}>Nivel {minLv}+</span>}
-                        {p.stock===-1?<span style={{padding:"2px 9px",borderRadius:6,background:`${C.green}14`,color:C.green,fontSize:12,fontWeight:700}}>∞ Ilimitado</span>:<span style={{padding:"2px 9px",borderRadius:6,background:hasStock?`${C.green}14`:`${C.red}14`,color:hasStock?C.green:C.red,fontSize:12,fontWeight:700}}>{hasStock?`${p.stock} disp.`:"Sin stock"}</span>}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              {lockedPrizeCount>0&&(
-                <div onClick={onBack} style={{padding:"16px",borderRadius:14,border:`1.5px dashed ${C.border}`,textAlign:"center",cursor:"pointer",background:`${C.gold}06`,marginBottom:9}}>
-                  <div style={{fontSize:20,marginBottom:4}}>🔒</div>
-                  <div style={{color:C.text,fontWeight:700,fontSize:13}}>+{lockedPrizeCount} premios más por ver</div>
-                </div>
-              )}
-              {/* CTA */}
-              <div style={{marginTop:18,padding:"22px 20px",borderRadius:16,background:`linear-gradient(135deg,${C.blue}0d,${C.red}0d)`,border:`1.5px solid ${C.blue}25`,textAlign:"center"}}>
-                <div style={{fontSize:32,marginBottom:8}}>🚀</div>
-                <div style={{color:C.text,fontWeight:800,fontSize:15,marginBottom:6}}>¿Quieres participar?</div>
-                <div style={{color:C.muted,fontSize:13,marginBottom:16}}>Inicia sesión para canjear premios y competir en el ranking</div>
-                <button onClick={onBack} style={{padding:"12px 32px",borderRadius:10,border:"none",background:`linear-gradient(135deg,${C.blue},${C.red})`,color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px rgba(26,26,255,0.3)",transition:"transform 0.15s,box-shadow 0.15s"}} onMouseOver={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 20px rgba(26,26,255,0.4)";}} onMouseOut={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="0 4px 16px rgba(26,26,255,0.3)";}}>
-                  Iniciar Sesión →
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-    </>
-  );
-}
-
-function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
+function UnifiedLogin({onLoginAgent,onLoginStaff}){
   const [name,setName]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);const [wide,setWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
   const [dualChoice,setDualChoice]=useState(null); // {agentMatch, staffMatch} when the same login is valid in both tables
   useEffect(()=>{const h=()=>setWide(window.innerWidth>=900);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
@@ -573,7 +412,7 @@ function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
   // staff-admin account (same username/password on purpose) gets a small
   // chooser instead of a hard error — never a silent guess either way.
   const go=async()=>{
-    if(!name.trim()||!pw.trim()){setErr("Escribe tu usuario y contraseña");return;}
+    if(!name.trim()||!pw.trim()){setErr("Enter your username and password");return;}
     setLoading(true);setErr("");
     try{
       const [agentResults,staffResults]=await Promise.all([
@@ -587,15 +426,15 @@ function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
         setLoading(false);return;
       }
       if(agentMatch){
-        if(!agentMatch.is_active){setErr("Cuenta desactivada.");setLoading(false);return;}
+        if(!agentMatch.is_active){setErr("Account deactivated.");setLoading(false);return;}
         onLoginAgent(adaptProfile(agentMatch));
       }else if(staffMatch){
-        if(!staffMatch.is_active){setErr("Cuenta desactivada.");setLoading(false);return;}
+        if(!staffMatch.is_active){setErr("Account deactivated.");setLoading(false);return;}
         onLoginStaff(adaptStaffProfile(staffMatch));
       }else{
-        setErr("Usuario o contraseña incorrectos.");
+        setErr("Incorrect username or password.");
       }
-    }catch(e){setErr("Error de conexión. Intenta de nuevo.");}
+    }catch(e){setErr("Connection error. Please try again.");}
     setLoading(false);
   };
   const enterAs=(which)=>{
@@ -604,21 +443,20 @@ function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
     else onLoginStaff(adaptStaffProfile(dualChoice.staffMatch));
   };
   const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:9,padding:"12px 14px",fontSize:15,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:C.bg,color:C.text};
-  const features=[["🏆","Leaderboard en tiempo real","Compite con tu equipo semana a semana"],["🎁","Canjea premios exclusivos","Usa tus coins por recompensas reales"],["📊","Sigue tu progreso mensual","KPIs, riddles y tareas en un solo lugar"],["🔔","Notificaciones de logros","Sube de nivel y recibe reconocimientos"]];
   const formCard=dualChoice?(
     <div style={{background:C.card,border:`1.5px solid ${C.border}`,borderRadius:16,padding:"24px 20px"}}>
-      <div style={{color:C.text,fontWeight:800,fontSize:15,marginBottom:6,textAlign:"center"}}>Tienes dos cuentas</div>
-      <div style={{color:C.muted,fontSize:13,marginBottom:18,textAlign:"center"}}>Este usuario existe como agente y como staff. ¿A cuál quieres entrar?</div>
-      <button onClick={()=>enterAs("agent")} style={{width:"100%",padding:14,fontSize:14,background:C.blue,color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:"pointer",fontFamily:"inherit",marginBottom:10}}>🏆 Entrar como Agente ({dualChoice.agentMatch.full_name||name})</button>
-      <button onClick={()=>enterAs("staff")} style={{width:"100%",padding:14,fontSize:14,background:S.accent,color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:"pointer",fontFamily:"inherit",marginBottom:10}}>⚡ Entrar como Staff ({dualChoice.staffMatch.full_name||name})</button>
-      <button onClick={()=>setDualChoice(null)} style={{width:"100%",padding:10,fontSize:13,background:"transparent",color:C.muted,border:"none",cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+      <div style={{color:C.text,fontWeight:800,fontSize:15,marginBottom:6,textAlign:"center"}}>You have two accounts</div>
+      <div style={{color:C.muted,fontSize:13,marginBottom:18,textAlign:"center"}}>This login exists as both agent and staff. Which one do you want to enter?</div>
+      <button onClick={()=>enterAs("agent")} style={{width:"100%",padding:14,fontSize:14,background:C.blue,color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:"pointer",fontFamily:"inherit",marginBottom:10}}>🏆 Enter as Agent ({dualChoice.agentMatch.full_name||name})</button>
+      <button onClick={()=>enterAs("staff")} style={{width:"100%",padding:14,fontSize:14,background:S.accent,color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:"pointer",fontFamily:"inherit",marginBottom:10}}>⚡ Enter as Staff ({dualChoice.staffMatch.full_name||name})</button>
+      <button onClick={()=>setDualChoice(null)} style={{width:"100%",padding:10,fontSize:13,background:"transparent",color:C.muted,border:"none",cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
     </div>
   ):(
     <div style={{background:C.card,border:`1.5px solid ${C.border}`,borderRadius:16,padding:"24px 20px"}}>
-      <div style={{marginBottom:16}}><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>TU USUARIO</div><input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Escribe tu usuario" style={inp}/></div>
-      <div style={{marginBottom:20}}><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>CONTRASEÑA</div><input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Tu contraseña" style={inp}/></div>
+      <div style={{marginBottom:16}}><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>USERNAME</div><input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Your username" style={inp}/></div>
+      <div style={{marginBottom:20}}><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:6}}>PASSWORD</div><input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="Your password" style={inp}/></div>
       {err&&<div style={{color:C.red,fontSize:13,marginBottom:14,textAlign:"center",fontWeight:600,padding:"8px 12px",background:C.red2,borderRadius:8}}>{err}</div>}
-      <button onClick={go} disabled={loading} style={{width:"100%",padding:14,fontSize:15,background:loading?"#c5cae9":C.blue,color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:1}}>{loading?"...":"ENTRAR"}</button>
+      <button onClick={go} disabled={loading} style={{width:"100%",padding:14,fontSize:15,background:loading?"#c5cae9":C.blue,color:"#fff",border:"none",borderRadius:10,fontWeight:800,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:1}}>{loading?"...":"LET'S GO"}</button>
     </div>
   );
   const lgStyle=<style>{`
@@ -638,11 +476,14 @@ function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
     <div style={{minHeight:"100vh",background:"#fff"}}>
 
       {/* ── HERO ── */}
-      <div style={{background:"linear-gradient(135deg,#0a0a40 0%,#1a1aff 55%,#e8282a 100%)",padding:"0 20px 52px",position:"relative",overflow:"hidden"}}>
+      <div style={{background:"linear-gradient(135deg,#0a0a40 0%,#1a1aff 55%,#e8282a 100%)",padding:"0 20px 96px",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",top:-80,right:-80,width:300,height:300,borderRadius:"50%",background:"rgba(255,255,255,0.04)",pointerEvents:"none"}} className="lg-float"/>
         <div style={{position:"absolute",bottom:-100,left:-100,width:360,height:360,borderRadius:"50%",background:"rgba(255,255,255,0.03)",pointerEvents:"none",animationDelay:"1.5s"}} className="lg-float"/>
         <div style={{position:"absolute",top:"50%",left:"50%",width:500,height:500,borderRadius:"50%",background:"rgba(255,255,255,0.025)",transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>
 
+        {[["🏆",4,30,64,0],["🎁",88,22,58,0.8],["🧠",13,66,46,1.4],["🎉",80,64,54,0.4],["🪙",24,14,38,1.1],["⭐",93,50,42,1.8],["🚀",6,80,50,0.6],["🎮",70,12,44,1.3],["💎",30,78,40,0.9]].map(([e,l,t,sz,d],i)=>(
+          <div key={i} className="lg-float" style={{position:"absolute",left:`${l}%`,top:`${t}%`,width:sz,height:sz,borderRadius:"50%",background:"rgba(255,255,255,0.12)",border:"1.5px solid rgba(255,255,255,0.25)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.5,animationDelay:`${d}s`,pointerEvents:"none",zIndex:1}}>{e}</div>
+        ))}
         {/* top nav */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 0 32px",position:"relative",zIndex:2}}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -652,44 +493,25 @@ function UnifiedLogin({onLoginAgent,onLoginStaff,onPublicView}){
               <div style={{fontFamily:"Georgia,serif",fontSize:17,fontWeight:900,color:"#ffd700",letterSpacing:2,lineHeight:1.1}}>ARENA</div>
             </div>
           </div>
-          {onPublicView&&<button onClick={onPublicView} style={{padding:"11px 24px",borderRadius:10,border:"1.5px solid rgba(255,255,255,0.35)",background:"rgba(255,255,255,0.1)",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",backdropFilter:"blur(6px)",transition:"background 0.2s"}} onMouseOver={e=>(e.currentTarget.style.background="rgba(255,255,255,0.2)")} onMouseOut={e=>(e.currentTarget.style.background="rgba(255,255,255,0.1)")}>
-            👀 Ver Rankings →
-          </button>}
         </div>
 
         {/* hero content */}
         <div style={{textAlign:"center",position:"relative",zIndex:2}}>
-          <div style={{fontSize:58,marginBottom:14}} className="lg-float">⚡</div>
-          <div className="lg-hero-item" style={{fontFamily:"Georgia,serif",fontSize:wide?46:32,fontWeight:900,color:"#fff",letterSpacing:3,marginBottom:10,animationDelay:"0.1s"}}>INICIAR SESIÓN</div>
-          <div className="lg-hero-item" style={{color:"rgba(255,255,255,0.7)",fontSize:15,marginBottom:0,animationDelay:"0.2s"}}>Compite, sube de nivel y canjea premios reales</div>
+          <div style={{fontSize:58,lineHeight:1.2,marginBottom:22}} className="lg-float">⚡</div>
+          <div className="lg-hero-item" style={{fontFamily:"Georgia,serif",fontSize:wide?64:38,fontWeight:900,color:"#fff",letterSpacing:3,marginBottom:14,animationDelay:"0.1s"}}>PLAY. SCORE. WIN.</div>
+          <div className="lg-hero-item" style={{color:"rgba(255,255,255,0.75)",fontSize:16,marginBottom:0,animationDelay:"0.2s"}}>The arena is open. Jump in and see what's waiting for you 🎉</div>
         </div>
       </div>
 
       {/* ── CONTENT ── */}
       <div style={{maxWidth:960,margin:"0 auto",padding:wide?"40px 32px 60px":"0 0 60px"}}>
-        <div style={{display:"flex",gap:40,alignItems:"flex-start",padding:wide?"0":"20px 16px 0",flexWrap:"wrap"}}>
-
-          {/* LEFT: features */}
-          <div style={{flex:"1 1 300px",minWidth:0,paddingTop:wide?8:0}}>
-            <div className="lg-hero-item" style={{color:C.text,fontWeight:900,fontSize:18,marginBottom:18,animationDelay:"0.25s"}}>¿Por qué Performance Arena?</div>
-            <div style={{display:"flex",flexDirection:"column",gap:11}}>
-              {features.map(([icon,title,desc],i)=>(
-                <div key={title} className="lg-row" style={{display:"flex",alignItems:"flex-start",gap:13,padding:"13px 16px",background:`${C.blue}08`,borderRadius:13,border:`1px solid ${C.blue}15`,animationDelay:`${0.3+i*0.07}s`}}>
-                  <span style={{fontSize:22,flexShrink:0}}>{icon}</span>
-                  <div>
-                    <div style={{color:C.text,fontWeight:700,fontSize:14}}>{title}</div>
-                    <div style={{color:C.muted,fontSize:12,marginTop:2}}>{desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        <div style={{display:"flex",justifyContent:"center",padding:wide?"0":"20px 16px 0"}}>
 
           {/* RIGHT: login form */}
-          <div style={{flex:"0 1 400px",minWidth:280,animationDelay:"0.3s"}} className="lg-hero-item">
+          <div style={{flex:"0 1 420px",minWidth:280,animationDelay:"0.3s"}} className="lg-hero-item">
             <div style={{marginBottom:22}}>
-              <div style={{color:C.text,fontWeight:900,fontSize:22,marginBottom:4}}>Bienvenido de vuelta</div>
-              <div style={{color:C.muted,fontSize:14}}>Inicia sesión para ver tu progreso</div>
+              <div style={{color:C.text,fontWeight:900,fontSize:24,marginBottom:4}}>Ready to play? 🎮</div>
+              <div style={{color:C.muted,fontSize:14}}>Log in to see what's inside</div>
             </div>
             {formCard}
           </div>
@@ -2944,7 +2766,7 @@ export default function App(){
   const [users,setUsers]=useState([]);const [prizes,setPrizes]=useState([]);
   const [shop]=useState(DEFAULT_SHOP);const [notifs,setNotifs]=useState([]);
   const [loggedIn,setLoggedIn]=useState(null);const [screen,setScreen]=useState("dashboard");
-  const [toastMsg,setToastMsg]=useState("");const [appLoading,setAppLoading]=useState(true);const [showPublic,setShowPublic]=useState(true);const [isWide,setIsWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
+  const [toastMsg,setToastMsg]=useState("");const [appLoading,setAppLoading]=useState(true);const [isWide,setIsWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
   const [coinSettings,setCoinSettings]=useState<any>({riddle_coins:2,task_coins:2});
   const [allStaff,setAllStaff]=useState([]);const [staffMetrics,setStaffMetrics]=useState([]);
   const [staffPoints,setStaffPoints]=useState(null);const [staffBadges,setStaffBadges]=useState([]);
@@ -3100,8 +2922,7 @@ export default function App(){
 
   if(!loggedIn){
     const baseStyle=<style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif}input,select,textarea{font-family:inherit}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>;
-    if(showPublic)return<>{baseStyle}<PublicView users={users} prizes={prizes} onBack={()=>setShowPublic(false)}/></>;
-    return<>{baseStyle}<UnifiedLogin onLoginAgent={u=>{setLoggedIn(u);setScreen("dashboard");}} onLoginStaff={u=>{setLoggedIn(u);setScreen("dashboard");}} onPublicView={()=>setShowPublic(true)}/></>;
+    return<>{baseStyle}<UnifiedLogin onLoginAgent={u=>{setLoggedIn(u);setScreen("dashboard");}} onLoginStaff={u=>{setLoggedIn(u);setScreen("dashboard");}}/></>;
   }
 
   // ── STAFF APP ──
