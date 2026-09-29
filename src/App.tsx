@@ -337,9 +337,11 @@ function fmtAht(sec){
   return `${m}:${String(s).padStart(2,"0")}`;
 }
 
-function MetricRow({icon,label,note,pts}){
+function MetricRow({icon,label,note,pts,excused}){
   const ok=pts===5, warn=pts===2;
-  const statusIcon=ok?"✅":warn?"⚠️":"❌";
+  // An excused week (vacation/MSL/skip) freezes the counters at 0 by design —
+  // that's not a failure, so it must never read as one.
+  const statusIcon=excused?"➖":ok?"✅":warn?"⚠️":"❌";
   return(
     <div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${C.border}`}}>
       <span style={{fontSize:16,width:22}}>{icon}</span>
@@ -360,24 +362,32 @@ function WeekDetailCard({week}){
       </Card>
     );
   }
+  const isExcusedWeek = week.attendance_status==="excused";
+  // Excused weeks never get QA/AHT goal data written at all (ExcelUpload skips
+  // them entirely), so "no data" and "excused" are the same case here — treat
+  // a metric with nothing to compare as excused too, never as a failure.
+  const qaExcused = isExcusedWeek || (week.qa_pct==null && week.qa_goal==null);
+  const ahtExcused = isExcusedWeek || (week.aht==null && week.aht_goal==null);
   const rows=[
-    {icon:"🎯",label:"QA",note:`${week.qa_pct??"—"}% (meta ${week.qa_goal??"—"}%)`,pts:week.qa_pts},
-    {icon:"⏱️",label:"AHT",note:`${fmtAht(week.aht)} (meta ${fmtAht(week.aht_goal)})`,pts:week.aht_pts},
+    {icon:"🎯",label:"QA",note:qaExcused?"Sin datos esta semana":`${week.qa_pct??"—"}% (meta ${week.qa_goal??"—"}%)`,pts:week.qa_pts,excused:qaExcused},
+    {icon:"⏱️",label:"AHT",note:ahtExcused?"Sin datos esta semana":`${fmtAht(week.aht)} (meta ${fmtAht(week.aht_goal)})`,pts:week.aht_pts,excused:ahtExcused},
     {icon:"📅",label:"Attendance",note:
-      week.attendance_status==="excused"?"Semana excusada":
+      isExcusedWeek?"Semana excusada":
       week.attendance_status==="perfect"?"Asistencia perfecta":
       week.attendance_status==="late"?`${week.tardies||1} tardanza`:
       `${week.absences||0} falta(s) · ${week.tardies||0} tardanza(s)`,
-      pts:week.attendance_pts},
+      pts:week.attendance_pts,excused:isExcusedWeek},
   ];
   const allPerfect=rows.every(r=>r.pts===5);
-  const failing=rows.filter(r=>r.pts!==5).map(r=>r.label);
+  const failing=rows.filter(r=>r.pts!==5 && !r.excused).map(r=>r.label);
   return(
     <Card style={{marginBottom:12}}>
       <div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:6,fontWeight:700}}>POR QUÉ{week.week?` · ${week.week}`:""}</div>
       {rows.map(r=><MetricRow key={r.label} {...r}/>)}
-      <div style={{marginTop:12,padding:"10px 12px",borderRadius:10,background:allPerfect?`${C.green}10`:`${C.red}08`,border:`1px solid ${allPerfect?C.green:C.red}30`}}>
-        {allPerfect?(
+      <div style={{marginTop:12,padding:"10px 12px",borderRadius:10,background:isExcusedWeek?`${C.muted}10`:allPerfect?`${C.green}10`:`${C.red}08`,border:`1px solid ${isExcusedWeek?C.muted:allPerfect?C.green:C.red}30`}}>
+        {isExcusedWeek?(
+          <div style={{color:C.muted,fontWeight:700,fontSize:13}}>➖ Semana excusada (vacaciones/incapacidad) — no cuenta a favor ni en contra de tu racha.</div>
+        ):allPerfect?(
           <div style={{color:C.green,fontWeight:700,fontSize:13}}>🔥 15/15 — esta es la semana que suma para tu racha.</div>
         ):(
           <div style={{color:C.red,fontWeight:700,fontSize:13}}>{failing.join(" y ")} no llegó a meta esta semana — coméntalo con tu coach para ver qué ajustar.</div>
