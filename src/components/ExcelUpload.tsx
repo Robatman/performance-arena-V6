@@ -610,7 +610,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
   const reviewPending = flagged.some(a=>!a.review_reason);
   const missingPending = missingAgents.some(a=>a.action==="");
   const resolvedImport = importNew === "pending" ? "none" : importNew;
-  const canUpload     = !reviewPending && !missingPending && resolvedImport!=="pending";
+  const canUpload     = !reviewPending && !missingPending && importNew!=="pending";
   const SD = { border:"1px solid #1e3a5f", muted:"#64748b", text:"#f1f5f9", card:"#1e293b" };
 
   return (
