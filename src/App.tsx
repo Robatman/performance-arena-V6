@@ -402,38 +402,15 @@ function Toast({msg,onClose}){useEffect(()=>{if(msg){const t=setTimeout(onClose,
 function TempPwModal({user,onSave,dark=false}){const [p1,setP1]=useState("");const [p2,setP2]=useState("");const [err,setErr]=useState("");const save=()=>{if(p1.length<4){setErr(dark?"Minimum 4 characters":"Minimo 4 caracteres");return;}if(p1!==p2){setErr(dark?"Passwords do not match":"Las contrasenas no coinciden");return;}onSave(p1);};const inp={width:"100%",border:`1.5px solid ${dark?S.border:C.border}`,borderRadius:9,padding:"11px 14px",fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:dark?S.bg:C.bg,color:dark?S.text:C.text};return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{background:dark?S.bgCard:C.card,border:`1px solid ${dark?S.border:C.border}`,borderRadius:16,padding:24,width:"100%",maxWidth:380}}><div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:42,marginBottom:8}}>🔑</div><div style={{color:dark?S.accent:C.blue,fontWeight:800,fontSize:18,marginBottom:6}}>{dark?"Password Change Required":"Cambio de Contrasena"}</div><div style={{color:dark?S.muted:C.muted,fontSize:13}}>{dark?`Hi ${user.name}, please set your new password.`:`Hola ${user.name}, crea tu nueva contrasena.`}</div></div><div style={{marginBottom:12}}><div style={{color:dark?S.muted:C.muted,fontSize:11,marginBottom:4}}>NEW PASSWORD</div><input type="password" value={p1} onChange={e=>setP1(e.target.value)} style={inp}/></div><div style={{marginBottom:16}}><div style={{color:dark?S.muted:C.muted,fontSize:11,marginBottom:4}}>CONFIRM PASSWORD</div><input type="password" value={p2} onChange={e=>setP2(e.target.value)} onKeyDown={e=>e.key==="Enter"&&save()} style={inp}/></div>{err&&<div style={{color:S.red,fontSize:13,marginBottom:10,textAlign:"center",fontWeight:600}}>{err}</div>}{dark?<SBtn onClick={save} style={{width:"100%",padding:12}}>SAVE PASSWORD</SBtn>:<Btn onClick={save} color={C.blue} style={{width:"100%",padding:12}}>GUARDAR</Btn>}</div></div>);}
 
 function PublicView({users,prizes,onBack}){
-  const [rankings,setRankings]=useState([]);
-  const [loading,setLoading]=useState(true);
   const [tab,setTab]=useState("leaderboard");
   const [wide,setWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
   const shop=DEFAULT_SHOP;const medals=["🥇","🥈","🥉"];
   useEffect(()=>{const h=()=>setWide(window.innerWidth>=900);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
-  useEffect(()=>{
-    async function load(){
-      try{
-        const res=await fetch(`${SUPABASE_URL}/rest/v1/weekly_metrics?select=game_id,qa_pts,aht_pts,attendance_pts&order=game_id.asc`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
-        const data=await res.json();
-        const totals={};
-        (data||[]).forEach(r=>{const kpi=(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);totals[r.game_id]=(totals[r.game_id]||0)+kpi;});
-        const active=(users||[]).filter(u=>u.active);
-        const findPts=u=>{const byId=totals[u.game_id];if(byId!==undefined)return byId;const k=Object.keys(totals).find(k=>k.toLowerCase()===(u.game_id||"").toLowerCase()||k.toLowerCase()===(u.username||"").toLowerCase());return k?totals[k]:0;};
-        const covered=new Set(active.flatMap(u=>[(u.game_id||"").toLowerCase(),(u.username||"").toLowerCase()].filter(Boolean)));
-        const orphans=Object.entries(totals).filter(([gid])=>!covered.has(gid.toLowerCase())).map(([game_id,pts])=>({game_id,pts,profile:null}));
-        const ranked=[...active.map(u=>({game_id:u.game_id||u.username,pts:findPts(u),profile:u})),...orphans].sort((a,b)=>b.pts-a.pts);
-        setRankings(ranked);
-      }catch(e){console.error(e);}
-      setLoading(false);
-    }
-    load();
-  },[users]);
   const activePrizes=(prizes||[]).filter(p=>p.is_active!==false);
   const totalAgents=(users||[]).filter(u=>u.active).length;
-  const topScore=rankings[0]?.pts||0;
-  // Show a teaser, not the whole thing — showing everything for free removes
-  // the one reason ("ver más") someone would bother logging in.
-  const VISIBLE_RANK=5, VISIBLE_PRIZES=3;
-  const visibleRankings=rankings.slice(0,VISIBLE_RANK);
-  const lockedRankCount=Math.max(0,rankings.length-VISIBLE_RANK);
+  // Nothing about individual agents is shown before login — only aggregates
+  // and a teaser of prizes, so "ver más" is the reason to log in.
+  const VISIBLE_PRIZES=3;
   const visiblePrizes=activePrizes.slice(0,VISIBLE_PRIZES);
   const lockedPrizeCount=Math.max(0,activePrizes.length-VISIBLE_PRIZES);
   return(
@@ -478,13 +455,13 @@ function PublicView({users,prizes,onBack}){
         <div style={{textAlign:"center",position:"relative",zIndex:2}}>
           <div style={{fontSize:60,marginBottom:14}} className="pv-float">🏆</div>
           <div className="pv-hero-item" style={{fontFamily:"Georgia,serif",fontSize:wide?48:34,fontWeight:900,color:"#fff",letterSpacing:3,marginBottom:10,animationDelay:"0.1s"}}>LEADERBOARD</div>
-          <div className="pv-hero-item" style={{color:"rgba(255,255,255,0.7)",fontSize:15,marginBottom:36,animationDelay:"0.2s"}}>Rankings y premios en tiempo real · Mes actual</div>
+          <div className="pv-hero-item" style={{color:"rgba(255,255,255,0.7)",fontSize:15,marginBottom:36,animationDelay:"0.2s"}}>Compite, sube de nivel y canjea premios reales</div>
           {/* stats */}
           <div className="pv-hero-item" style={{display:"flex",justifyContent:"center",gap:wide?48:24,flexWrap:"wrap",animationDelay:"0.3s"}}>
-            {[{icon:"👥",val:totalAgents,label:"Agentes activos"},{icon:"🥇",val:topScore,label:"Mejor score"},{icon:"🎁",val:activePrizes.length,label:"Premios"}].map(s=>(
+            {[{icon:"👥",val:totalAgents,label:"Agentes activos"},{icon:"🎁",val:activePrizes.length,label:"Premios"}].map(s=>(
               <div key={s.label} style={{textAlign:"center"}}>
                 <div style={{fontSize:26,marginBottom:4}}>{s.icon}</div>
-                <div style={{color:"#fff",fontWeight:900,fontSize:30,lineHeight:1}} className="pv-pulse">{loading&&s.label==="Mejor score"?"…":s.val}</div>
+                <div style={{color:"#fff",fontWeight:900,fontSize:30,lineHeight:1}} className="pv-pulse">{s.val}</div>
                 <div style={{color:"rgba(255,255,255,0.55)",fontSize:12,marginTop:4}}>{s.label}</div>
               </div>
             ))}
@@ -523,33 +500,12 @@ function PublicView({users,prizes,onBack}){
                   <div style={{color:C.muted,fontSize:13}}>Score acumulado: KPI + Riddles + Tareas</div>
                 </div>
               </div>}
-              {loading&&<div style={{textAlign:"center",padding:48,color:C.muted,fontSize:14}}>Cargando ranking…</div>}
-              {!loading&&visibleRankings.map((r,i)=>{
-                const u=r.profile;
-                const isTop3=i<3;
-                return(
-                  <div key={r.game_id} className="pv-row" style={{display:"flex",alignItems:"center",gap:13,padding:"13px 16px",marginBottom:8,borderRadius:14,background:isTop3?`linear-gradient(135deg,${C.blue}09,${C.red}06)`:"#fff",border:`1.5px solid ${isTop3?C.blue:C.border}`,boxShadow:isTop3?"0 2px 16px rgba(26,26,255,0.08)":"none",animationDelay:`${Math.min(i,12)*35}ms`,transition:"box-shadow 0.2s"}}>
-                    <div style={{width:36,textAlign:"center",fontWeight:900,fontSize:isTop3?24:14,color:isTop3?"#f59e0b":C.muted,flexShrink:0}}>{isTop3?medals[i]:`#${i+1}`}</div>
-                    <Av av={u?.avatar} sz={42} shop={shop}/>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{color:C.text,fontWeight:700,fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u?.name||r.game_id}</div>
-                      <Bdg l={u?.level||1}/>
-                    </div>
-                    <div style={{textAlign:"right",flexShrink:0}}>
-                      <div style={{color:C.blue,fontWeight:900,fontSize:22,lineHeight:1}}>{r.pts}</div>
-                      <div style={{color:C.muted,fontSize:10}}>pts</div>
-                    </div>
-                  </div>
-                );
-              })}
-              {!loading&&rankings.length===0&&<div style={{textAlign:"center",padding:48,color:C.muted}}>No hay datos de ranking aún.</div>}
-              {!loading&&lockedRankCount>0&&(
-                <div onClick={onBack} style={{marginTop:4,padding:"18px 16px",borderRadius:14,border:`1.5px dashed ${C.border}`,textAlign:"center",cursor:"pointer",background:`${C.blue}05`}}>
-                  <div style={{fontSize:22,marginBottom:4}}>🔒</div>
-                  <div style={{color:C.text,fontWeight:700,fontSize:13}}>+{lockedRankCount} agentes más — y tu propio lugar en la tabla</div>
-                  <div style={{color:C.blue,fontWeight:700,fontSize:12,marginTop:4}}>Inicia sesión para verlo →</div>
-                </div>
-              )}
+              <div onClick={onBack} style={{padding:"44px 24px",borderRadius:16,border:`1.5px dashed ${C.border}`,textAlign:"center",cursor:"pointer",background:`${C.blue}05`}}>
+                <div style={{fontSize:40,marginBottom:10}}>🔒</div>
+                <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:6}}>El ranking es solo para agentes</div>
+                <div style={{color:C.muted,fontSize:13,marginBottom:16}}>Inicia sesión para ver la tabla y tu propio lugar en ella.</div>
+                <div style={{color:C.blue,fontWeight:700,fontSize:13}}>Iniciar Sesión →</div>
+              </div>
             </div>
           )}
 
