@@ -67,7 +67,15 @@ const db = {
   // Agent riddle/task completions
   getAgentRiddleAnswers: (gameId) => sbFetch(`agent_riddle_answers?game_id=eq.${encodeURIComponent(gameId)}&select=*`),
   getAgentTaskSubmissions: (gameId) => sbFetch(`agent_task_submissions?game_id=eq.${encodeURIComponent(gameId)}&select=*`),
-  getAgentActivityRegistrations: (gameId) => sbFetch(`activity_registrations?game_id=eq.${encodeURIComponent(gameId)}&select=*`),
+  // Bonus extraordinarios (coin_bonuses) se mezclan como registros aprobados
+  // para que calcScoreCoins los sume igual que a las actividades.
+  getAgentActivityRegistrations: async (gameId) => {
+    const [regs, bonuses] = await Promise.all([
+      sbFetch(`activity_registrations?game_id=eq.${encodeURIComponent(gameId)}&select=*`),
+      sbFetch(`coin_bonuses?game_id=eq.${encodeURIComponent(gameId)}&select=id,coins`).catch(() => []),
+    ]);
+    return [...(regs || []), ...(bonuses || []).map(b => ({ id: `bonus-${b.id}`, status: "approved", points_awarded: b.coins, is_bonus: true }))];
+  },
 };
 
 const staffDb = {
@@ -1375,11 +1383,12 @@ function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllPoints,reset
   const loadCalcCoins=async()=>{
     setLoading(true);
     try{
-      const [kpiData,riddleData,taskData,activityData]=await Promise.all([
+      const [kpiData,riddleData,taskData,activityData,bonusData]=await Promise.all([
         sbFetch("weekly_metrics?select=game_id,qa_pts,aht_pts,attendance_pts").catch(()=>[]),
         sbFetch("agent_riddle_answers?approved=eq.true&select=game_id").catch(()=>[]),
         sbFetch("agent_task_submissions?approved=eq.true&select=game_id").catch(()=>[]),
         sbFetch("activity_registrations?status=eq.approved&select=game_id,points_awarded").catch(()=>[]),
+        sbFetch("coin_bonuses?select=game_id,coins").catch(()=>[]),
       ]);
       const kpiMap={};
       (kpiData||[]).forEach(r=>{kpiMap[r.game_id]=(kpiMap[r.game_id]||0)+(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);});
@@ -1389,6 +1398,7 @@ function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllPoints,reset
       (taskData||[]).forEach(t=>{taskMap[t.game_id]=(taskMap[t.game_id]||0)+1;});
       const activityMap={};
       (activityData||[]).forEach(a=>{activityMap[a.game_id]=(activityMap[a.game_id]||0)+(a.points_awarded||0);});
+      (bonusData||[]).forEach(b=>{activityMap[b.game_id]=(activityMap[b.game_id]||0)+(b.coins||0);});
       const rc=coinSettings?.riddle_coins??2;
       const tc=coinSettings?.task_coins??2;
       const map={};
@@ -1728,13 +1738,14 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   // lo mismo (una bien, otra mal) — ver el doc de rediseño si en el futuro se
   // quiere un reset de coins de verdad independiente del historial de KPI/nivel.
   const resetAllPoints=async()=>{
-    if(!window.confirm("¿Reiniciar PUNTOS de TODOS los agentes?\n\nEsto borrará:\n• Métricas semanales (KPI)\n• Riddles y Tasks aprobadas\n• Kudos, Gold Kudos y Referidos\n• Registros de Actividades\n\nEsta acción NO se puede deshacer."))return;
+    if(!window.confirm("¿Reiniciar PUNTOS de TODOS los agentes?\n\nEsto borrará:\n• Métricas semanales (KPI)\n• Riddles y Tasks aprobadas\n• Kudos, Gold Kudos y Referidos\n• Registros de Actividades y bonus extraordinarios\n\nEsta acción NO se puede deshacer."))return;
     try{
       await Promise.all([
         sbFetch("weekly_metrics?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
         sbFetch("agent_riddle_answers?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
         sbFetch("agent_task_submissions?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
         sbFetch("activity_registrations?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
+        sbFetch("coin_bonuses?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
       ]);
       // referrals:[] closes the "coins de referidos nunca se resetean" gap —
       // without it this array survives every reset forever.
