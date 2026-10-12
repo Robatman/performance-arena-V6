@@ -530,3 +530,64 @@ export function ActivityBubbles({ gameId, onOpen }: { gameId: string; onOpen: ()
     </div>
   );
 }
+
+// ─── TARJETA DE ACTIVIDADES EN EL DASHBOARD ───────────────────────────────
+// Lista compacta de actividades abiertas con estado de registro del agente.
+// Se auto-carga y no necesita props del store principal.
+export function ActivityDashboardCard({ gameId, onOpen }: { gameId: string; onOpen: () => void }) {
+  const [acts, setActs] = useState<any[]>([]);
+  const [regs, setRegs] = useState<Record<string, any>>({});
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [a, r] = await Promise.all([
+          sbFetch("activities?active=eq.true&select=id,title,description,coins&order=created_at.asc"),
+          gameId ? sbFetch(`activity_registrations?game_id=eq.${encodeURIComponent(gameId)}&select=activity_id,status,points_awarded`) : Promise.resolve([]),
+        ]);
+        setActs(a || []);
+        setRegs(Object.fromEntries((r || []).map((x: any) => [x.activity_id, x])));
+      } catch (e) { console.error(e); }
+      setLoaded(true);
+    })();
+  }, [gameId]);
+
+  if (!loaded || acts.length === 0) return null;
+
+  const STATUS_COLOR: Record<string,string> = { pending: C.yellow, approved: C.green, rejected: C.red };
+  const STATUS_LABEL: Record<string,string> = { pending:"⏳ Pendiente", approved:"✅ Aprobado", rejected:"❌ No confirmado" };
+
+  return (
+    <div style={{ background:"linear-gradient(135deg,#1e1b4b,#1e3a5f)", border:"1.5px solid #6d28d9", borderRadius:16, padding:16, marginBottom:12, boxShadow:"0 4px 20px rgba(109,40,217,0.15)" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ fontSize:20 }}>🎉</span>
+          <span style={{ color:"#fff", fontWeight:800, fontSize:15 }}>Actividades Abiertas</span>
+        </div>
+        <button onClick={onOpen} style={{ background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.25)", borderRadius:8, padding:"5px 12px", color:"#e0e7ff", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Ver todas →</button>
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {acts.map(a => {
+          const reg = regs[a.id];
+          return (
+            <div key={a.id} style={{ background:"rgba(255,255,255,0.08)", borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.title}</div>
+                {a.description && <div style={{ color:"rgba(255,255,255,0.55)", fontSize:11, marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.description}</div>}
+              </div>
+              <div style={{ flexShrink:0, display:"flex", alignItems:"center", gap:8 }}>
+                {a.coins > 0 && <span style={{ color:"#fde68a", fontWeight:900, fontSize:12 }}>+{a.coins}🪙</span>}
+                {reg ? (
+                  <span style={{ color:STATUS_COLOR[reg.status]||C.muted, fontWeight:700, fontSize:11 }}>{STATUS_LABEL[reg.status]||reg.status}</span>
+                ) : (
+                  <button onClick={onOpen} style={{ background:"#7c3aed", border:"none", borderRadius:7, padding:"5px 12px", color:"#fff", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Registrarme</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
