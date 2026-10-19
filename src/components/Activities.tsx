@@ -60,6 +60,8 @@ export default function Activities({ gameId, isAdmin }: Props) {
   const [awardInput, setAwardInput] = useState<Record<string,string>>({});
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
+  const [regFormId, setRegFormId] = useState<string|null>(null);
+  const [regForm, setRegForm] = useState({ fullName:'', coachName:'', campaignName:'' });
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -168,16 +170,29 @@ export default function Activities({ gameId, isAdmin }: Props) {
     } catch(e) { showToast('Error'); }
   }
 
-  async function register(activity: any) {
+  function openRegForm(activityId: string) {
+    setRegFormId(prev => prev === activityId ? null : activityId);
+    setRegForm({ fullName:'', coachName:'', campaignName:'' });
+  }
+
+  async function submitRegistration(activity: any) {
+    if (!regForm.fullName.trim()) { showToast('Escribe tu nombre completo'); return; }
+    if (!regForm.coachName.trim()) { showToast('Escribe el nombre de tu coach'); return; }
+    if (!regForm.campaignName.trim()) { showToast('Escribe el nombre de tu campaña'); return; }
+    setSaving(true);
     try {
       const existing = await sbFetch(`activity_registrations?activity_id=eq.${activity.id}&game_id=eq.${encodeURIComponent(gameId)}&select=id`);
-      if (existing && existing.length > 0) { fetchAll(); showToast('Ya estás registrado en esta actividad'); return; }
+      if (existing && existing.length > 0) { fetchAll(); showToast('Ya estás registrado en esta actividad'); setRegFormId(null); setSaving(false); return; }
       await sbFetch("activity_registrations", { method:"POST", body: JSON.stringify({
-        activity_id: activity.id, game_id: gameId, status: "pending", registered_at: new Date().toISOString(),
+        activity_id: activity.id, game_id: gameId, status: "pending",
+        full_name: regForm.fullName.trim(), coach_name: regForm.coachName.trim(),
+        campaign_name: regForm.campaignName.trim(), registered_at: new Date().toISOString(),
       })});
       showToast('✅ Registrado — el admin confirmará tu participación');
+      setRegFormId(null);
       fetchAll();
     } catch(e) { showToast('Error al registrarte'); }
+    setSaving(false);
   }
 
   async function review(reg: any, approve: boolean) {
@@ -264,6 +279,9 @@ export default function Activities({ gameId, isAdmin }: Props) {
                   <div key={reg.id} style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:16, marginBottom:10}}>
                     <div style={{marginBottom:10}}>
                       <div style={{color:C.text, fontWeight:800, fontSize:15}}>🎮 {reg.game_id}</div>
+                      {reg.full_name && <div style={{color:C.text, fontSize:13, fontWeight:600, marginTop:2}}>👤 {reg.full_name}</div>}
+                      {reg.coach_name && <div style={{color:C.muted, fontSize:12, marginTop:1}}>Coach: {reg.coach_name}</div>}
+                      {reg.campaign_name && <div style={{color:C.muted, fontSize:12, marginTop:1}}>Campaña: {reg.campaign_name}</div>}
                       <div style={{color:C.purple, fontSize:12, fontWeight:700, marginTop:2}}>{activity?.title || "(actividad eliminada)"}</div>
                       <div style={{color:C.muted, fontSize:11, marginTop:2}}>{new Date(reg.registered_at).toLocaleString()}</div>
                     </div>
@@ -396,8 +414,33 @@ export default function Activities({ gameId, isAdmin }: Props) {
                     <span style={{color:STATUS_COLOR[reg.status], fontWeight:700, fontSize:13}}>{STATUS_LABEL[reg.status]}</span>
                     {reg.status==="approved" && <span style={{color:C.gold, fontWeight:900, fontSize:14}}>+{reg.points_awarded} 🪙</span>}
                   </div>
+                ) : regFormId === a.id ? (
+                  <div>
+                    <div style={{display:"flex", flexDirection:"column", gap:9, marginBottom:10}}>
+                      <div>
+                        <div style={{color:C.muted, fontSize:10, marginBottom:3}}>NOMBRE COMPLETO *</div>
+                        <input value={regForm.fullName} onChange={e=>setRegForm(p=>({...p,fullName:e.target.value}))} style={inp} placeholder="Tu nombre completo"/>
+                      </div>
+                      <div>
+                        <div style={{color:C.muted, fontSize:10, marginBottom:3}}>GAME ID (auto)</div>
+                        <input value={gameId} readOnly style={{...inp, opacity:0.6, cursor:"not-allowed"}}/>
+                      </div>
+                      <div>
+                        <div style={{color:C.muted, fontSize:10, marginBottom:3}}>NOMBRE DEL COACH *</div>
+                        <input value={regForm.coachName} onChange={e=>setRegForm(p=>({...p,coachName:e.target.value}))} style={inp} placeholder="Nombre de tu coach"/>
+                      </div>
+                      <div>
+                        <div style={{color:C.muted, fontSize:10, marginBottom:3}}>CAMPAÑA *</div>
+                        <input value={regForm.campaignName} onChange={e=>setRegForm(p=>({...p,campaignName:e.target.value}))} style={inp} placeholder="Nombre de tu campaña"/>
+                      </div>
+                    </div>
+                    <div style={{display:"flex", gap:8}}>
+                      <button onClick={() => submitRegistration(a)} disabled={saving} style={{flex:1, padding:11, borderRadius:10, border:"none", background:saving?C.muted:C.purple, color:"#fff", fontWeight:800, fontSize:13, cursor:saving?"not-allowed":"pointer", fontFamily:"inherit"}}>{saving?"Registrando...":"✅ Confirmar registro"}</button>
+                      <button onClick={() => setRegFormId(null)} style={{padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, background:C.card, color:C.muted, fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>✕</button>
+                    </div>
+                  </div>
                 ) : (
-                  <button onClick={() => register(a)} style={{width:"100%", padding:11, borderRadius:10, border:"none", background:C.purple, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>
+                  <button onClick={() => openRegForm(a.id)} style={{width:"100%", padding:11, borderRadius:10, border:"none", background:C.purple, color:"#fff", fontWeight:800, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>
                     Registrarme
                   </button>
                 )}
@@ -483,6 +526,67 @@ export function ActivityBubbles({ gameId, onOpen }: { gameId: string; onOpen: ()
           return bubble(a.id, done ? "✅" : emoji, label, i * 0.4, done, a.coins);
         })}
         {extra > 0 && bubble("more", `+${extra}`, "ver todas", MAX * 0.4)}
+      </div>
+    </div>
+  );
+}
+
+// ─── TARJETA DE ACTIVIDADES EN EL DASHBOARD ───────────────────────────────
+// Lista compacta de actividades abiertas con estado de registro del agente.
+// Se auto-carga y no necesita props del store principal.
+export function ActivityDashboardCard({ gameId, onOpen }: { gameId: string; onOpen: () => void }) {
+  const [acts, setActs] = useState<any[]>([]);
+  const [regs, setRegs] = useState<Record<string, any>>({});
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [a, r] = await Promise.all([
+          sbFetch("activities?active=eq.true&select=id,title,description,coins&order=created_at.asc"),
+          gameId ? sbFetch(`activity_registrations?game_id=eq.${encodeURIComponent(gameId)}&select=activity_id,status,points_awarded`) : Promise.resolve([]),
+        ]);
+        setActs(a || []);
+        setRegs(Object.fromEntries((r || []).map((x: any) => [x.activity_id, x])));
+      } catch (e) { console.error(e); }
+      setLoaded(true);
+    })();
+  }, [gameId]);
+
+  if (!loaded || acts.length === 0) return null;
+
+  const STATUS_COLOR: Record<string,string> = { pending: C.yellow, approved: C.green, rejected: C.red };
+  const STATUS_LABEL: Record<string,string> = { pending:"⏳ Pendiente", approved:"✅ Aprobado", rejected:"❌ No confirmado" };
+
+  return (
+    <div style={{ background:"linear-gradient(135deg,#1e1b4b,#1e3a5f)", border:"1.5px solid #6d28d9", borderRadius:16, padding:16, marginBottom:12, boxShadow:"0 4px 20px rgba(109,40,217,0.15)" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ fontSize:20 }}>🎉</span>
+          <span style={{ color:"#fff", fontWeight:800, fontSize:15 }}>Actividades Abiertas</span>
+        </div>
+        <button onClick={onOpen} style={{ background:"rgba(255,255,255,0.12)", border:"1px solid rgba(255,255,255,0.25)", borderRadius:8, padding:"5px 12px", color:"#e0e7ff", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Ver todas →</button>
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {acts.map(a => {
+          const reg = regs[a.id];
+          return (
+            <div key={a.id} style={{ background:"rgba(255,255,255,0.08)", borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.title}</div>
+                {a.description && <div style={{ color:"rgba(255,255,255,0.55)", fontSize:11, marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.description}</div>}
+              </div>
+              <div style={{ flexShrink:0, display:"flex", alignItems:"center", gap:8 }}>
+                {a.coins > 0 && <span style={{ color:"#fde68a", fontWeight:900, fontSize:12 }}>+{a.coins}🪙</span>}
+                {reg ? (
+                  <span style={{ color:STATUS_COLOR[reg.status]||C.muted, fontWeight:700, fontSize:11 }}>{STATUS_LABEL[reg.status]||reg.status}</span>
+                ) : (
+                  <button onClick={onOpen} style={{ background:"#7c3aed", border:"none", borderRadius:7, padding:"5px 12px", color:"#fff", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>Registrarme</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
