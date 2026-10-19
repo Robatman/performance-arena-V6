@@ -5,6 +5,7 @@ import ReferralsPanel from "./components/ReferralsPanel";
 import OperationsDashboard from "./components/OperationsDashboard";
 import RiddleTask from "./components/RiddleTask";
 import Activities, { ActivityBubbles } from "./components/Activities";
+import { KPI_FULL, KPI_WEEK_MAX, kpiMid, weekTone } from "./kpiPoints";
 import CoachingSessions from "./components/CoachingSessions";
 import StaffStore from "./components/StaffStore";
 import StaffPointsReport from "./components/StaffPointsReport";
@@ -345,8 +346,8 @@ function fmtAht(sec){
   return `${m}:${String(s).padStart(2,"0")}`;
 }
 
-function MetricRow({icon,label,note,pts,excused}){
-  const ok=pts===5, warn=pts===2;
+function MetricRow({icon,label,note,pts,excused,max}){
+  const ok=pts===max, warn=pts===kpiMid(max);
   // An excused week (vacation/MSL/skip) freezes the counters at 0 by design —
   // that's not a failure, so it must never read as one.
   const statusIcon=excused?"➖":ok?"✅":warn?"⚠️":"❌";
@@ -377,17 +378,17 @@ function WeekDetailCard({week}){
   const qaExcused = isExcusedWeek || (week.qa_pct==null && week.qa_goal==null);
   const ahtExcused = isExcusedWeek || (week.aht==null && week.aht_goal==null);
   const rows=[
-    {icon:"🎯",label:"QA",note:qaExcused?"Sin datos esta semana":`${week.qa_pct??"—"}% (meta ${week.qa_goal??"—"}%)`,pts:week.qa_pts,excused:qaExcused},
-    {icon:"⏱️",label:"AHT",note:ahtExcused?"Sin datos esta semana":`${fmtAht(week.aht)} (meta ${fmtAht(week.aht_goal)})`,pts:week.aht_pts,excused:ahtExcused},
+    {icon:"🎯",label:"QA",note:qaExcused?"Sin datos esta semana":`${week.qa_pct??"—"}% (meta ${week.qa_goal??"—"}%)`,pts:week.qa_pts,max:KPI_FULL.qa,excused:qaExcused},
+    {icon:"⏱️",label:"AHT",note:ahtExcused?"Sin datos esta semana":`${fmtAht(week.aht)} (meta ${fmtAht(week.aht_goal)})`,pts:week.aht_pts,max:KPI_FULL.aht,excused:ahtExcused},
     {icon:"📅",label:"Attendance",note:
       isExcusedWeek?"Semana excusada":
       week.attendance_status==="perfect"?"Asistencia perfecta":
       week.attendance_status==="late"?`${week.tardies||1} tardanza`:
       `${week.absences||0} falta(s) · ${week.tardies||0} tardanza(s)`,
-      pts:week.attendance_pts,excused:isExcusedWeek},
+      pts:week.attendance_pts,max:KPI_FULL.att,excused:isExcusedWeek},
   ];
-  const allPerfect=rows.every(r=>r.pts===5);
-  const failing=rows.filter(r=>r.pts!==5 && !r.excused).map(r=>r.label);
+  const allPerfect=rows.every(r=>r.pts===r.max);
+  const failing=rows.filter(r=>r.pts!==r.max && !r.excused).map(r=>r.label);
   return(
     <Card style={{marginBottom:12}}>
       <div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:6,fontWeight:700}}>POR QUÉ{week.week?` · ${week.week}`:""}</div>
@@ -396,7 +397,7 @@ function WeekDetailCard({week}){
         {isExcusedWeek?(
           <div style={{color:C.muted,fontWeight:700,fontSize:13}}>➖ Semana excusada (vacaciones/incapacidad) — no cuenta a favor ni en contra de tu racha.</div>
         ):allPerfect?(
-          <div style={{color:C.green,fontWeight:700,fontSize:13}}>🔥 15/15 — esta es la semana que suma para tu racha.</div>
+          <div style={{color:C.green,fontWeight:700,fontSize:13}}>🔥 {KPI_WEEK_MAX}/{KPI_WEEK_MAX} — esta es la semana que suma para tu racha.</div>
         ):(
           <div style={{color:C.red,fontWeight:700,fontSize:13}}>{failing.join(" y ")} no llegó a meta esta semana — coméntalo con tu coach para ver qué ajustar.</div>
         )}
@@ -608,8 +609,9 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
           <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min((weeklyMetrics||[]).length,5)},1fr)`,gap:8}}>
             {(weeklyMetrics||[]).map((w,i)=>{
               const wPts=(w.qa_pts||0)+(w.aht_pts||0)+(w.attendance_pts||0);
-              const wMax=15;
-              const wColor=wPts>=12?C.green:wPts>=8?C.yellow:C.red;
+              const wMax=KPI_WEEK_MAX;
+              const wTone=weekTone(wPts);
+              const wColor=wTone==="good"?C.green:wTone==="warn"?C.yellow:C.red;
               return(
                 <div key={i} style={{background:`${wColor}15`,border:`1px solid ${wColor}40`,borderRadius:10,padding:"9px 5px",textAlign:"center"}}>
                   <div style={{color:C.muted,fontSize:9,marginBottom:2}}>{w.week||`S${i+1}`}</div>
@@ -1150,7 +1152,7 @@ function Notifs({user,notifs,onMarkRead,onMarkAll,onRefresh}){
 
 function Info(){
   const secs=[
-    {icon:"📊",color:C.blue,title:"SCORE — determina tu nivel mensual",items:["QA Score: superas meta=5pts, igual=2pts, debajo=0pts","AHT: mejor que meta=5pts, igual=2pts, peor=0pts","Attendance: perfecta=5pts, 1 tardanza=2pts, falta o 2 tardanzas=0pts","Riddle aprobado: +2 pts por cada riddle (aprobado por admin)","Task aprobada: +2 pts por cada task (aprobada por admin)","El Score determina tu nivel: 100%=Nivel 4, ≥90%=Nivel 3, ≥80%=Nivel 2, <80%=Nivel 1"]},
+    {icon:"📊",color:C.blue,title:"SCORE — determina tu nivel mensual",items:[`QA Score: superas meta=${KPI_FULL.qa}pts, igual=${kpiMid(KPI_FULL.qa)}pts, debajo=0pts`,`AHT: mejor que meta=${KPI_FULL.aht}pts, igual=${kpiMid(KPI_FULL.aht)}pts, peor=0pts`,`Attendance: perfecta=${KPI_FULL.att}pts, 1 tardanza=${kpiMid(KPI_FULL.att)}pts, falta o 2 tardanzas=0pts`,"Riddle aprobado: +2 pts por cada riddle (aprobado por admin)","Task aprobada: +2 pts por cada task (aprobada por admin)","El Score determina tu nivel: 100%=Nivel 4, ≥90%=Nivel 3, ≥80%=Nivel 2, <80%=Nivel 1"]},
     {icon:"🪙",color:C.gold,title:"COINS — moneda para la tienda",items:["Coins = Score + Kudos + Referidos","Kudos: cada kudo regular = 1 coin, cada gold kudo = 5 coins","Referidos: enviado = 1 coin, si es contratado = 5 coins total","Los coins NO afectan tu nivel, solo sirven para comprar en la tienda","Los coins se reinician cada trimestre (admin)"]},
     {icon:"🏆",color:C.purple,title:"Niveles del mes",items:["El nivel se calcula: Score ÷ Máximo posible del mes × 100","Nivel 4 LEGEND: 100% del máximo","Nivel 3 ELITE: 90% o más","Nivel 2 RISING: 80% o más","Nivel 1 ROOKIE: menos del 80%","El máximo = semanas × 15 + riddles × 2 + tasks × 2"]},
     {icon:"🎁",color:C.red,title:"Tienda de premios",items:["Tu nivel del mes es la llave de acceso","Nivel 4 → acceso a todos los premios","Tus coins son los que gastas al canjear un premio","Cuida tus coins — se reinician cada trimestre"]},

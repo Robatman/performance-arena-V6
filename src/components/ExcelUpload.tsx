@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import * as XLSX from "xlsx";
+import { KPI_FULL, kpiMid } from "../kpiPoints";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2pqcHRqeWhpaXRlanVwdmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODgwMjEsImV4cCI6MjA5MjU2NDAyMX0.UgQDse6To0oe49llGDC7e9jYO1_bR6gxk-YcE6h7Bn8";
@@ -132,16 +133,16 @@ function parseQA(raw: any): number | null {
 
 function calcAttendance(abs: number, tard: number) {
   if (abs >= 1 || tard >= 2) return { status: "absent" as const, pts: 0 };
-  if (tard === 1) return { status: "late" as const, pts: 2 };
-  return { status: "perfect" as const, pts: 5 };
+  if (tard === 1) return { status: "late" as const, pts: kpiMid(KPI_FULL.att) };
+  return { status: "perfect" as const, pts: KPI_FULL.att };
 }
 
-function calcPts(val: number | null, goal: number | null, higherBetter: boolean): number {
+function calcPts(val: number | null, goal: number | null, higherBetter: boolean, full: number): number {
   if (val === null || goal === null) return 0;
-  if (higherBetter) return val > goal ? 5 : val === goal ? 2 : 0;
+  if (higherBetter) return val > goal ? full : val === goal ? kpiMid(full) : 0;
   // time: lower is better, but 0 means no calls = 0 pts
   if (val === 0) return 0;
-  return val < goal ? 5 : val === goal ? 2 : 0;
+  return val < goal ? full : val === goal ? kpiMid(full) : 0;
 }
 
 function findCol(keys: string[], ...names: string[]): string {
@@ -240,8 +241,8 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
             const qaN     = parseQA(qaRaw);
             const qaGoal  = parseFloat(String(r[cQaGoal]??"0").replace("%",""))||0;
             const att     = calcAttendance(abs, tard);
-            const ahtPts  = flag==="ok" ? calcPts(ahtSec, ahtGoal, ahtType==="Productivity") : 0;
-            const qaPts   = flag==="ok" ? calcPts(qaN, qaGoal, true) : 0;
+            const ahtPts  = flag==="ok" ? calcPts(ahtSec, ahtGoal, ahtType==="Productivity", KPI_FULL.aht) : 0;
+            const qaPts   = flag==="ok" ? calcPts(qaN, qaGoal, true, KPI_FULL.qa) : 0;
             const attPts  = flag==="msl" ? 0 : att.pts;
             // #REF! = broken Excel formula in Manager col → treat as blank
             const rawMgr = cManager ? String(r[cManager]??"").trim() : "";
@@ -430,7 +431,7 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
           errs.push(`ℹ️ Nivel ${a.game_id}: la semana ${week} ya estaba aplicada a su racha — se omitió para no duplicarla`);
           continue;
         }
-        const onTarget = a.qa_pts === 5 && a.aht_pts === 5 && a.attendance_pts === 5;
+        const onTarget = a.qa_pts === KPI_FULL.qa && a.aht_pts === KPI_FULL.aht && a.attendance_pts === KPI_FULL.att;
         let newLevel = currentLevel;
         let newStreak = streak;
         let newEliteWeeks = eliteWeeks;

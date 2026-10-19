@@ -4,6 +4,7 @@
 // FIX 2: Coins del coach se leen fresh de staff_profiles en cada load (no del prop estático)
 // FIX 3: PointsBreakdownView — Super Admin busca cualquier game_id y ve desglose completo
 import { useState, useEffect } from "react";
+import { weekTone } from "../kpiPoints";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2pqcHRqeWhpaXRlanVwdmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODgwMjEsImV4cCI6MjA5MjU2NDAyMX0.UgQDse6To0oe49llGDC7e9jYO1_bR6gxk-YcE6h7Bn8";
@@ -991,7 +992,7 @@ export function PointsBreakdownView() {
                     <STag color="#34d399">AHT: {w.aht_pts||0}</STag>
                     <STag color="#a78bfa">Att: {w.attendance_pts||0}</STag>
                   </div>
-                  <div style={{color:wPts>=12?S.green:wPts>=8?S.yellow:S.red,fontWeight:800,fontSize:15}}>{wPts}pts</div>
+                  <div style={{color:weekTone(wPts)==="good"?S.green:weekTone(wPts)==="warn"?S.yellow:S.red,fontWeight:800,fontSize:15}}>{wPts}pts</div>
                 </div>
               );
             })}
