@@ -160,7 +160,7 @@ export function calcLevel(profile) {
 }
 
 export function calcMaxScore(weekCount, riddleCount, taskCount) {
-  return (weekCount * 15) + (riddleCount * 2) + (taskCount * 2);
+  return (weekCount * KPI_WEEK_MAX) + (riddleCount * 2) + (taskCount * 2);
 }
 
 // Level metadata — 3-tier KPI-streak system
@@ -230,7 +230,6 @@ const Tag=({children,color=C.blue})=><span style={{padding:"2px 8px",borderRadiu
 const STag=({children,color=S.accent})=><span style={{padding:"2px 8px",borderRadius:5,background:`${color}22`,color,fontSize:10,fontWeight:700,letterSpacing:0.5}}>{children}</span>;
 const Logo=({sz=32})=><div style={{width:sz,height:sz,borderRadius:"50%",background:`conic-gradient(${C.blue} 0deg 270deg,${C.red} 270deg 360deg)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><div style={{width:"52%",height:"52%",borderRadius:"50%",background:C.bg}}/></div>;
 const StaffLogo=({sz=32})=><div style={{width:sz,height:sz,borderRadius:10,background:`linear-gradient(135deg,${S.accent},${S.purple})`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:sz*0.5}}>⚡</div>;
-const Pzl=({pieces})=><div style={{display:"flex",gap:6,alignItems:"center"}}>{[0,1,2].map(i=><div key={i} style={{width:26,height:26,borderRadius:6,background:i<pieces?`linear-gradient(135deg,${C.red},${C.blue})`:"#e8eaf6",border:`2px solid ${i<pieces?C.red:C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{i<pieces?"🧩":""}</div>)}{pieces>=3&&<span style={{fontSize:18}}>🎁</span>}</div>;
 
 // ─── SCORE BREAKDOWN PILL ─────────────────────────────────────────────────────
 function ScorePill({label,val,color,icon}){
@@ -638,7 +637,6 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
               <div style={{width:50,color:C.muted,fontSize:11,flexShrink:0}}>{m.month}</div>
               <div style={{flex:1}}><Bar val={m.score} max={m.maxScore||60} color={lc(m.level||1)} h={7}/></div>
               <Bdg l={m.level||1}/>
-              {m.piece&&<span>🧩</span>}
             </div>
           ))
         )}
@@ -808,7 +806,7 @@ function Leaderboard({user,allUsers,shop,coinSettings={},lastEvaluatedWeek}){
         <input value={lbSearch} onChange={e=>setLbSearch(e.target.value)} placeholder="🔍 Buscar agente..." style={{width:"100%",border:`1.5px solid ${C.border}`,borderRadius:10,padding:"9px 14px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
       </div>
       <div style={{display:"flex",gap:6,marginBottom:12,overflowX:"auto"}}>
-        {[{v:null,label:"Todos"},{v:1,label:"Nivel 1"},{v:2,label:"Nivel 2"},{v:3,label:"Nivel 3"},{v:4,label:"Nivel 4"}].map(opt=>(
+        {[{v:null,label:"Todos"},{v:1,label:"Nivel 1"},{v:2,label:"Nivel 2"},{v:3,label:"Nivel 3"}].map(opt=>(
           <button key={String(opt.v)} onClick={()=>setLevelFilter(opt.v)} style={{padding:"6px 14px",borderRadius:8,border:`1.5px solid ${levelFilter===opt.v?C.blue:C.border}`,background:levelFilter===opt.v?`${C.blue}12`:C.card,color:levelFilter===opt.v?C.blue:C.muted,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{opt.label}</button>
         ))}
       </div>
@@ -957,7 +955,6 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
             <div style={{color:"#fff",fontWeight:900,fontSize:22,letterSpacing:1}}>🏪 TIENDA</div>
             <div style={{marginTop:4}}><Bdg l={level}/></div>
           </div>
-          <Pzl pieces={user.puzzlePieces||0}/>
         </div>
         <div style={{background:"rgba(255,255,255,0.12)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
@@ -1152,11 +1149,10 @@ function Notifs({user,notifs,onMarkRead,onMarkAll,onRefresh}){
 
 function Info(){
   const secs=[
-    {icon:"📊",color:C.blue,title:"SCORE — determina tu nivel mensual",items:[`QA Score: superas meta=${KPI_FULL.qa}pts, igual=${kpiMid(KPI_FULL.qa)}pts, debajo=0pts`,`AHT: mejor que meta=${KPI_FULL.aht}pts, igual=${kpiMid(KPI_FULL.aht)}pts, peor=0pts`,`Attendance: perfecta=${KPI_FULL.att}pts, 1 tardanza=${kpiMid(KPI_FULL.att)}pts, falta o 2 tardanzas=0pts`,"Riddle aprobado: +2 pts por cada riddle (aprobado por admin)","Task aprobada: +2 pts por cada task (aprobada por admin)","El Score determina tu nivel: 100%=Nivel 4, ≥90%=Nivel 3, ≥80%=Nivel 2, <80%=Nivel 1"]},
+    {icon:"📊",color:C.blue,title:"PUNTOS SEMANALES",items:[`QA Score: superas meta=${KPI_FULL.qa}pts, igual=${kpiMid(KPI_FULL.qa)}pts, debajo=0pts`,`AHT: mejor que meta=${KPI_FULL.aht}pts, igual=${kpiMid(KPI_FULL.aht)}pts, peor=0pts`,`Attendance: perfecta=${KPI_FULL.att}pts, 1 tardanza=${kpiMid(KPI_FULL.att)}pts, falta o 2 tardanzas=0pts`,"Riddle aprobado: +2 pts por cada riddle (aprobado por admin)","Task aprobada: +2 pts por cada task (aprobada por admin)","Una semana perfecta = cumplir QA, AHT y Attendance al máximo (se ve en tu Inicio)"]},
     {icon:"🪙",color:C.gold,title:"COINS — moneda para la tienda",items:["Coins = Score + Kudos + Referidos","Kudos: cada kudo regular = 1 coin, cada gold kudo = 5 coins","Referidos: enviado = 1 coin, si es contratado = 5 coins total","Los coins NO afectan tu nivel, solo sirven para comprar en la tienda","Los coins se reinician cada trimestre (admin)"]},
-    {icon:"🏆",color:C.purple,title:"Niveles del mes",items:["El nivel se calcula: Score ÷ Máximo posible del mes × 100","Nivel 4 LEGEND: 100% del máximo","Nivel 3 ELITE: 90% o más","Nivel 2 RISING: 80% o más","Nivel 1 ROOKIE: menos del 80%","El máximo = semanas × 15 + riddles × 2 + tasks × 2"]},
-    {icon:"🎁",color:C.red,title:"Tienda de premios",items:["Tu nivel del mes es la llave de acceso","Nivel 4 → acceso a todos los premios","Tus coins son los que gastas al canjear un premio","Cuida tus coins — se reinician cada trimestre"]},
-    {icon:"🧩",color:C.green,title:"El rompecabezas",items:["Mes perfecto = 100% en todas las métricas + todos los riddles y tasks aprobados","Cada mes perfecto = 1 pieza del rompecabezas","Al juntar 3 piezas desbloqueas un premio sorpresa"]},
+    {icon:"🏆",color:C.purple,title:"Tus 3 niveles",items:["Nivel 1 ROOKIE: donde empiezas","Nivel 2 RISING: 3 semanas perfectas seguidas","Nivel 3 ELITE: 9 semanas perfectas más estando en RISING","Una semana sin cumplir todas las metas te regresa a ROOKIE (las semanas excusadas no cuentan en contra)"]},
+    {icon:"🎁",color:C.red,title:"Tienda de premios",items:["Los premios están en 3 niveles: Rookie, Rising y Elite","Tu nivel decide cuáles puedes canjear: ROOKIE los de nivel 1, RISING hasta nivel 2, ELITE todos","Tus coins son los que gastas al canjear un premio","Cuida tus coins — se reinician cada trimestre"]},
   ];
   return(
     <div style={{paddingBottom:100}}>
@@ -1326,7 +1322,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
         <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>EMOJI</div><input value={pf.emoji} onChange={e=>setPf(p=>({...p,emoji:e.target.value}))} style={inp}/></div>
         <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>COINS 🪙</div><input type="number" value={pf.pts} onChange={e=>setPf(p=>({...p,pts:+e.target.value}))} style={inp}/></div>
         <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>STOCK (-1 = ilimitado)</div><input type="number" value={pf.stock} onChange={e=>setPf(p=>({...p,stock:+e.target.value}))} style={inp}/></div>
-        <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NIVEL MÍNIMO</div><select value={pf.minLevel} onChange={e=>setPf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Nivel 1 - Todos</option><option value={2}>Nivel 2+</option><option value={3}>Nivel 3+</option><option value={4}>Solo Nivel 4</option></select></div>
+        <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NIVEL MÍNIMO</div><select value={pf.minLevel} onChange={e=>setPf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Nivel 1 · Rookie (todos)</option><option value={2}>Nivel 2 · Rising+</option><option value={3}>Nivel 3 · Elite</option></select></div>
         <div style={{gridColumn:"1/-1"}}><div style={{color:C.muted,fontSize:10,marginBottom:3}}>TÉRMINOS Y CONDICIONES</div><textarea value={pf.description} onChange={e=>setPf(p=>({...p,description:e.target.value}))} rows={3} placeholder="Condiciones de uso, restricciones, vigencia..." style={{...inp,resize:"vertical",height:"auto",lineHeight:1.5}}/></div>
       </div>
       <Btn onClick={addPrize} color={C.blue} style={{width:"100%",padding:11}}>AÑADIR PREMIO</Btn>
@@ -1342,7 +1338,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
               <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>EMOJI</div><input value={ef.emoji} onChange={e=>setEf(p=>({...p,emoji:e.target.value}))} style={{...inp,textAlign:"center",fontSize:18}}/></div>
               <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>COINS 🪙</div><input type="number" value={ef.pts} onChange={e=>setEf(p=>({...p,pts:e.target.value}))} style={inp}/></div>
               <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>STOCK (-1 = ilimitado)</div><input type="number" value={ef.stock} onChange={e=>setEf(p=>({...p,stock:e.target.value}))} style={inp}/></div>
-              <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NIVEL MÍNIMO</div><select value={ef.minLevel} onChange={e=>setEf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Nivel 1 - Todos</option><option value={2}>Nivel 2+</option><option value={3}>Nivel 3+</option><option value={4}>Solo Nivel 4</option></select></div>
+              <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NIVEL MÍNIMO</div><select value={ef.minLevel} onChange={e=>setEf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Nivel 1 · Rookie (todos)</option><option value={2}>Nivel 2 · Rising+</option><option value={3}>Nivel 3 · Elite</option></select></div>
               <div style={{gridColumn:"1/-1"}}><div style={{color:C.muted,fontSize:10,marginBottom:3}}>TÉRMINOS Y CONDICIONES</div><textarea value={ef.description} onChange={e=>setEf(p=>({...p,description:e.target.value}))} rows={3} placeholder="Condiciones de uso, restricciones, vigencia..." style={{...inp,resize:"vertical",height:"auto",lineHeight:1.5}}/></div>
             </div>
             <div style={{display:"flex",gap:8}}>
@@ -2715,6 +2711,161 @@ function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCou
   );
 }
 
+// ─── STAFF: "MY AGENTS" VIEWS ─────────────────────────────────────────────────
+// The only things staff sees for now (plus Kudos): a ranking of the agents
+// assigned to them and what those agents joined. Assignment comes from the
+// weekly Excel (weekly_metrics.coach / qa_coach / manager_game_id) using each
+// agent's most recent row. Training roles and superadmin have no column of
+// their own, so they see every agent.
+const MY_AGENT_FIELD={team_coach:"coach",quality_coach:"qa_coach",manager:"manager_game_id"};
+function useMyAgents(user,allUsers){
+  const [st,setSt]=useState({loading:true,rows:[],all:!MY_AGENT_FIELD[user?.role]});
+  useEffect(()=>{let live=true;(async()=>{
+    try{
+      const wm=await sbFetch("weekly_metrics?select=game_id,week,qa_pts,aht_pts,attendance_pts,coach,qa_coach,manager_game_id&order=week.desc&limit=5000").catch(()=>[]);
+      const field=MY_AGENT_FIELD[user?.role];
+      const me=String(user?.gameId||user?.game_id||user?.username||"").toUpperCase();
+      const byAgent={};
+      (wm||[]).forEach(r=>{
+        const k=String(r.game_id||"").toUpperCase();if(!k)return;
+        const a=byAgent[k]||(byAgent[k]={gameId:r.game_id,pts:0,latest:r});
+        a.pts+=(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);
+      });
+      const profByGid={};(allUsers||[]).forEach(u=>{if(u.game_id)profByGid[String(u.game_id).toUpperCase()]=u;});
+      let rows=Object.entries(byAgent).map(([k,a])=>({gameId:a.gameId,key:k,pts:a.pts,latest:a.latest,prof:profByGid[k]}));
+      rows=rows.filter(r=>!r.prof||r.prof.active!==false);
+      if(field)rows=rows.filter(r=>String(r.latest[field]||"").toUpperCase()===me);
+      rows=rows.map(r=>({gameId:r.gameId,key:r.key,pts:r.pts,name:r.prof?.name||r.gameId,level:r.prof?.level||1}));
+      rows.sort((a,b)=>b.pts-a.pts);
+      if(live)setSt({loading:false,rows,all:!field});
+    }catch(e){if(live)setSt({loading:false,rows:[],all:!MY_AGENT_FIELD[user?.role]});}
+  })();return()=>{live=false;};},[user?.role,user?.gameId,user?.game_id,user?.username,allUsers]);
+  return st;
+}
+
+function StaffMyAgents({user,allUsers}){
+  const {loading,rows,all}=useMyAgents(user,allUsers);
+  return(
+    <div style={{paddingBottom:100}}>
+      <SCard style={{marginBottom:14}}>
+        <div style={{color:S.text,fontWeight:800,fontSize:18}}>🏆 My agents</div>
+        <div style={{color:S.muted,fontSize:12,marginTop:2}}>{all?"All agents":"Agents assigned to you"} · performance points ({rows.length})</div>
+      </SCard>
+      {loading&&<div style={{textAlign:"center",padding:40,color:S.muted}}>Loading...</div>}
+      {!loading&&rows.length===0&&<SCard><div style={{textAlign:"center",color:S.muted,padding:20,fontSize:13}}>No agents assigned to you yet. They show up after the next weekly upload.</div></SCard>}
+      {rows.map((r,i)=>(
+        <SCard key={r.key} style={{marginBottom:8,padding:"11px 14px",display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:28,textAlign:"center",fontWeight:900,fontSize:i<3?20:13,color:i<3?S.yellow:S.muted}}>{i<3?["🥇","🥈","🥉"][i]:i+1}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{color:S.text,fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</div>
+            <div style={{color:S.muted,fontSize:11}}>{r.gameId} · Level {r.level}</div>
+          </div>
+          <div style={{color:S.accent,fontWeight:900,fontSize:18}}>{r.pts}</div>
+        </SCard>
+      ))}
+    </div>
+  );
+}
+
+function StaffMyActivities({user,allUsers}){
+  const {loading:agLoading,rows:agents,all}=useMyAgents(user,allUsers);
+  const [acts,setActs]=useState([]);const [regs,setRegs]=useState([]);const [loading,setLoading]=useState(true);
+  useEffect(()=>{(async()=>{
+    try{
+      const [a,r]=await Promise.all([
+        sbFetch("activities?active=eq.true&select=id,title,coins&order=created_at.desc").catch(()=>[]),
+        sbFetch("activity_registrations?select=activity_id,game_id,status").catch(()=>[]),
+      ]);
+      setActs(a||[]);setRegs(r||[]);
+    }catch(e){}
+    setLoading(false);
+  })();},[]);
+  const mine=new Set(agents.map(a=>a.key));
+  const myRegs=regs.filter(r=>mine.has(String(r.game_id||"").toUpperCase())&&r.status!=="rejected");
+  const joinedBy=id=>new Set(myRegs.filter(r=>r.activity_id===id).map(r=>String(r.game_id).toUpperCase())).size;
+  const perAgent=agents.map(a=>({...a,joined:new Set(myRegs.filter(r=>String(r.game_id).toUpperCase()===a.key).map(r=>r.activity_id)).size})).sort((x,y)=>x.joined-y.joined||x.name.localeCompare(y.name));
+  return(
+    <div style={{paddingBottom:100}}>
+      <SCard style={{marginBottom:14}}>
+        <div style={{color:S.text,fontWeight:800,fontSize:18}}>🎉 Activities</div>
+        <div style={{color:S.muted,fontSize:12,marginTop:2}}>What {all?"the agents":"your agents"} joined · {agents.length} agents</div>
+      </SCard>
+      {(loading||agLoading)&&<div style={{textAlign:"center",padding:40,color:S.muted}}>Loading...</div>}
+      {!loading&&!agLoading&&(<>
+        {acts.length===0&&<SCard><div style={{textAlign:"center",color:S.muted,padding:20,fontSize:13}}>No open activities right now.</div></SCard>}
+        {acts.map(a=>(
+          <SCard key={a.id} style={{marginBottom:8,padding:"11px 14px",display:"flex",alignItems:"center",gap:12}}>
+            <div style={{flex:1,minWidth:0,color:S.text,fontWeight:700,fontSize:14}}>{a.title}</div>
+            <div style={{color:S.muted,fontSize:12,whiteSpace:"nowrap"}}>{joinedBy(a.id)} of {agents.length}</div>
+            {a.coins>0&&<div style={{color:S.yellow,fontWeight:800,fontSize:13,whiteSpace:"nowrap"}}>+{a.coins} 🪙</div>}
+          </SCard>
+        ))}
+        {perAgent.length>0&&acts.length>0&&(
+          <SCard style={{marginTop:14}}>
+            <div style={{color:S.accent,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:10}}>PER AGENT (FEWEST FIRST)</div>
+            {perAgent.slice(0,40).map(a=>(
+              <div key={a.key} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${S.border}`,fontSize:13}}>
+                <span style={{color:S.text}}>{a.name}</span>
+                <span style={{color:a.joined===0?S.yellow:S.green,fontWeight:700}}>{a.joined} joined</span>
+              </div>
+            ))}
+            {perAgent.length>40&&<div style={{color:S.muted,fontSize:11,paddingTop:8,borderTop:`1px solid ${S.border}`}}>Showing the 40 with the fewest activities of {perAgent.length}.</div>}
+          </SCard>
+        )}
+      </>)}
+    </div>
+  );
+}
+
+// Any staff member can recognize any agent (same +1 / +5 coin kudos agents
+// already get from admins). Agents only — staff-to-staff kudos stay hidden.
+function StaffAgentKudos({cu,allUsers,toast,reloadUsers}){
+  const [who,setWho]=useState("");const [gold,setGold]=useState(false);const [reason,setReason]=useState("");const [busy,setBusy]=useState(false);
+  const agents=(allUsers||[]).filter(u=>u.active&&u.role==="user");
+  const label=u=>`${u.name} · ${u.game_id||u.username}${u.project?` · ${u.project}`:""}`;
+  const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};
+  const send=async()=>{
+    const target=agents.find(u=>label(u)===who);
+    if(!target){toast("Pick an agent from the list");return;}
+    if(!reason.trim()){toast("Write the reason");return;}
+    setBusy(true);
+    try{
+      const pts=gold?5:1;
+      await db.createKudo({from_user_id:cu.id,to_user_id:target.id,reason:reason.trim(),category:"general",points_given:pts});
+      await db.updateUser(target.id,{kudos:(target.kudos||0)+(gold?0:1),gold_kudos:(target.gold_kudos||0)+(gold?1:0)});
+      await db.createNotif({recipient_id:target.id,title:gold?"Gold Kudo! 🌟":"Kudo! 👏",message:`${cu.gameId||cu.name} te reconoció: "${reason.trim()}" — +${pts} coins`,type:"kudos"});
+      await reloadUsers();
+      setWho("");setReason("");setGold(false);
+      toast("Kudo sent!");
+    }catch(e){toast("Error sending kudo");}
+    setBusy(false);
+  };
+  return(
+    <div style={{paddingBottom:100}}>
+      <SCard style={{marginBottom:14}}>
+        <div style={{color:S.text,fontWeight:800,fontSize:18}}>👏 Kudos</div>
+        <div style={{color:S.muted,fontSize:12,marginTop:2}}>Recognize any agent</div>
+      </SCard>
+      <SCard>
+        <div style={{marginBottom:10}}>
+          <div style={{color:S.muted,fontSize:11,marginBottom:4}}>AGENT</div>
+          <input list="kudo-agents" value={who} onChange={e=>setWho(e.target.value)} style={inp} placeholder="Type a name to search..."/>
+          <datalist id="kudo-agents">{agents.map(u=><option key={u.id} value={label(u)}/>)}</datalist>
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <div onClick={()=>setGold(false)} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${!gold?S.accent:S.border}`,background:!gold?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>👏</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Kudo (+1)</div></div>
+          <div onClick={()=>setGold(true)} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${gold?S.yellow:S.border}`,background:gold?`${S.yellow}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>🌟</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Gold (+5)</div></div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{color:S.muted,fontSize:11,marginBottom:4}}>REASON</div>
+          <textarea value={reason} onChange={e=>setReason(e.target.value)} rows={3} style={{...inp,resize:"vertical"}} placeholder="Why do they deserve it?"/>
+        </div>
+        <SBtn onClick={send} disabled={busy} style={{width:"100%"}}>{busy?"Sending...":"Send kudo"}</SBtn>
+      </SCard>
+    </div>
+  );
+}
+
 function YuritoKudos({cu,allUsers,allStaff,toast,reloadUsers}){
   const [tab,setTab]=useState("agents");
   const [toId,setToId]=useState("");
@@ -2936,7 +3087,7 @@ export default function App(){
 
   if(!loggedIn){
     const baseStyle=<style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif}input,select,textarea{font-family:inherit}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>;
-    return<>{baseStyle}<UnifiedLogin onLoginAgent={u=>{setLoggedIn(u);setScreen("dashboard");}} onLoginStaff={u=>{setLoggedIn(u);setScreen("dashboard");}}/></>;
+    return<>{baseStyle}<UnifiedLogin onLoginAgent={u=>{setLoggedIn(u);setScreen("dashboard");}} onLoginStaff={u=>{setLoggedIn(u);setScreen(u?.gameId==="YURITO"?"dashboard":"myagents");}}/></>;
   }
 
   // ── STAFF APP ──
@@ -2944,6 +3095,12 @@ export default function App(){
     const isManager=cu?.role==="manager"||cu?.role==="training_manager"||cu?.role==="superadmin";
     const isSAorManager=cu?.role==="superadmin"||cu?.role==="manager";
     const isYurito=cu?.gameId==="YURITO";
+    // For now staff only gets "My agents" (ranking + activities of their agents)
+    // and Kudos for any agent. Everything else in the staff arena is hidden, not
+    // deleted: flip this to false to bring the old menu back.
+    const STAFF_ARENA_SIMPLE=true;
+    const simpleStaffNav=[{id:"myagents",icon:"🏆",label:"My agents"},{id:"myactivities",icon:"🎉",label:"Activities"},{id:"agentkudos",icon:"👏",label:"Kudos"},
+      ...(cu?.role==="superadmin"?[{id:"report",icon:"📊",label:"Reporte"},{id:"admin",icon:"⚙️",label:"Admin"}]:[])];
     const staffNavByRole=isYurito?[{id:"dashboard",icon:"🏠",label:"Home"},{id:"kudos",icon:"👏",label:"Kudos"}]:[
       {id:"dashboard",icon:"🏠",label:"Home"},
       {id:"leaderboard",icon:"🏆",label:"Rankings"},
@@ -2957,8 +3114,8 @@ export default function App(){
       ...(cu?.role==="superadmin"?[{id:"report",icon:"📊",label:"Reporte"},{id:"admin",icon:"⚙️",label:"Admin"}]:[])];
     // Per-person permissions can only NARROW what the role already sees — never
     // grant more — and "report"/"admin" (superadmin-only) are never filterable.
-    const staffNav=(!cu?.navPermissions||isYurito)?staffNavByRole:staffNavByRole.filter(item=>item.id==="report"||item.id==="admin"||cu.navPermissions.includes(item.id));
-    const staffTitles={dashboard:"Dashboard",leaderboard:"Leaderboard",kudos:"Kudos",innovation:"Innovation & AI",sessions:"Coaching Sessions",activities:"Actividades & Puntos",store:"Staff Store",report:"Reporte de Puntos",profile:"Profile",admin:"Admin Panel"};
+    const staffNav=(STAFF_ARENA_SIMPLE&&!isYurito)?simpleStaffNav:(!cu?.navPermissions||isYurito)?staffNavByRole:staffNavByRole.filter(item=>item.id==="report"||item.id==="admin"||cu.navPermissions.includes(item.id));
+    const staffTitles={myagents:"My agents",myactivities:"Activities",agentkudos:"Kudos",dashboard:"Dashboard",leaderboard:"Leaderboard",kudos:"Kudos",innovation:"Innovation & AI",sessions:"Coaching Sessions",activities:"Actividades & Puntos",store:"Staff Store",report:"Reporte de Puntos",profile:"Profile",admin:"Admin Panel"};
     return<>
       <style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif;background:${S.bg}}input,select,textarea{font-family:inherit}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
       {cu?.needsPwChange&&<TempPwModal user={cu} dark={true} onSave={async pw=>{await staffDb.update(cu.id,{password_hash:pw,needs_pw_change:false,temp_pw:null});setLoggedIn({...cu,needsPwChange:false,tempPw:null});toast("Password updated!");}}/>}
@@ -2971,6 +3128,9 @@ export default function App(){
         </div>
       </div>
       <div style={{marginLeft:isWide?188:0,padding:isWide?"20px 28px 40px":"14px 14px 0"}}>
+        {screen==="myagents"&&<StaffMyAgents user={cu} allUsers={users}/>}
+        {screen==="myactivities"&&<StaffMyActivities user={cu} allUsers={users}/>}
+        {screen==="agentkudos"&&<StaffAgentKudos cu={cu} allUsers={users} toast={toast} reloadUsers={reloadUsers}/>}
         {screen==="dashboard"&&((isYurito||isSAorManager)?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos} bulletin={bulletin}/>)}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
         {screen==="kudos"&&(isYurito?<YuritoKudos cu={cu} allUsers={users} allStaff={allStaff} toast={toast} reloadUsers={reloadUsers}/>:<StaffKudos user={cu} allStaff={allStaff} kudos={[...staffKudos,...pendingKudos.filter(pk=>!staffKudos.find(sk=>sk.id===pk.id))]} isManager={isManager} allAgents={users}
