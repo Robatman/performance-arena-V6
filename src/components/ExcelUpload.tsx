@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import * as XLSX from "xlsx";
-import { KPI_FULL, kpiMid } from "../kpiPoints";
+import { KPI_FULL, calcAttendance, calcPts } from "../kpiPoints";
+import { payStreakBonuses } from "../streakBonus";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2pqcHRqeWhpaXRlanVwdmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODgwMjEsImV4cCI6MjA5MjU2NDAyMX0.UgQDse6To0oe49llGDC7e9jYO1_bR6gxk-YcE6h7Bn8";
@@ -129,20 +130,6 @@ function parseQA(raw: any): number | null {
   const s = String(raw).replace("%", "").trim();
   const n = parseFloat(s);
   return isNaN(n) ? null : n; // 0 is valid!
-}
-
-function calcAttendance(abs: number, tard: number) {
-  if (abs >= 1 || tard >= 2) return { status: "absent" as const, pts: 0 };
-  if (tard === 1) return { status: "late" as const, pts: kpiMid(KPI_FULL.att) };
-  return { status: "perfect" as const, pts: KPI_FULL.att };
-}
-
-function calcPts(val: number | null, goal: number | null, higherBetter: boolean, full: number): number {
-  if (val === null || goal === null) return 0;
-  if (higherBetter) return val > goal ? full : val === goal ? kpiMid(full) : 0;
-  // time: lower is better, but 0 means no calls = 0 pts
-  if (val === 0) return 0;
-  return val < goal ? full : val === goal ? kpiMid(full) : 0;
 }
 
 function findCol(keys: string[], ...names: string[]): string {
@@ -282,6 +269,8 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
           .map((p:any) => ({ game_id: String(p.game_id).trim(), project: String(p.team||"").trim(), full_name: String(p.full_name||"").trim(), action: "", staffRole: "team_coach" }));
         setMissingAgents(missing);
 
+        // Sin agentes nuevos no hay nada que elegir: evita que "Subir otra semana" deje el botón bloqueado
+        if (!processed.some(x => x.is_new)) setImportNew("none");
         setAgents(processed); setCoaches(parsedCoaches); setStage("preview");
       } catch(err) { setErrors([`Error: ${err}`]); setStage("error"); }
     };
@@ -407,67 +396,13 @@ export default function ExcelUpload({ onClose }: { onClose?: () => void }) {
       } catch(e:any) { /* ignore */ }
     }
 
-    // ── LEVEL SYSTEM: KPI-streak based ──────────────────────────────────────────
-    setProgressMsg("Calculando niveles...");
-    const lvlNames: Record<number, string> = { 1: "ROOKIE", 2: "RISING", 3: "ELITE" };
-    for (const a of agents.filter(x => x.review_reason !== "termination")) {
-      const isExcused = a.review_reason === "vacation" || a.review_reason === "sick_leave" || a.review_reason === "skip";
-      if (isExcused) continue; // freeze counters for excused weeks
-      try {
-        const profData = await dbGet(
-          "profiles",
-          `game_id=eq.${encodeURIComponent(a.game_id)}&select=id,level,consecutive_weeks_on_target,weeks_at_elite,level_history`
-        );
-        if (!profData || profData.length === 0) continue;
-        const prof = profData[0];
-        const currentLevel: number = prof.level || 1;
-        const streak: number = prof.consecutive_weeks_on_target || 0;
-        const eliteWeeks: number = prof.weeks_at_elite || 0;
-        const history: any[] = prof.level_history || [];
-        // Idempotency guard: re-uploading a week already applied to this agent's
-        // streak must not double-count it (same pattern as the auto-KPI block below,
-        // which already deletes-before-inserting to stay idempotent).
-        if (history.some(h => h.week === week)) {
-          errs.push(`ℹ️ Nivel ${a.game_id}: la semana ${week} ya estaba aplicada a su racha — se omitió para no duplicarla`);
-          continue;
-        }
-        const onTarget = a.qa_pts === KPI_FULL.qa && a.aht_pts === KPI_FULL.aht && a.attendance_pts === KPI_FULL.att;
-        let newLevel = currentLevel;
-        let newStreak = streak;
-        let newEliteWeeks = eliteWeeks;
-        if (!onTarget) {
-          newLevel = 1; newStreak = 0; newEliteWeeks = 0;
-        } else if (currentLevel === 1) {
-          newStreak = streak + 1;
-          if (newStreak >= 3) { newLevel = 2; newStreak = 0; }
-        } else if (currentLevel === 2) {
-          newStreak = streak + 1;
-          if (newStreak >= 9) { newLevel = 3; newStreak = 0; newEliteWeeks = 1; }
-        } else if (currentLevel === 3) {
-          newEliteWeeks = eliteWeeks + 1;
-          if (newEliteWeeks >= 4) { newLevel = 1; newStreak = 0; newEliteWeeks = 0; }
-        }
-        const newHistory = [...history.slice(-11), { week, on_target: onTarget, level: newLevel }];
-        await dbPatch("profiles", `game_id=eq.${encodeURIComponent(a.game_id)}`, {
-          level: newLevel, monthly_level: newLevel,
-          consecutive_weeks_on_target: newStreak,
-          weeks_at_elite: newEliteWeeks,
-          level_history: JSON.stringify(newHistory),
-        });
-        if (newLevel !== currentLevel && prof.id) {
-          const isUp = newLevel > currentLevel;
-          await dbInsert("notifications", {
-            recipient_id: prof.id,
-            title: isUp ? `Subiste a Nivel ${newLevel}: ${lvlNames[newLevel]}!` : "Regresaste a Nivel 1: ROOKIE",
-            body: isUp
-              ? `Felicidades! KPIs al 100% — avanzaste de ${lvlNames[currentLevel]} a ${lvlNames[newLevel]}.`
-              : "Un week off-target regresa al nivel ROOKIE. ¡Sigue adelante!",
-            type: "level_change", is_read: false,
-            created_at: new Date().toISOString(),
-          }).catch(() => {});
-        }
-      } catch (e: any) { errs.push(`Nivel ${a.game_id}: ${e.message}`); }
-    }
+    // ── RACHA: 200 coins por cada 3 semanas seguidas en meta (85% o más) ────────
+    // Ya no hay niveles. La lógica vive en src/streakBonus.ts (probada aparte).
+    setProgressMsg("Calculando bonos de racha...");
+    try {
+      const { paid } = await payStreakBonuses({ get: dbGet, insert: dbInsert });
+      if (paid.length > 0) errs.push(`ℹ️ Bonos de racha pagados en esta carga: ${paid.length}`);
+    } catch (e: any) { errs.push(`Bono de racha: ${e.message}`); }
 
     setProgressMsg("Actualizando coaches...");
     for (const c of coaches) {
