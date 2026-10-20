@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
 import { pageAll } from "../pageAll";
-import { computeCoachUsage, weekRange, REACH_WEIGHT, FREQ_WEIGHT, WORKDAYS } from "../coachUsage";
+import { computeCoachUsage, weekRange, workdaysElapsed, isoWeekLabel, REACH_WEIGHT, FREQ_WEIGHT } from "../coachUsage";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2pqcHRqeWhpaXRlanVwdmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODgwMjEsImV4cCI6MjA5MjU2NDAyMX0.UgQDse6To0oe49llGDC7e9jYO1_bR6gxk-YcE6h7Bn8";
@@ -24,6 +24,8 @@ export default function CoachUsageBoard({ allUsers, myCoachId = null, isAdmin = 
     : { card: "#fff", border: "#d1d5f0", text: "#0a0a40", muted: "#6b7280", accent: "#7c3aed", bar: "#e8eaf6", hi: "#7c3aed" };
   const [offset, setOffset] = useState(0);
   const [logins, setLogins] = useState<any[]>([]);
+  const [excusedRows, setExcusedRows] = useState<any[]>([]);
+  const [weekLoaded, setWeekLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
@@ -33,17 +35,25 @@ export default function CoachUsageBoard({ allUsers, myCoachId = null, isAdmin = 
     (async () => {
       setLoading(true); setErr(false);
       try {
-        const q = `app_logins?select=game_id,user_type,logged_in_at&user_type=eq.agent&logged_in_at=gte.${encodeURIComponent(wk.start.toISOString())}&logged_in_at=lt.${encodeURIComponent(wk.end.toISOString())}&order=logged_in_at.asc,id.asc`;
+        const q = `app_logins?select=game_id,user_type,logged_in_at&user_type=eq.agent&logged_in_at=gte.${encodeURIComponent(wk.effStart.toISOString())}&logged_in_at=lt.${encodeURIComponent(wk.end.toISOString())}&order=logged_in_at.asc,id.asc`;
         setLogins(await pageAll(sbFetch, q));
+        // Semana del Excel: quién estuvo excusado (vacaciones, incapacidad, MSL) y si ya se cargó
+        const label = isoWeekLabel(wk.start);
+        const wkRows = await pageAll(sbFetch, `weekly_metrics?select=game_id,attendance_status,flag&week=eq.${encodeURIComponent(label)}&order=id.asc`).catch(() => []);
+        setWeekLoaded(wkRows.length > 0);
+        setExcusedRows(wkRows.filter((r: any) => r.attendance_status === "excused" || r.flag === "msl"));
       } catch (e) { setLogins([]); setErr(true); }
       setLoading(false);
     })();
   }, [offset]);
 
   const agents = (allUsers || []).filter(u => u.active && u.role === "user");
-  const { ranked, unassigned } = computeCoachUsage(agents, logins);
+  const wd = workdaysElapsed(wk);
+  const excusedSet = new Set(excusedRows.map((r: any) => String(r.game_id || "").trim().toUpperCase()));
+  const { ranked, unassigned } = computeCoachUsage(agents, logins, wd, excusedSet);
   const mine = myCoachId ? ranked.find(r => r.key === String(myCoachId).trim().toUpperCase()) : null;
   const weekLabels = ["Esta semana", "Semana pasada", "Hace 2 semanas", "Hace 3 semanas"];
+  const weekOptions = weekLabels.map((l, i) => ({ i, l, r: weekRange(i) })).filter(o => o.r.valid);
 
   const exportCsv = () => {
     const NL = String.fromCharCode(10), BOM = String.fromCharCode(65279);
@@ -53,7 +63,7 @@ export default function CoachUsageBoard({ allUsers, myCoachId = null, isAdmin = 
     const blob = new Blob([BOM + lines.join(NL)], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `ranking_coaches_uso_${wk.start.toISOString().slice(0, 10)}.csv`;
+    a.download = `ranking_coaches_uso_${wk.effStart.toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -72,11 +82,15 @@ export default function CoachUsageBoard({ allUsers, myCoachId = null, isAdmin = 
           {isAdmin && <button onClick={exportCsv} style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 9, padding: "7px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>⬇️ CSV</button>}
         </div>
         <select value={offset} onChange={e => setOffset(+e.target.value)} style={{ width: "100%", border: `1.5px solid ${T.border}`, borderRadius: 9, padding: "9px 12px", fontSize: 13, background: T.card, color: T.text, fontFamily: "inherit", marginBottom: 8 }}>
-          {weekLabels.map((l, i) => <option key={i} value={i}>{l} ({weekRange(i).label})</option>)}
+          {weekOptions.map(o => <option key={o.i} value={o.i}>{o.l} ({o.r.label})</option>)}
         </select>
         <div style={{ color: T.muted, fontSize: 11, lineHeight: 1.6 }}>
           Mide solo si tus agentes <strong style={{ color: T.text }}>entran</strong> a la app. Se calcula por agente, no en totales, así un equipo de 10 y uno de 15 compiten parejo:
-          índice = {Math.round(REACH_WEIGHT * 100)}% alcance (agentes que entraron al menos un día) + {Math.round(FREQ_WEIGHT * 100)}% frecuencia (días con acceso por agente, sobre {WORKDAYS}). Mismo comportamiento = misma posición.
+          índice = {Math.round(REACH_WEIGHT * 100)}% alcance (agentes que entraron al menos un día) + {Math.round(FREQ_WEIGHT * 100)}% frecuencia (días con acceso por agente, sobre {wd} día{wd === 1 ? "" : "s"} hábil{wd === 1 ? "" : "es"} transcurrido{wd === 1 ? "" : "s"}).
+          Quien está en vacaciones, incapacidad o MSL y no entra <strong style={{ color: T.text }}>no cuenta en contra</strong> de su coach. Cuenta <strong style={{ color: T.text }}>días con acceso</strong>, no inicios de sesión: entrar 20 veces en un día vale igual que entrar una vez. Mismo comportamiento = misma posición. El ranking cuenta el uso desde el 20-oct.
+        </div>
+        <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: weekLoaded ? "#16a34a22" : "#d9770622", color: weekLoaded ? "#16a34a" : "#d97706" }}>
+          {weekLoaded ? "✅ Con el Excel de la semana cargado: vacaciones y MSL ya están descontados." : "⏳ Provisional: se ajusta al cargar el Excel de la semana (ahí se descuentan vacaciones y MSL)."}
         </div>
       </Box>
 
@@ -115,7 +129,7 @@ export default function CoachUsageBoard({ allUsers, myCoachId = null, isAdmin = 
                 <div style={{ width: `${Math.min(100, x.index)}%`, height: "100%", background: T.accent, borderRadius: 4 }} />
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                <div style={{ color: T.muted, fontSize: 11 }}>Entraron {x.entered} de {x.team} ({x.reachPct}%) · Días por agente: {x.avgDays}</div>
+                <div style={{ color: T.muted, fontSize: 11 }}>Entraron {x.entered} de {x.team} ({x.reachPct}%) · Días por agente: {x.avgDays}{x.excused > 0 ? ` · ${x.excused} en vacaciones/MSL no cuentan` : ""}</div>
                 {isAdmin && x.absent.length > 0 && (
                   <button onClick={() => setOpen(open === x.key ? null : x.key)} style={{ background: "none", border: "none", color: T.accent, fontWeight: 700, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>{open === x.key ? "Ocultar" : `Sin entrar (${x.absent.length})`}</button>
                 )}
