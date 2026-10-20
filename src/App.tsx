@@ -6,6 +6,7 @@ import OperationsDashboard from "./components/OperationsDashboard";
 import RiddleTask from "./components/RiddleTask";
 import Activities, { ActivityBubbles, ActivityDashboardCard } from "./components/Activities";
 import { pageAll } from "./pageAll";
+import CoachUsageBoard from "./components/CoachUsageBoard";
 import { buildSeasonArchive } from "./seasonArchive";
 import { calcScoreCoins, inSeason, spentCoins, usedRedemptions, extraRedemptions } from "./coinsCalc";
 import { claimStock as claimStockRaw, releaseStock as releaseStockRaw } from "./stockClaim";
@@ -989,6 +990,7 @@ function UnlocksTab({allUsers,cu,toast}){
 function AccessTab({allUsers}){
   const [rows,setRows]=useState([]);const [loading,setLoading]=useState(true);const [err,setErr]=useState(false);
   const [days,setDays]=useState(7);const [q,setQ]=useState("");
+  const [view,setView]=useState("log");
   const since=new Date(Date.now()-days*86400000).toISOString();
   useEffect(()=>{
     (async()=>{
@@ -1028,9 +1030,15 @@ function AccessTab({allUsers}){
           </div>
         </div>
       </Card>
-      {err&&<Card style={{marginBottom:14,color:C.red,fontSize:13}}>No se pudo leer app_logins. Corre primero el SQL de accesos (sql/2026-10-19_categorias_historico.sql).</Card>}
-      {loading&&<div style={{textAlign:"center",padding:30,color:C.muted}}>Cargando...</div>}
-      {!loading&&!err&&(<>
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {[["log","📋 Accesos"],["coaches","🏅 Ranking de coaches por uso"]].map(([id,label])=>(
+          <button key={id} onClick={()=>setView(id)} style={{flex:1,padding:"9px 6px",borderRadius:9,border:`1.5px solid ${view===id?C.blue:C.border}`,background:view===id?`${C.blue}12`:"#fff",color:view===id?C.blue:C.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>
+        ))}
+      </div>
+      {view==="coaches"&&<CoachUsageBoard allUsers={allUsers} isAdmin/>}
+      {view==="log"&&err&&<Card style={{marginBottom:14,color:C.red,fontSize:13}}>No se pudo leer app_logins. Corre primero el SQL de accesos (sql/2026-10-19_categorias_historico.sql).</Card>}
+      {view==="log"&&loading&&<div style={{textAlign:"center",padding:30,color:C.muted}}>Cargando...</div>}
+      {view==="log"&&!loading&&!err&&(<>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
           {[{l:"Inicios de sesión",v:rows.length,c:C.blue},{l:"Agentes que entraron",v:`${entered}/${agents.length}`,c:C.green},{l:"Sin entrar",v:never.length,c:C.yellow}].map(s=>(
             <div key={s.l} style={{background:`${s.c}12`,border:`1px solid ${s.c}30`,borderRadius:10,padding:"10px 8px",textAlign:"center"}}>
@@ -2675,7 +2683,7 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
 // agent's most recent row. Training roles and superadmin have no column of
 // their own, so they see every agent.
 const MY_AGENT_FIELD={team_coach:"coach",quality_coach:"qa_coach",manager:"manager_game_id"};
-function useMyAgents(user,allUsers){
+function useMyAgents(user,allUsers,allStaff){
   const [st,setSt]=useState({loading:true,rows:[],all:!MY_AGENT_FIELD[user?.role]});
   useEffect(()=>{let live=true;(async()=>{
     try{
@@ -2689,6 +2697,15 @@ function useMyAgents(user,allUsers){
         a.pts+=(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);
       });
       const profByGid={};(allUsers||[]).forEach(u=>{if(u.game_id)profByGid[String(u.game_id).toUpperCase()]=u;});
+      // Sin semanas cargadas (p.ej. justo después de iniciar un trimestre) la asignación sale del perfil:
+      // coach_id y qa_coach; el manager se deduce del manager del coach del agente.
+      const staffByGid={};(allStaff||[]).forEach(t=>{if(t.gameId)staffByGid[String(t.gameId).toUpperCase()]=t;});
+      Object.entries(profByGid).forEach(([k,u])=>{
+        if(byAgent[k]||!u.active||u.role!=="user")return;
+        const coachStaff=staffByGid[String(u.coach_id||"").toUpperCase()];
+        const mgr=coachStaff?.managerId&&(allStaff||[]).find(t=>t.id===coachStaff.managerId);
+        byAgent[k]={gameId:u.game_id,pts:0,latest:{coach:u.coach_id||"",qa_coach:u.qa_coach||"",manager_game_id:mgr?.gameId||""}};
+      });
       let rows=Object.entries(byAgent).map(([k,a])=>({gameId:a.gameId,key:k,pts:a.pts,latest:a.latest,prof:profByGid[k]}));
       rows=rows.filter(r=>!r.prof||r.prof.active!==false);
       if(field)rows=rows.filter(r=>String(r.latest[field]||"").toUpperCase()===me);
@@ -2700,8 +2717,8 @@ function useMyAgents(user,allUsers){
   return st;
 }
 
-function StaffMyAgents({user,allUsers}){
-  const {loading,rows,all}=useMyAgents(user,allUsers);
+function StaffMyAgents({user,allUsers,allStaff}){
+  const {loading,rows,all}=useMyAgents(user,allUsers,allStaff);
   return(
     <div style={{paddingBottom:100}}>
       <SCard style={{marginBottom:14}}>
@@ -2724,8 +2741,8 @@ function StaffMyAgents({user,allUsers}){
   );
 }
 
-function StaffMyActivities({user,allUsers}){
-  const {loading:agLoading,rows:agents,all}=useMyAgents(user,allUsers);
+function StaffMyActivities({user,allUsers,allStaff}){
+  const {loading:agLoading,rows:agents,all}=useMyAgents(user,allUsers,allStaff);
   const [acts,setActs]=useState([]);const [regs,setRegs]=useState([]);const [loading,setLoading]=useState(true);
   useEffect(()=>{(async()=>{
     try{
@@ -3065,7 +3082,7 @@ export default function App(){
     // and Kudos for any agent. Everything else in the staff arena is hidden, not
     // deleted: flip this to false to bring the old menu back.
     const STAFF_ARENA_SIMPLE=true;
-    const simpleStaffNav=[{id:"myagents",icon:"🏆",label:"My agents"},{id:"myactivities",icon:"🎉",label:"Activities"},{id:"agentkudos",icon:"👏",label:"Kudos"},
+    const simpleStaffNav=[{id:"myagents",icon:"🏆",label:"My agents"},{id:"myactivities",icon:"🎉",label:"Activities"},{id:"agentkudos",icon:"👏",label:"Kudos"},{id:"coachrank",icon:"🏅",label:"Coach ranking"},
       ...(cu?.role==="superadmin"?[{id:"report",icon:"📊",label:"Reporte"},{id:"admin",icon:"⚙️",label:"Admin"}]:[])];
     const staffNavByRole=isYurito?[{id:"dashboard",icon:"🏠",label:"Home"},{id:"kudos",icon:"👏",label:"Kudos"}]:[
       {id:"dashboard",icon:"🏠",label:"Home"},
@@ -3081,7 +3098,7 @@ export default function App(){
     // Per-person permissions can only NARROW what the role already sees — never
     // grant more — and "report"/"admin" (superadmin-only) are never filterable.
     const staffNav=(STAFF_ARENA_SIMPLE&&!isYurito)?simpleStaffNav:(!cu?.navPermissions||isYurito)?staffNavByRole:staffNavByRole.filter(item=>item.id==="report"||item.id==="admin"||cu.navPermissions.includes(item.id));
-    const staffTitles={myagents:"My agents",myactivities:"Activities",agentkudos:"Kudos",dashboard:"Dashboard",leaderboard:"Leaderboard",kudos:"Kudos",innovation:"Innovation & AI",sessions:"Coaching Sessions",activities:"Actividades & Puntos",store:"Staff Store",report:"Reporte de Puntos",profile:"Profile",admin:"Admin Panel"};
+    const staffTitles={coachrank:"Coach ranking",myagents:"My agents",myactivities:"Activities",agentkudos:"Kudos",dashboard:"Dashboard",leaderboard:"Leaderboard",kudos:"Kudos",innovation:"Innovation & AI",sessions:"Coaching Sessions",activities:"Actividades & Puntos",store:"Staff Store",report:"Reporte de Puntos",profile:"Profile",admin:"Admin Panel"};
     return<>
       <style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif;background:${S.bg}}input,select,textarea{font-family:inherit}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
       {cu?.needsPwChange&&<TempPwModal user={cu} dark={true} onSave={async pw=>{await staffDb.update(cu.id,{password_hash:pw,needs_pw_change:false,temp_pw:null});setLoggedIn({...cu,needsPwChange:false,tempPw:null});toast("Password updated!");}}/>}
@@ -3094,8 +3111,9 @@ export default function App(){
         </div>
       </div>
       <div style={{marginLeft:isWide?188:0,padding:isWide?"20px 28px 40px":"14px 14px 0"}}>
-        {screen==="myagents"&&<StaffMyAgents user={cu} allUsers={users}/>}
-        {screen==="myactivities"&&<StaffMyActivities user={cu} allUsers={users}/>}
+        {screen==="myagents"&&<StaffMyAgents user={cu} allUsers={users} allStaff={allStaff}/>}
+        {screen==="myactivities"&&<StaffMyActivities user={cu} allUsers={users} allStaff={allStaff}/>}
+        {screen==="coachrank"&&<CoachUsageBoard allUsers={users} myCoachId={cu?.role==="team_coach"?(cu.gameId||cu.game_id||cu.username):null} dark/>}
         {screen==="agentkudos"&&<StaffAgentKudos cu={cu} allUsers={users} toast={toast} reloadUsers={reloadUsers}/>}
         {screen==="dashboard"&&((isYurito||isSAorManager)?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos} bulletin={bulletin}/>)}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
