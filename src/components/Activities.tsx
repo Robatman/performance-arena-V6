@@ -59,6 +59,8 @@ export default function Activities({ gameId, isAdmin }: Props) {
   const [bonusForm, setBonusForm] = useState({ who:'', coins:'', reason:'' });
   const [recentBonuses, setRecentBonuses] = useState<any[]>([]);
   const [awardInput, setAwardInput] = useState<Record<string,string>>({});
+  const [pendingActFilter, setPendingActFilter] = useState('all');
+  const [pendingQuery, setPendingQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
   const [regFormId, setRegFormId] = useState<string|null>(null);
@@ -277,6 +279,18 @@ export default function Activities({ gameId, isAdmin }: Props) {
 
   if (loading) return <div style={{textAlign:"center", padding:40, color:C.muted}}>Cargando...</div>;
 
+  // Pendientes: filtro por actividad (con conteo) y búsqueda por game id, nombre, coach o campaña
+  const pendingByAct: Record<string, number> = {};
+  pending.forEach(r => { pendingByAct[r.activity_id] = (pendingByAct[r.activity_id] || 0) + 1; });
+  const pendingActOptions = Object.keys(pendingByAct)
+    .map(id => ({ id, title: activities.find(a => a.id === id)?.title || '(actividad eliminada)', n: pendingByAct[id] }))
+    .sort((a, b) => b.n - a.n);
+  const pq = pendingQuery.trim().toLowerCase();
+  const pendingShown = pending.filter(r =>
+    (pendingActFilter === 'all' || r.activity_id === pendingActFilter) &&
+    (!pq || `${r.game_id || ''} ${r.full_name || ''} ${r.coach_name || ''} ${r.campaign_name || ''}`.toLowerCase().includes(pq))
+  );
+
   const activeActivities = activities.filter(a => a.active);
   const myRegByActivity = Object.fromEntries(myRegs.map(r => [r.activity_id, r]));
   const STATUS_LABEL = { pending:"⏳ Pendiente de confirmación", approved:"✅ Aprobado", rejected:"❌ No confirmado" };
@@ -307,12 +321,27 @@ export default function Activities({ gameId, isAdmin }: Props) {
 
           {adminTab === 'pending' && (
             <div>
-              {pending.length === 0 ? (
-                <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:32, textAlign:"center"}}>
-                  <div style={{fontSize:40, marginBottom:8}}>✅</div>
-                  <div style={{color:C.muted}}>No hay registros pendientes</div>
+              {pending.length > 0 && (
+                <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:12, marginBottom:12}}>
+                  <select value={pendingActFilter} onChange={e => setPendingActFilter(e.target.value)} style={{...inp, marginBottom:8}}>
+                    <option value="all">Todas las actividades ({pending.length})</option>
+                    {pendingActOptions.map(o => <option key={o.id} value={o.id}>{o.title} ({o.n})</option>)}
+                  </select>
+                  <input value={pendingQuery} onChange={e => setPendingQuery(e.target.value)} placeholder="🔍 Buscar por game id, nombre, coach o campaña..." style={inp}/>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8, color:C.muted, fontSize:12}}>
+                    <span>Mostrando {pendingShown.length} de {pending.length} pendientes</span>
+                    {(pendingActFilter !== 'all' || pq) && (
+                      <button onClick={() => { setPendingActFilter('all'); setPendingQuery(''); }} style={{background:"none", border:"none", color:C.purple, fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit"}}>Limpiar filtros</button>
+                    )}
+                  </div>
                 </div>
-              ) : pending.map(reg => {
+              )}
+              {pendingShown.length === 0 ? (
+                <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:32, textAlign:"center"}}>
+                  <div style={{fontSize:40, marginBottom:8}}>{pending.length === 0 ? '✅' : '🔎'}</div>
+                  <div style={{color:C.muted}}>{pending.length === 0 ? 'No hay registros pendientes' : 'Ningún pendiente con ese filtro'}</div>
+                </div>
+              ) : pendingShown.map(reg => {
                 const activity = activities.find(a => a.id === reg.activity_id);
                 return (
                   <div key={reg.id} style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:16, marginBottom:10}}>
