@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { pageAll } from "../pageAll";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2pqcHRqeWhpaXRlanVwdmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODgwMjEsImV4cCI6MjA5MjU2NDAyMX0.UgQDse6To0oe49llGDC7e9jYO1_bR6gxk-YcE6h7Bn8";
@@ -357,7 +358,7 @@ export default function GeneralReport() {
     setLoading(true);
     try {
       const [data, kudos, refs] = await Promise.all([
-        sbFetch("weekly_metrics?select=*&order=week.desc,total_pts.desc").catch(()=>[]),
+        pageAll(sbFetch, "weekly_metrics?select=*&order=week.desc,total_pts.desc,id.asc").catch(()=>[]),
         sbFetch("kudos_log?select=*&order=created_at.desc&limit=500").catch(()=>[]),
         sbFetch("referrals?select=*&order=submitted_at.desc&limit=500").catch(()=>[]),
       ]);

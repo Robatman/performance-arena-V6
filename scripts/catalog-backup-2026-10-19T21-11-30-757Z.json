@@ -1,0 +1,290 @@
+[
+  {
+    "id": "bd31c4c2-599f-46aa-b197-52b7e6dc1622",
+    "name": "Hielos reutilizables de Toy Story",
+    "points_cost": 250,
+    "coins_cost": 250,
+    "min_level": 1,
+    "stock": 1
+  },
+  {
+    "id": "ff37b8a2-d83f-4b80-8468-54ec18791f88",
+    "name": "Monedero de Las Chicas Superpoderosas",
+    "points_cost": 250,
+    "coins_cost": 250,
+    "min_level": 1,
+    "stock": 1
+  },
+  {
+    "id": "dc1b1a9d-c294-4b67-9df4-a8da3912d974",
+    "name": "Tarro de vidrio de Burbuja, Las Chicas Superpoderosas 300 ml",
+    "points_cost": 300,
+    "coins_cost": 300,
+    "min_level": 1,
+    "stock": 1
+  },
+  {
+    "id": "ac05e508-a58d-4130-8c3a-86a7296bbf77",
+    "name": "Plato de pizza de One Piece",
+    "points_cost": 300,
+    "coins_cost": 300,
+    "min_level": 1,
+    "stock": 1
+  },
+  {
+    "id": "795b79ad-a9e7-416e-b61a-32fe9d70a662",
+    "name": "Plato sopero de One Piece",
+    "points_cost": 300,
+    "coins_cost": 300,
+    "min_level": 1,
+    "stock": 1
+  },
+  {
+    "id": "1fa682c1-509e-4318-ae26-14304e15e61c",
+    "name": "Tarro de vidrio de Bombón, Las Chicas Superpoderosas 300 ml",
+    "points_cost": 300,
+    "coins_cost": 300,
+    "min_level": 1,
+    "stock": 1
+  },
+  {
+    "id": "6561fe4c-0009-40f2-9a14-2d6f9cfe38af",
+    "name": "Plato sopero de One Piece",
+    "points_cost": 300,
+    "coins_cost": 300,
+    "min_level": 1,
+    "stock": 1
+  },
+  {
+    "id": "0db02a42-2ae9-4c8e-a7c3-4c24914b3362",
+    "name": "Juego de 5 recipientes de plástico con tapa",
+    "points_cost": 300,
+    "coins_cost": 300,
+    "min_level": 2,
+    "stock": 5
+  },
+  {
+    "id": "6bdfac96-a05d-4871-8090-585f8b83d518",
+    "name": "Jenga transparente",
+    "points_cost": 340,
+    "coins_cost": 340,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "3541426f-3a66-4ed0-9680-5958767539d3",
+    "name": "Mini basketball de escritorio",
+    "points_cost": 350,
+    "coins_cost": 350,
+    "min_level": 1,
+    "stock": 1
+  },
+  {
+    "id": "24f4242d-7d00-4018-a6f1-9687692aa0ea",
+    "name": "Termo Gryffindor de 370 ml",
+    "points_cost": 350,
+    "coins_cost": 350,
+    "min_level": 1,
+    "stock": 1
+  },
+  {
+    "id": "125ef54c-6368-4456-b012-7a4074288a18",
+    "name": "Termo inoxidable de 800 ml",
+    "points_cost": 400,
+    "coins_cost": 400,
+    "min_level": 2,
+    "stock": 2
+  },
+  {
+    "id": "599ad093-8aad-47f5-a829-4301857c8657",
+    "name": "Cubo Rubik + mini cubito",
+    "points_cost": 400,
+    "coins_cost": 400,
+    "min_level": 1,
+    "stock": 2
+  },
+  {
+    "id": "7db109ba-3e69-45a0-8e25-bb6096bd4aaa",
+    "name": "Damas inglesas y ajedrez kit de juego de meza",
+    "points_cost": 400,
+    "coins_cost": 400,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "ea557c2f-80da-4ab8-99f5-20bd747c0ba2",
+    "name": "Termo de 1,200 ml con popote (Similar al modelo de Stanley)",
+    "points_cost": 600,
+    "coins_cost": 600,
+    "min_level": 2,
+    "stock": 3
+  },
+  {
+    "id": "1dfe24db-a0b6-4dcd-a9ff-2313805933d0",
+    "name": "Set para dormir Cosmetic Lab Total Beauty",
+    "points_cost": 600,
+    "coins_cost": 600,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "3aeb3de8-bc97-468e-81da-3bb2bb29d5ab",
+    "name": "Termo para café bedazzled Rosa",
+    "points_cost": 600,
+    "coins_cost": 600,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "9e682fbd-ea6e-4bb3-bf1e-555a218c6137",
+    "name": "Espinilleras de fútbol Voit",
+    "points_cost": 600,
+    "coins_cost": 600,
+    "min_level": 2,
+    "stock": 2
+  },
+  {
+    "id": "a038c1ea-b968-4e66-ab14-a9a676c14b8f",
+    "name": "Juego de mesa Battleship",
+    "points_cost": 700,
+    "coins_cost": 700,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "3c3e3d16-6dcb-477d-aa83-35eadb6f277d",
+    "name": "Mochila térmica",
+    "points_cost": 700,
+    "coins_cost": 700,
+    "min_level": 2,
+    "stock": 2
+  },
+  {
+    "id": "bee1fada-cf2a-4484-8909-7db2a959381f",
+    "name": "Set de 12 piezas de contenedores de vidrio",
+    "points_cost": 700,
+    "coins_cost": 700,
+    "min_level": 2,
+    "stock": 2
+  },
+  {
+    "id": "2137395f-5a8c-4d94-87dd-125fa825fbe8",
+    "name": "Cosmetic Lab Total Beauty (Set me maquillaje completo)",
+    "points_cost": 700,
+    "coins_cost": 700,
+    "min_level": 2,
+    "stock": 2
+  },
+  {
+    "id": "e72912c4-2ad2-4b28-a430-4bef4dd3104e",
+    "name": "Guantes de portero",
+    "points_cost": 700,
+    "coins_cost": 700,
+    "min_level": 2,
+    "stock": 2
+  },
+  {
+    "id": "3b5aaa48-dd27-425e-8e9c-60e2f887541f",
+    "name": "Audífonos inalámbricos - Blanco",
+    "points_cost": 800,
+    "coins_cost": 800,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "b641f3dd-3eb2-4586-a396-86128f20c43c",
+    "name": "Set de 4 raquetas y 3 pelotas de ping pong",
+    "points_cost": 800,
+    "coins_cost": 800,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "6959e3a9-f4a6-4d73-993a-5571ff60b0a0",
+    "name": "Audífonos inalámbricos - Rosa",
+    "points_cost": 800,
+    "coins_cost": 800,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "b6d337e0-c2e5-4414-a467-744f097d03fa",
+    "name": "Audífonos inalámbricos - Negro",
+    "points_cost": 800,
+    "coins_cost": 800,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "78346795-36a4-46c9-b890-5b87480937ba",
+    "name": "Guantes de boxeo",
+    "points_cost": 800,
+    "coins_cost": 800,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "815b2d1b-3bea-49e9-ae9f-6d988c709b8d",
+    "name": "Bocina inalámbrica",
+    "points_cost": 900,
+    "coins_cost": 900,
+    "min_level": 2,
+    "stock": 4
+  },
+  {
+    "id": "18c75dc2-12f2-49f9-98dc-a0ebfef7ba57",
+    "name": "Audífonos gamer ",
+    "points_cost": 1500,
+    "coins_cost": 1500,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "e3a729e8-22db-42f3-8a2f-1960683bac6c",
+    "name": "Arrocera Holstein",
+    "points_cost": 1500,
+    "coins_cost": 1500,
+    "min_level": 2,
+    "stock": 2
+  },
+  {
+    "id": "75ffe24f-8c98-4e75-8698-582203062706",
+    "name": "Ventilador de pedestal Atvio",
+    "points_cost": 1500,
+    "coins_cost": 1500,
+    "min_level": 2,
+    "stock": 1
+  },
+  {
+    "id": "5074b5b9-c332-4a24-ac9c-5b18f1cce5e8",
+    "name": "Alexa Echo Pop",
+    "points_cost": 1800,
+    "coins_cost": 1800,
+    "min_level": 2,
+    "stock": 2
+  },
+  {
+    "id": "e09b16c2-ff42-42ba-a312-9f704c77c3d0",
+    "name": "Carne asada pack (Consulta términos y condiciones antes de canjear)",
+    "points_cost": 2000,
+    "coins_cost": 2000,
+    "min_level": 3,
+    "stock": 1
+  },
+  {
+    "id": "f3771a15-5eec-4917-920b-4af3a0d3df47",
+    "name": "Day off Pagado",
+    "points_cost": 2000,
+    "coins_cost": 2000,
+    "min_level": 3,
+    "stock": 1
+  },
+  {
+    "id": "15e3bf2e-5955-42aa-a0c6-5d313b23a51d",
+    "name": "Tatuaje (Consulta términos y Condiciones) ",
+    "points_cost": 2500,
+    "coins_cost": 2500,
+    "min_level": 3,
+    "stock": 1
+  }
+]

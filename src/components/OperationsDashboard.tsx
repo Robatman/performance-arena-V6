@@ -1,5 +1,6 @@
 // v3
 import { useState, useEffect } from "react";
+import { pageAll } from "../pageAll";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2pqcHRqeWhpaXRlanVwdmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODgwMjEsImV4cCI6MjA5MjU2NDAyMX0.UgQDse6To0oe49llGDC7e9jYO1_bR6gxk-YcE6h7Bn8";
@@ -66,7 +67,7 @@ export default function OperationsDashboard({ user }: { user: any }) {
 
   const loadMetrics = async () => {
     setLoading(true);
-    const data = await sbFetch("weekly_metrics?select=*&order=week.desc&limit=3000");
+    const data = await pageAll(sbFetch, "weekly_metrics?select=*&order=week.desc,id.asc").catch(() => []);
     const arr  = Array.isArray(data) ? data : [];
     const uniqueWeeks = [...new Set(arr.map((d: any) => d.week))].sort().reverse() as string[];
     setAllMetrics(arr);

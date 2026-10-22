@@ -5,6 +5,12 @@ import ReferralsPanel from "./components/ReferralsPanel";
 import OperationsDashboard from "./components/OperationsDashboard";
 import RiddleTask from "./components/RiddleTask";
 import Activities, { ActivityBubbles, ActivityDashboardCard } from "./components/Activities";
+import { pageAll } from "./pageAll";
+import CoachUsageBoard from "./components/CoachUsageBoard";
+import { buildSeasonArchive } from "./seasonArchive";
+import { calcScoreCoins, inSeason, spentCoins, usedRedemptions, extraRedemptions } from "./coinsCalc";
+import { claimStock as claimStockRaw, releaseStock as releaseStockRaw } from "./stockClaim";
+import { KPI_FULL, KPI_WEEK_MAX, kpiMid, weekTone, CATEGORY_GATES, unlockedCategory, MAX_REDEMPTIONS, STREAK_BONUS, STREAK_MIN_PTS, streakProgress } from "./kpiPoints";
 import CoachingSessions from "./components/CoachingSessions";
 import StaffStore from "./components/StaffStore";
 import StaffPointsReport from "./components/StaffPointsReport";
@@ -30,6 +36,9 @@ async function sbFetch(path, options: any = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+// Lee TODAS las filas por páginas (la API devuelve máx. 1,000 por consulta). `path` debe traer order estable.
+const sbAll = (path) => pageAll(sbFetch, path);
+
 const db = {
   getUsers: () => sbFetch("profiles?select=*&order=full_name.asc"),
   login: (u) => sbFetch(`profiles?username=eq.${encodeURIComponent(u)}&select=*`),
@@ -52,8 +61,13 @@ const db = {
     body:JSON.stringify({week, activities, published_by:publishedBy, updated_at:new Date().toISOString()})
   }),
   clearBulletin: (id) => sbFetch(`weekly_bulletin?id=eq.${id}`, {method:"PATCH", body:JSON.stringify({activities:[]})}),
-  getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&select=id,user_id,reward_id,points_spent,status,redeemed_at,reward_name&order=redeemed_at.desc`),
-  getAllRedemptions: () => sbFetch(`reward_redemptions?select=id,user_id,reward_id,points_spent,coins_spent,status,redeemed_at,reward_name&order=redeemed_at.desc&limit=500`),
+  getMyRedemptions: (uid) => sbFetch(`reward_redemptions?user_id=eq.${uid}&select=*&order=redeemed_at.desc`),
+  getAllRedemptions: () => sbFetch(`reward_redemptions?select=*&order=redeemed_at.desc&limit=5000`),
+  // Temporada / canjes extra / accesos (tablas de sql/2026-10-19_categorias_historico.sql;
+  // si aún no existen, devuelven vacío y la app sigue funcionando)
+  getSeasonStart: async () => { const r = await sbFetch("season_log?select=started_at&order=started_at.desc&limit=1").catch(() => []); return Array.isArray(r) && r[0] ? r[0].started_at : null; },
+  getMyUnlocks: (gid) => sbFetch(`redemption_unlocks?game_id=eq.${encodeURIComponent(gid)}&select=extra,created_at`).catch(() => []),
+  logLogin: (d) => sbFetch("app_logins", { method: "POST", prefer: "return=minimal", body: JSON.stringify(d) }).catch(() => null),
   // Weekly metrics
   getWeeklyMetrics: (gameId) => sbFetch(`weekly_metrics?game_id=eq.${encodeURIComponent(gameId)}&select=*&order=week.asc`),
   getAllWeeklyMetrics: () => sbFetch(`weekly_metrics?select=*&order=game_id.asc`),
@@ -106,68 +120,26 @@ const staffDb = {
 // Max    = (weeks × 15) + (riddles_this_month × 2) + (tasks_this_month × 2)
 // Level  = 100% → 4 | ≥90% → 3 | ≥80% → 2 | <80% → 1
 
-export function calcScoreCoins(weeklyMetrics, riddleAnswers, taskSubmissions, kudos, goldKudos, referrals, coinSettings: any = {}, activityRegistrations = []) {
-  // Configurable coin values (admin-editable, defaults if not set)
-  const riddleCoins = coinSettings?.riddle_coins ?? 2;
-  const taskCoins   = coinSettings?.task_coins   ?? 2;
-
-  // Score from weekly metrics (QA + AHT + Attendance per week)
-  const kpiScore = (weeklyMetrics || []).reduce((sum, w) => {
-    return sum + (w.qa_pts || 0) + (w.aht_pts || 0) + (w.attendance_pts || 0);
-  }, 0);
-
-  // Weeks in current data
-  const weekCount = (weeklyMetrics || []).length;
-
-  // Riddle points: riddleCoins per approved riddle answer
-  // DB stores approved:true (boolean); also accept status:"approved" for forward-compat
-  const riddleScore = (riddleAnswers || []).filter(r => r.approved === true || r.status === "approved").length * riddleCoins;
-
-  // Task points: taskCoins per approved task submission
-  const taskScore = (taskSubmissions || []).filter(t => t.approved === true || t.status === "approved").length * taskCoins;
-
-  // Total score (for level)
-  const score = kpiScore + riddleScore + taskScore;
-
-  // Kudos & referral coins
-  const kudosCoins = (kudos || 0) + (goldKudos || 0) * 5;
-  const refCoins = (referrals || []).reduce((s, r) => s + (r.approved ? 5 : 1), 0);
-
-  // Activities: admin decides the coin amount per approval (no fixed price),
-  // so it's just a sum of whatever was awarded on each approved registration.
-  const activityCoins = (activityRegistrations || []).filter(r => r.status === "approved").reduce((s, r) => s + (r.points_awarded || 0), 0);
-
-  // Total coins (spendable)
-  const coins = score + kudosCoins + refCoins + activityCoins;
-
-  return {
-    kpiScore,
-    riddleScore,
-    taskScore,
-    score,          // for level calculation
-    kudosCoins,
-    activityCoins,
-    refCoins,
-    coins,          // for store
-    weekCount,
-  };
-}
-
-// Level is DB-driven — ExcelUpload computes and stores it based on KPI streak
-export function calcLevel(profile) {
-  return profile?.level || 1;
-}
-
 export function calcMaxScore(weekCount, riddleCount, taskCount) {
-  return (weekCount * 15) + (riddleCount * 2) + (taskCount * 2);
+  return (weekCount * KPI_WEEK_MAX) + (riddleCount * 2) + (taskCount * 2);
 }
 
-// Level metadata — 3-tier KPI-streak system
-const LEVEL_META = {
-  1: { name: "ROOKIE", color: "#6b7280", bg: "#6b728018" },
-  2: { name: "RISING", color: "#1a1aff", bg: "#1a1aff18" },
-  3: { name: "ELITE",  color: "#7c3aed", bg: "#7c3aed18" },
-};
+// ─── CARTERA: coins ganados / saldo / canjes del trimestre ────────────────────
+// "Ganados" = todo lo que el agente ha sumado en la temporada (no baja al gastar)
+// y decide qué categorías de premios se abren. "Saldo" = ganados − canjes de la
+// temporada. Los canjes de temporadas anteriores se conservan como historial pero
+// ya no restan (la temporada empieza en la última fila de season_log).
+// Quién entró y cuándo (tabla app_logins). Nunca bloquea el login si falla.
+export const logAccess = (type, p) => db.logLogin({
+  user_type: type,
+  game_id: p.game_id || p.username || null,
+  user_name: p.full_name || p.username || null,
+  user_agent: (typeof navigator !== "undefined" ? navigator.userAgent : "").slice(0, 200),
+});
+const claimStock = (prizeId) => claimStockRaw(sbFetch, prizeId);
+const releaseStock = (prizeId) => releaseStockRaw(sbFetch, prizeId);
+
+
 
 // ─── COLORS ──────────────────────────────────────────────────────────────────
 const C = {
@@ -210,8 +182,6 @@ const ROLE_EMOJI={team_coach:"🎯",quality_coach:"🔍",training_coach:"🎓",m
 const STAFF_NAV_ITEMS=[{id:"dashboard",label:"Home"},{id:"leaderboard",label:"Rankings"},{id:"kudos",label:"Kudos"},{id:"innovation",label:"Projects"},{id:"sessions",label:"Sessions"},{id:"activities",label:"Actividades"},{id:"staffnotifs",label:"Avisos"},{id:"store",label:"Tienda"},{id:"profile",label:"Profile"}];
 const INNOVATION_CATS={ai_project:{label:"AI Project",emoji:"🤖",pts:15,adminOnly:true},process_improvement:{label:"Process Improvement",emoji:"💡",pts:10,adminOnly:false},initiative:{label:"Initiative",emoji:"🚀",pts:8,adminOnly:false},floor_support:{label:"Floor Support",emoji:"🎓",pts:5,adminOnly:false},mentorship:{label:"Mentorship",emoji:"🤝",pts:5,adminOnly:false}};
 
-const lc=(l)=>LEVEL_META[l]?.color||C.muted;
-const ln=(l)=>LEVEL_META[l]?.name||"";
 
 function adaptProfile(p){return{id:p.id,name:p.full_name,username:p.username,password_hash:p.password_hash,role:p.role==="usuario"?"user":p.role,project:p.team||"",active:p.is_active,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},level:p.monthly_level||p.level||1,puzzlePieces:(p.puzzle_pieces||[]).length,perfectMonths:p.perfect_months||0,kudos:p.kudos||0,goldKudos:p.gold_kudos||0,gold_kudos:p.gold_kudos||0,referrals:p.referrals||[],weekly_perf:p.weekly_perf||[],weeklyPerf:p.weekly_perf||[],riddle_completed:p.riddle_completed||0,riddleCompleted:p.riddle_completed||0,task_completed:p.task_completed||0,taskCompleted:p.task_completed||0,monthsHistory:p.months_history||[],ownedItems:p.owned_items||[],rewards:p.rewards||[],game_id:p.game_id||"",needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,kudosLog:p.kudos_log||[],points_total:p.points_total||0,coins:p.coins||0,monthly_level:p.monthly_level||1,coach_id:p.coach_id||"",qa_coach:p.qa_coach||"",appType:"agents",consecutive_weeks_on_target:p.consecutive_weeks_on_target||0,weeks_at_elite:p.weeks_at_elite||0,level_history:p.level_history||[]};}
 function adaptStaffProfile(p){return{id:p.id,gameId:p.game_id||"",username:p.username,name:p.full_name||p.username||"",password_hash:p.password_hash,role:p.role,project:(p.project||"").trim(),managerId:p.manager_id,active:p.is_active,needsPwChange:p.needs_pw_change||false,tempPw:p.temp_pw||null,avatar:p.avatar_accessories||{base:"b1",hair:null,accessory:null,outfit:null,background:null},ownedItems:p.owned_items||[],coins:p.coins||0,level:p.level||1,navPermissions:p.nav_permissions||null,appType:"staff"};}
@@ -222,14 +192,12 @@ const Card=({children,style={},onClick,...rest})=><div {...rest} onClick={onClic
 const SCard=({children,style={},onClick})=><div onClick={onClick} style={{background:S.bgCard,border:`1px solid ${S.border}`,borderRadius:14,padding:16,...style,cursor:onClick?"pointer":undefined}}>{children}</div>;
 const Btn=({children,onClick,color=C.blue,disabled,style={},sm})=><button onClick={onClick} disabled={disabled} style={{background:disabled?"#c5cae9":color,color:"#fff",border:"none",borderRadius:sm?7:10,padding:sm?"5px 12px":"11px 20px",fontWeight:800,fontSize:sm?12:14,cursor:disabled?"not-allowed":"pointer",boxShadow:disabled?"none":`0 3px 10px ${color}44`,fontFamily:"inherit",transition:"all 0.15s",...style}}>{children}</button>;
 const SBtn=({children,onClick,color=S.accent,disabled,style={},sm})=><button onClick={onClick} disabled={disabled} style={{background:disabled?S.border:color,color:"#fff",border:"none",borderRadius:sm?6:9,padding:sm?"5px 12px":"10px 18px",fontWeight:700,fontSize:sm?11:13,cursor:disabled?"not-allowed":"pointer",fontFamily:"inherit",transition:"all 0.15s",...style}}>{children}</button>;
-const Bdg=({l})=><span style={{padding:"3px 10px",borderRadius:20,background:LEVEL_META[l]?.bg||"#6b728018",border:`1.5px solid ${lc(l)}`,color:lc(l),fontWeight:800,fontSize:11,letterSpacing:1.5}}>LVL{l} {ln(l)}</span>;
 const Bar=({val,max,color=C.blue,h=8})=>{const p=Math.min((val/Math.max(max,1))*100,100);return <div style={{background:"#e8eaf6",borderRadius:h,overflow:"hidden",height:h}}><div style={{width:p+"%",height:"100%",background:color,borderRadius:h,transition:"width 0.9s cubic-bezier(.34,1.56,.64,1)"}}/></div>;};
 const SBar=({val,max,color=S.accent,h=6})=>{const p=Math.min((val/Math.max(max,1))*100,100);return <div style={{background:S.border,borderRadius:h,overflow:"hidden",height:h}}><div style={{width:p+"%",height:"100%",background:color,borderRadius:h,transition:"width 0.9s ease"}}/></div>;};
 const Tag=({children,color=C.blue})=><span style={{padding:"2px 8px",borderRadius:6,background:`${color}18`,color,fontSize:11,fontWeight:700}}>{children}</span>;
 const STag=({children,color=S.accent})=><span style={{padding:"2px 8px",borderRadius:5,background:`${color}22`,color,fontSize:10,fontWeight:700,letterSpacing:0.5}}>{children}</span>;
 const Logo=({sz=32})=><div style={{width:sz,height:sz,borderRadius:"50%",background:`conic-gradient(${C.blue} 0deg 270deg,${C.red} 270deg 360deg)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><div style={{width:"52%",height:"52%",borderRadius:"50%",background:C.bg}}/></div>;
 const StaffLogo=({sz=32})=><div style={{width:sz,height:sz,borderRadius:10,background:`linear-gradient(135deg,${S.accent},${S.purple})`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:sz*0.5}}>⚡</div>;
-const Pzl=({pieces})=><div style={{display:"flex",gap:6,alignItems:"center"}}>{[0,1,2].map(i=><div key={i} style={{width:26,height:26,borderRadius:6,background:i<pieces?`linear-gradient(135deg,${C.red},${C.blue})`:"#e8eaf6",border:`2px solid ${i<pieces?C.red:C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{i<pieces?"🧩":""}</div>)}{pieces>=3&&<span style={{fontSize:18}}>🎁</span>}</div>;
 
 // ─── SCORE BREAKDOWN PILL ─────────────────────────────────────────────────────
 function ScorePill({label,val,color,icon}){
@@ -242,89 +210,50 @@ function ScorePill({label,val,color,icon}){
   );
 }
 
-// ─── LEVEL PROGRESS CARD ─────────────────────────────────────────────────────
-function LevelProgressCard({level=1, streak=0, weeksAtElite=0, levelHistory=[], totalCoins=0, onClick, expanded=false}){
-  const lm = LEVEL_META[level] || LEVEL_META[1];
-  const target = level === 1 ? 3 : level === 2 ? 9 : 4;
-  const current = level === 3 ? weeksAtElite : streak;
-
-  const recentHistory = (levelHistory||[]).slice(-9);
-  const lastWeek = recentHistory[recentHistory.length-1];
-  const prevWeek = recentHistory[recentHistory.length-2];
-  const justDropped = lastWeek && prevWeek && lastWeek.level < prevWeek.level;
-
-  const getMsg = () => {
-    // A drop that just happened reads differently depending on WHY it happened
-    // (the ELITE 4-week cycle completing on a good week vs. an actual bad week
-    // breaking the streak) — both are true facts read off level_history, not
-    // invented coaching advice.
-    if (justDropped) {
-      if (lastWeek.on_target) return "🏁 Ciclo ELITE completo — el trono fue reclamado. Vuelves al inicio, ¿tienes lo que se necesita para reconquistarlo?";
-      if (prevWeek.level === 3) return "☠️ Caída desde ELITE — de la cima al inicio en una semana. 3 semanas perfectas para recuperar RISING.";
-      if (prevWeek.level === 2) return "💥 ¡RISING perdido! Una semana fuera de meta y volviste a ROOKIE. El contador se reinicia.";
-    }
-    if (level === 1) {
-      if (streak === 0) return "¡Empieza tu racha! 3 semanas perfectas para ser RISING";
-      if (streak === 2) return "¡Casi! 1 semana más y serás RISING";
-      return `¡${streak} semana${streak>1?"s":""} seguida${streak>1?"s":""}! ${3-streak} más para RISING`;
-    }
-    if (level === 2) {
-      if (streak === 0) return "¡Eres RISING! 9 semanas perfectas para alcanzar ELITE";
-      if (streak >= 7) return `¡Impresionante! Solo ${9-streak} semana${9-streak===1?"":"s"} para ELITE`;
-      return `¡${streak} semana${streak>1?"s":""} seguida${streak>1?"s":""}! ${9-streak} más para ELITE`;
-    }
-    if (weeksAtElite === 1) return "¡Eres ELITE! El pináculo del rendimiento. 3 semanas más en este nivel";
-    if (weeksAtElite >= 3) return "¡Última semana ELITE — disfrútala al máximo!";
-    return `ELITE semana ${weeksAtElite}/4 — ${4-weeksAtElite} semana${4-weeksAtElite===1?"":"s"} restante${4-weeksAtElite===1?"":"s"}`;
-  };
-
+// ─── TARJETA DE COINS (sustituye a la de niveles) ────────────────────────────
+function CoinsProgressCard({wallet,onClick,expanded=false}){
+  const {earned=0,balance=0,used=0,limit=MAX_REDEMPTIONS,streak}=wallet||{};
+  const cat=unlockedCategory(earned);
+  const nextGate=cat===1?CATEGORY_GATES[2]:cat===2?CATEGORY_GATES[3]:null;
+  const prevGate=cat===1?0:cat===2?CATEGORY_GATES[2]:CATEGORY_GATES[3];
+  const pct=nextGate?Math.max(0,Math.min(100,Math.round(((earned-prevGate)/(nextGate-prevGate))*100))):100;
+  const run=streak?.current||0;
   return(
     <Card onClick={onClick} style={{marginBottom:12,background:`linear-gradient(135deg,${C.blue} 0%,${C.blueDk} 60%,${C.red} 100%)`,border:"none",color:"#fff"}}>
-      {/* Header */}
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12,gap:10}}>
         <div>
-          <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:"rgba(255,255,255,0.6)"}}>NIVEL ACTUAL</div>
-          <div style={{marginTop:4,display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.15)",borderRadius:20,padding:"4px 14px"}}>
-            <div style={{width:8,height:8,borderRadius:"50%",background:lm.color,boxShadow:`0 0 8px ${lm.color}`}}/>
-            <span style={{color:"#fff",fontWeight:900,fontSize:15,letterSpacing:2}}>LVL {level} · {lm.name}</span>
-          </div>
+          <div style={{fontSize:11,fontWeight:700,letterSpacing:2,color:"rgba(255,255,255,0.6)"}}>TUS COINS</div>
+          <div style={{color:"#fde68a",fontWeight:900,fontSize:34,lineHeight:1.1}}>🪙 {balance}</div>
+          <div style={{color:"rgba(255,255,255,0.65)",fontSize:11}}>para gastar en la tienda</div>
         </div>
         <div style={{textAlign:"right"}}>
-          <div style={{color:"rgba(255,255,255,0.6)",fontSize:10,letterSpacing:1}}>COINS</div>
-          <div style={{color:"#fde68a",fontWeight:900,fontSize:24,lineHeight:1}}>🪙 {totalCoins}</div>
+          <div style={{color:"rgba(255,255,255,0.6)",fontSize:10,letterSpacing:1}}>GANADOS ESTE TRIMESTRE</div>
+          <div style={{color:"#fff",fontWeight:900,fontSize:22,lineHeight:1.1}}>{earned}</div>
+          <div style={{color:"rgba(255,255,255,0.65)",fontSize:11}}>Premios hasta Categoría {cat}</div>
         </div>
       </div>
-
-      {/* Streak dots */}
-      <div style={{marginBottom:10}}>
-        <div style={{color:"rgba(255,255,255,0.7)",fontSize:11,fontWeight:700,marginBottom:6}}>
-          {level < 3 ? `RACHA: ${current}/${target} semanas${level===1?" para RISING":" para ELITE"}` : `SEMANAS ELITE: ${current}/${target}`}
+      {nextGate?(
+        <div style={{marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",color:"rgba(255,255,255,0.8)",fontSize:11,fontWeight:700,marginBottom:5,gap:8}}>
+            <span>Categoría {cat+1} se abre con {nextGate} ganados</span><span style={{whiteSpace:"nowrap"}}>faltan {Math.max(0,nextGate-earned)}</span>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.2)",borderRadius:6,height:8,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",background:"#fde68a",borderRadius:6}}/></div>
         </div>
-        <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
-          {Array.from({length:target}).map((_,i)=>(
-            <div key={i} style={{width:i<current?20:15,height:i<current?20:15,borderRadius:"50%",background:i<current?"#fde68a":"rgba(255,255,255,0.2)",border:i<current?"none":"1.5px solid rgba(255,255,255,0.3)",transition:"all 0.3s",boxShadow:i<current?"0 0 8px #fde68a88":undefined}}/>
-          ))}
-          {level===3&&weeksAtElite>=3&&<span style={{color:"#fde68a",fontSize:13,fontWeight:700,marginLeft:4}}>⚠️</span>}
-        </div>
-      </div>
-
-      {/* Message */}
-      <div style={{background:"rgba(255,255,255,0.12)",borderRadius:10,padding:"8px 12px",marginBottom:10}}>
-        <div style={{color:"#fde68a",fontSize:13,fontWeight:700}}>💬 {getMsg()}</div>
-      </div>
-
-      {/* History dots */}
-      {recentHistory.length>0&&(
-        <div style={{borderTop:"1px solid rgba(255,255,255,0.15)",paddingTop:10,display:"flex",alignItems:"center",gap:3}}>
-          <span style={{color:"rgba(255,255,255,0.5)",fontSize:9,letterSpacing:1,marginRight:4}}>HISTORIAL</span>
-          {recentHistory.map((h,i)=>(
-            <div key={i} title={h.week||""} style={{width:10,height:10,borderRadius:"50%",background:h.on_target?"#22c55e":"#ef4444",opacity:0.65+i*0.04}}/>
-          ))}
-        </div>
+      ):(
+        <div style={{color:"#fde68a",fontSize:12,fontWeight:700,marginBottom:10}}>🏆 Tienes abiertas las 3 categorías de premios</div>
       )}
-
+      <div style={{background:"rgba(255,255,255,0.12)",borderRadius:10,padding:"8px 12px",marginBottom:8}}>
+        <div style={{color:"#fde68a",fontSize:12,fontWeight:800}}>🔥 Racha: {run}/{STREAK_BONUS.weeks} semanas seguidas en meta → +{STREAK_BONUS.coins} coins</div>
+        <div style={{display:"flex",gap:5,alignItems:"center",marginTop:6}}>
+          {Array.from({length:STREAK_BONUS.weeks}).map((_,i)=>(
+            <div key={i} style={{width:i<run?18:14,height:i<run?18:14,borderRadius:"50%",background:i<run?"#fde68a":"rgba(255,255,255,0.2)",border:i<run?"none":"1.5px solid rgba(255,255,255,0.3)"}}/>
+          ))}
+          <span style={{color:"rgba(255,255,255,0.6)",fontSize:10,marginLeft:6}}>En meta = {STREAK_MIN_PTS}+ de {KPI_WEEK_MAX} puntos en la semana · bonos ganados: {streak?.blocks||0}</span>
+        </div>
+      </div>
+      <div style={{color:"rgba(255,255,255,0.7)",fontSize:11,fontWeight:700}}>🛍️ Canjes del trimestre: {used}/{limit}</div>
       {onClick&&(
-        <div style={{textAlign:"center",marginTop:10,color:"rgba(255,255,255,0.55)",fontSize:11,fontWeight:700}}>
+        <div style={{textAlign:"center",marginTop:8,color:"rgba(255,255,255,0.55)",fontSize:11,fontWeight:700}}>
           {expanded?"▴ Ocultar detalle":"▾ Ver por qué"}
         </div>
       )}
@@ -345,8 +274,8 @@ function fmtAht(sec){
   return `${m}:${String(s).padStart(2,"0")}`;
 }
 
-function MetricRow({icon,label,note,pts,excused}){
-  const ok=pts===5, warn=pts===2;
+function MetricRow({icon,label,note,pts,excused,max}){
+  const ok=pts===max, warn=pts===kpiMid(max);
   // An excused week (vacation/MSL/skip) freezes the counters at 0 by design —
   // that's not a failure, so it must never read as one.
   const statusIcon=excused?"➖":ok?"✅":warn?"⚠️":"❌";
@@ -377,28 +306,30 @@ function WeekDetailCard({week}){
   const qaExcused = isExcusedWeek || (week.qa_pct==null && week.qa_goal==null);
   const ahtExcused = isExcusedWeek || (week.aht==null && week.aht_goal==null);
   const rows=[
-    {icon:"🎯",label:"QA",note:qaExcused?"Sin datos esta semana":`${week.qa_pct??"—"}% (meta ${week.qa_goal??"—"}%)`,pts:week.qa_pts,excused:qaExcused},
-    {icon:"⏱️",label:"AHT",note:ahtExcused?"Sin datos esta semana":`${fmtAht(week.aht)} (meta ${fmtAht(week.aht_goal)})`,pts:week.aht_pts,excused:ahtExcused},
+    {icon:"🎯",label:"QA",note:qaExcused?"Sin datos esta semana":`${week.qa_pct??"—"}% (meta ${week.qa_goal??"—"}%)`,pts:week.qa_pts,max:KPI_FULL.qa,excused:qaExcused},
+    {icon:"⏱️",label:"AHT",note:ahtExcused?"Sin datos esta semana":`${fmtAht(week.aht)} (meta ${fmtAht(week.aht_goal)})`,pts:week.aht_pts,max:KPI_FULL.aht,excused:ahtExcused},
     {icon:"📅",label:"Attendance",note:
       isExcusedWeek?"Semana excusada":
       week.attendance_status==="perfect"?"Asistencia perfecta":
       week.attendance_status==="late"?`${week.tardies||1} tardanza`:
       `${week.absences||0} falta(s) · ${week.tardies||0} tardanza(s)`,
-      pts:week.attendance_pts,excused:isExcusedWeek},
+      pts:week.attendance_pts,max:KPI_FULL.att,excused:isExcusedWeek},
   ];
-  const allPerfect=rows.every(r=>r.pts===5);
-  const failing=rows.filter(r=>r.pts!==5 && !r.excused).map(r=>r.label);
+  const allPerfect=rows.every(r=>r.pts===r.max);
+  const weekTotal=rows.reduce((t,r)=>t+(r.pts||0),0);
+  const inMeta=!isExcusedWeek&&weekTotal>=STREAK_MIN_PTS;
+  const failing=rows.filter(r=>r.pts!==r.max && !r.excused).map(r=>r.label);
   return(
     <Card style={{marginBottom:12}}>
       <div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:6,fontWeight:700}}>POR QUÉ{week.week?` · ${week.week}`:""}</div>
       {rows.map(r=><MetricRow key={r.label} {...r}/>)}
-      <div style={{marginTop:12,padding:"10px 12px",borderRadius:10,background:isExcusedWeek?`${C.muted}10`:allPerfect?`${C.green}10`:`${C.red}08`,border:`1px solid ${isExcusedWeek?C.muted:allPerfect?C.green:C.red}30`}}>
+      <div style={{marginTop:12,padding:"10px 12px",borderRadius:10,background:isExcusedWeek?`${C.muted}10`:inMeta?`${C.green}10`:`${C.red}08`,border:`1px solid ${isExcusedWeek?C.muted:inMeta?C.green:C.red}30`}}>
         {isExcusedWeek?(
           <div style={{color:C.muted,fontWeight:700,fontSize:13}}>➖ Semana excusada (vacaciones/incapacidad) — no cuenta a favor ni en contra de tu racha.</div>
-        ):allPerfect?(
-          <div style={{color:C.green,fontWeight:700,fontSize:13}}>🔥 15/15 — esta es la semana que suma para tu racha.</div>
+        ):inMeta?(
+          <div style={{color:C.green,fontWeight:700,fontSize:13}}>🔥 {weekTotal}/{KPI_WEEK_MAX} — semana en meta: suma a tu racha del bono de {STREAK_BONUS.coins} coins.</div>
         ):(
-          <div style={{color:C.red,fontWeight:700,fontSize:13}}>{failing.join(" y ")} no llegó a meta esta semana — coméntalo con tu coach para ver qué ajustar.</div>
+          <div style={{color:C.red,fontWeight:700,fontSize:13}}>{failing.join(" y ")} no llegó a meta esta semana ({weekTotal}/{KPI_WEEK_MAX}; con {STREAK_MIN_PTS} o más suma a tu racha) — coméntalo con tu coach para ver qué ajustar.</div>
         )}
       </div>
     </Card>
@@ -435,9 +366,11 @@ function UnifiedLogin({onLoginAgent,onLoginStaff}){
       }
       if(agentMatch){
         if(!agentMatch.is_active){setErr("Account deactivated.");setLoading(false);return;}
+        logAccess("agent",agentMatch);
         onLoginAgent(adaptProfile(agentMatch));
       }else if(staffMatch){
         if(!staffMatch.is_active){setErr("Account deactivated.");setLoading(false);return;}
+        logAccess("staff",staffMatch);
         onLoginStaff(adaptStaffProfile(staffMatch));
       }else{
         setErr("Incorrect username or password.");
@@ -447,8 +380,8 @@ function UnifiedLogin({onLoginAgent,onLoginStaff}){
   };
   const enterAs=(which)=>{
     if(!dualChoice)return;
-    if(which==="agent")onLoginAgent(adaptProfile(dualChoice.agentMatch));
-    else onLoginStaff(adaptStaffProfile(dualChoice.staffMatch));
+    if(which==="agent"){logAccess("agent",dualChoice.agentMatch);onLoginAgent(adaptProfile(dualChoice.agentMatch));}
+    else{logAccess("staff",dualChoice.staffMatch);onLoginStaff(adaptStaffProfile(dualChoice.staffMatch));}
   };
   const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:9,padding:"12px 14px",fontSize:15,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:C.bg,color:C.text};
   const formCard=dualChoice?(
@@ -557,13 +490,13 @@ function BulletinCard({bulletin}){
   );
 }
 
-function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, onOpenActivities, coinSettings={}, totalCoins=0, level=1, streak=0, weeksAtElite=0, levelHistory=[]}){
+function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSubmissions, riddleCount, taskCount, isSA, availableWeeks, selectedWeek, lastEvaluatedWeek, onWeekChange, bulletin, onOpenActivities, coinSettings={}, wallet}){
   const [showWeekDetail, setShowWeekDetail] = useState(false);
 
   return(
     <div style={{paddingBottom:100}}>
-      {/* Level card — tap to see WHY this week went the way it did */}
-      <LevelProgressCard level={level} streak={streak} weeksAtElite={weeksAtElite} levelHistory={levelHistory} totalCoins={totalCoins} expanded={showWeekDetail} onClick={()=>setShowWeekDetail(v=>!v)}/>
+      {/* Coins card — tap to see WHY this week went the way it did */}
+      <CoinsProgressCard wallet={wallet} expanded={showWeekDetail} onClick={()=>setShowWeekDetail(v=>!v)}/>
       {showWeekDetail&&<WeekDetailCard week={(weeklyMetrics||[])[(weeklyMetrics||[]).length-1]}/>}
 
       {isSA&&availableWeeks.length>0&&(<Card style={{marginBottom:12,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}><div><div style={{color:C.muted,fontSize:11,letterSpacing:1,marginBottom:2}}>SEMANA VISUALIZADA</div><div style={{color:C.blue,fontWeight:700,fontSize:13}}>Última evaluada: {availableWeeks[0]}</div></div><select value={selectedWeek} onChange={e=>onWeekChange(e.target.value)} style={{border:`1.5px solid ${C.border}`,borderRadius:8,padding:"7px 11px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,cursor:"pointer"}}>{availableWeeks.map(w=><option key={w} value={w}>{w}</option>)}</select></div></Card>)}
@@ -576,12 +509,11 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
         <Av av={user.avatar} sz={64}/>
         <div style={{flex:1}}>
           <div style={{color:C.text,fontWeight:900,fontSize:17}}>{user.name}</div>
-          <div style={{marginTop:4}}><Bdg l={level}/></div>
           {user.project&&<div style={{color:C.muted,fontSize:12,marginTop:4}}>{user.project}</div>}
         </div>
         <div style={{textAlign:"right"}}>
-          <div style={{color:C.muted,fontSize:10,letterSpacing:1}}>MESES PERF.</div>
-          <div style={{color:C.gold,fontWeight:900,fontSize:22}}>{user.perfectMonths} ★</div>
+          <div style={{color:C.muted,fontSize:10,letterSpacing:1}}>PREMIOS HASTA</div>
+          <div style={{color:C.gold,fontWeight:900,fontSize:20}}>Cat. {unlockedCategory(wallet?.earned||0)}</div>
         </div>
       </Card>
 
@@ -609,8 +541,9 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
           <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min((weeklyMetrics||[]).length,5)},1fr)`,gap:8}}>
             {(weeklyMetrics||[]).map((w,i)=>{
               const wPts=(w.qa_pts||0)+(w.aht_pts||0)+(w.attendance_pts||0);
-              const wMax=15;
-              const wColor=wPts>=12?C.green:wPts>=8?C.yellow:C.red;
+              const wMax=KPI_WEEK_MAX;
+              const wTone=weekTone(wPts);
+              const wColor=wTone==="good"?C.green:wTone==="warn"?C.yellow:C.red;
               return(
                 <div key={i} style={{background:`${wColor}15`,border:`1px solid ${wColor}40`,borderRadius:10,padding:"9px 5px",textAlign:"center"}}>
                   <div style={{color:C.muted,fontSize:9,marginBottom:2}}>{w.week||`S${i+1}`}</div>
@@ -626,22 +559,6 @@ function Dashboard({user, allUsers, notifs, weeklyMetrics, riddleAnswers, taskSu
         )}
       </Card>
 
-      {/* Historial mensual */}
-      <Card>
-        <div style={{color:C.muted,fontSize:11,letterSpacing:2,marginBottom:10}}>HISTORIAL MENSUAL</div>
-        {(user.monthsHistory||[]).length===0?(
-          <div style={{textAlign:"center",color:C.muted,fontSize:13,padding:10}}>Sin historial aun.</div>
-        ):(
-          (user.monthsHistory||[]).map((m,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginBottom:9}}>
-              <div style={{width:50,color:C.muted,fontSize:11,flexShrink:0}}>{m.month}</div>
-              <div style={{flex:1}}><Bar val={m.score} max={m.maxScore||60} color={lc(m.level||1)} h={7}/></div>
-              <Bdg l={m.level||1}/>
-              {m.piece&&<span>🧩</span>}
-            </div>
-          ))
-        )}
-      </Card>
     </div>
   );
 }
@@ -657,7 +574,6 @@ function RankDelta({delta}){
 
 function Leaderboard({user,allUsers,shop,coinSettings={},lastEvaluatedWeek}){
   const [lbSearch,setLbSearch]=useState("");
-  const [levelFilter,setLevelFilter]=useState(null);
   const [rankings,setRankings]=useState([]);
   const [loading,setLoading]=useState(true);
   const medals=["🥇","🥈","🥉"];
@@ -666,21 +582,21 @@ function Leaderboard({user,allUsers,shop,coinSettings={},lastEvaluatedWeek}){
     async function loadRankings(){
       try{
         const hdr={apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`};
-        const [kpiRes,rdlRes,tskRes]=await Promise.all([
-          fetch(`${SUPABASE_URL}/rest/v1/weekly_metrics?select=game_id,week,qa_pts,aht_pts,attendance_pts&order=game_id.asc`,{headers:hdr}),
-          fetch(`${SUPABASE_URL}/rest/v1/agent_riddle_answers?approved=eq.true&select=game_id`,{headers:hdr}),
-          fetch(`${SUPABASE_URL}/rest/v1/agent_task_submissions?approved=eq.true&select=game_id`,{headers:hdr}),
+        const [actData,bonData]=await Promise.all([
+          sbAll("activity_registrations?status=eq.approved&select=game_id,points_awarded&order=id.asc").catch(()=>[]),
+          sbAll("coin_bonuses?select=game_id,coins&order=id.asc").catch(()=>[]),
         ]);
-        const [kpiData,rdlData,tskData]=await Promise.all([kpiRes.json(),rdlRes.json(),tskRes.json()]);
+        const [kpiData,rdlData,tskData]=await Promise.all([
+          sbAll("weekly_metrics?select=game_id,week,qa_pts,aht_pts,attendance_pts&order=id.asc").catch(()=>[]),
+          sbAll("agent_riddle_answers?approved=eq.true&select=game_id&order=id.asc").catch(()=>[]),
+          sbAll("agent_task_submissions?approved=eq.true&select=game_id&order=id.asc").catch(()=>[]),
+        ]);
         const rc=coinSettings?.riddle_coins??2;
         const tc=coinSettings?.task_coins??2;
 
-        // Sum KPI score per agent — once with every week (current standing) and
-        // once excluding the most recently uploaded week (last week's standing),
-        // so we can show whether each agent moved up or down the ranking.
-        // Riddles/tasks aren't split by week here, so this is an approximation
-        // driven mainly by the weekly KPI upload — the same signal the level
-        // streak itself is based on.
+        // Ranking por COINS GANADOS del trimestre (performance + riddles/tasks + actividades
+        // + bonos + kudos + referidos). Una vez con todas las semanas y otra sin la última
+        // semana subida, para mostrar si cada agente subió o bajó de puesto.
         const kpiMapAll={},kpiMapPrev={};
         (kpiData||[]).forEach((r)=>{
           const pts=(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);
@@ -689,15 +605,19 @@ function Leaderboard({user,allUsers,shop,coinSettings={},lastEvaluatedWeek}){
         });
         const rdlMap={};(rdlData||[]).forEach((r)=>{rdlMap[r.game_id]=(rdlMap[r.game_id]||0)+1;});
         const tskMap={};(tskData||[]).forEach((t)=>{tskMap[t.game_id]=(tskMap[t.game_id]||0)+1;});
+        const extraMap={};
+        (actData||[]).forEach((a)=>{extraMap[a.game_id]=(extraMap[a.game_id]||0)+(a.points_awarded||0);});
+        (bonData||[]).forEach((b)=>{extraMap[b.game_id]=(extraMap[b.game_id]||0)+(b.coins||0);});
 
         const buildTotals=(kpiMap)=>{
           const totals={};
-          const ids=new Set([...Object.keys(kpiMap),...Object.keys(rdlMap),...Object.keys(tskMap)]);
-          ids.forEach(gid=>{totals[gid]=(kpiMap[gid]||0)+(rdlMap[gid]||0)*rc+(tskMap[gid]||0)*tc;});
+          const ids=new Set([...Object.keys(kpiMap),...Object.keys(rdlMap),...Object.keys(tskMap),...Object.keys(extraMap)]);
+          ids.forEach(gid=>{totals[gid]=(kpiMap[gid]||0)+(rdlMap[gid]||0)*rc+(tskMap[gid]||0)*tc+(extraMap[gid]||0);});
           return totals;
         };
         const totals=buildTotals(kpiMapAll);
         const totalsPrev=buildTotals(kpiMapPrev);
+        const socialCoins=(u)=>(u.kudos||0)+(u.gold_kudos||0)*5+((u.referrals||[]).reduce((s,r)=>s+(r.approved?5:1),0));
 
         const activeUsers=allUsers.filter(u=>u.active);
         const findIn=(map,u)=>{
@@ -716,7 +636,7 @@ function Leaderboard({user,allUsers,shop,coinSettings={},lastEvaluatedWeek}){
           .filter(([gid])=>!coveredIds.has(gid.toLowerCase()))
           .map(([game_id,pts])=>({game_id,pts,ptsPrev:totalsPrev[game_id]||0,profile:null}));
         const ranked=[
-          ...activeUsers.map(u=>({game_id:u.game_id||u.username,pts:findIn(totals,u),ptsPrev:findIn(totalsPrev,u),profile:u})),
+          ...activeUsers.map(u=>({game_id:u.game_id||u.username,pts:findIn(totals,u)+socialCoins(u),ptsPrev:findIn(totalsPrev,u)+socialCoins(u),profile:u})),
           ...orphans,
         ].sort((a,b)=>b.pts-a.pts);
 
@@ -736,9 +656,9 @@ function Leaderboard({user,allUsers,shop,coinSettings={},lastEvaluatedWeek}){
     loadRankings();
   },[allUsers,lastEvaluatedWeek]);
 
-  const filtered=rankings.filter(r=>(!lbSearch||(r.game_id.toLowerCase().includes(lbSearch.toLowerCase())||(r.profile?.username||"").toLowerCase().includes(lbSearch.toLowerCase())))&&(!levelFilter||r.profile?.level===levelFilter));
-  const podium=!lbSearch&&!levelFilter?filtered.slice(0,3):[];
-  const rest=!lbSearch&&!levelFilter?filtered.slice(3):filtered;
+  const filtered=rankings.filter(r=>(!lbSearch||(r.game_id.toLowerCase().includes(lbSearch.toLowerCase())||(r.profile?.username||"").toLowerCase().includes(lbSearch.toLowerCase()))));
+  const podium=!lbSearch?filtered.slice(0,3):[];
+  const rest=!lbSearch?filtered.slice(3):filtered;
   const myEntry=rankings.find(r=>r.profile?.game_id===user.game_id);
   const myRank=myEntry?rankings.indexOf(myEntry)+1:null;
   const nextUp=myRank&&myRank>1?rankings[myRank-2]:null;
@@ -754,7 +674,7 @@ function Leaderboard({user,allUsers,shop,coinSettings={},lastEvaluatedWeek}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:podium.length===3?18:0}}>
           <div>
             <div style={{color:"#fff",fontWeight:900,fontSize:20,letterSpacing:1}}>🏆 RANKING</div>
-            <div style={{color:"rgba(255,255,255,0.6)",fontSize:11,marginTop:2}}>Score: KPI + Riddles + Tasks</div>
+            <div style={{color:"rgba(255,255,255,0.6)",fontSize:11,marginTop:2}}>Coins ganados este trimestre</div>
           </div>
         </div>
         {podium.length===3&&(
@@ -787,12 +707,12 @@ function Leaderboard({user,allUsers,shop,coinSettings={},lastEvaluatedWeek}){
             <Av av={myEntry?.profile?.avatar} sz={40} shop={shop}/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{color:C.muted,fontSize:11,fontWeight:700}}>Tu posición</div>
-              <div style={{color:C.text,fontWeight:800,fontSize:15}}>#{myRank} · {myEntry.pts} pts</div>
+              <div style={{color:C.text,fontWeight:800,fontSize:15}}>#{myRank} · {myEntry.pts} 🪙</div>
             </div>
             <div style={{textAlign:"right"}}>
               {nextUp?(
                 <>
-                  <div style={{color:C.blue,fontWeight:800,fontSize:12}}>{Math.max(0,(nextUp.pts-myEntry.pts)+1)} pts</div>
+                  <div style={{color:C.blue,fontWeight:800,fontSize:12}}>{Math.max(0,(nextUp.pts-myEntry.pts)+1)} 🪙</div>
                   <div style={{color:C.muted,fontSize:10}}>para subir 1 puesto</div>
                 </>
               ):(
@@ -806,30 +726,21 @@ function Leaderboard({user,allUsers,shop,coinSettings={},lastEvaluatedWeek}){
       <div style={{marginBottom:8}}>
         <input value={lbSearch} onChange={e=>setLbSearch(e.target.value)} placeholder="🔍 Buscar agente..." style={{width:"100%",border:`1.5px solid ${C.border}`,borderRadius:10,padding:"9px 14px",fontSize:13,outline:"none",fontFamily:"inherit",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
       </div>
-      <div style={{display:"flex",gap:6,marginBottom:12,overflowX:"auto"}}>
-        {[{v:null,label:"Todos"},{v:1,label:"Nivel 1"},{v:2,label:"Nivel 2"},{v:3,label:"Nivel 3"},{v:4,label:"Nivel 4"}].map(opt=>(
-          <button key={String(opt.v)} onClick={()=>setLevelFilter(opt.v)} style={{padding:"6px 14px",borderRadius:8,border:`1.5px solid ${levelFilter===opt.v?C.blue:C.border}`,background:levelFilter===opt.v?`${C.blue}12`:C.card,color:levelFilter===opt.v?C.blue:C.muted,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{opt.label}</button>
-        ))}
-      </div>
       {loading&&<div style={{textAlign:"center",padding:40,color:C.muted}}>Cargando ranking...</div>}
       {!loading&&rest.map((r)=>{
         const u=r.profile;
         const isMe=u?.game_id===user.game_id;
         const i=rankings.indexOf(r);
-        const streak=u?.consecutive_weeks_on_target||0;
         return(
           <div key={r.game_id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",marginBottom:8,borderRadius:14,background:isMe?`${C.blue}10`:C.card,border:`1.5px solid ${isMe?C.blue:C.border}`,boxShadow:isMe?`0 0 14px ${C.blue}2a`:"none"}}>
             <div style={{width:26,textAlign:"center",fontWeight:900,color:C.muted,fontSize:13}}>#{i+1}</div>
             <Av av={u?.avatar} sz={42} shop={shop}/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{color:C.text,fontWeight:700,fontSize:14}}>{u?.name||r.game_id}{isMe&&<span style={{color:C.blue,fontSize:11}}> - TU</span>}</div>
-              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
-                <Bdg l={u?.level||1}/>
-                {streak>0?<span style={{color:C.gold,fontSize:11,fontWeight:700}}>🔥 {streak} sem</span>:<span style={{color:C.muted,fontSize:11}}>sin racha</span>}
-              </div>
+              <div style={{color:C.muted,fontSize:11,marginTop:2}}>{u?.project||"—"}</div>
             </div>
             <div style={{textAlign:"right"}}>
-              <div style={{color:C.blue,fontWeight:900,fontSize:17}}>{r.pts}</div>
+              <div style={{color:C.blue,fontWeight:900,fontSize:17}}>{r.pts} 🪙</div>
               <RankDelta delta={r.delta}/>
             </div>
           </div>
@@ -840,19 +751,14 @@ function Leaderboard({user,allUsers,shop,coinSettings={},lastEvaluatedWeek}){
   );
 }
 
-function PrizeCard({p,coins,onRedeem,locked=false,userLevel=1}){
+function PrizeCard({p,coins,onRedeem,locked=false,lockMsg="",limitReached=false,busy=false}){
   const cost=p.pts||p.points_cost||0;
-  const canBuy=!locked&&coins>=cost;
   const stock=p.stock!==undefined?p.stock:(p.stock_remaining??0);
   const noStock=stock!==-1&&stock<=0; // -1 means unlimited
-  const minLv=p.minLevel||p.min_level||1;
-  const lvColors={1:C.muted,2:C.blue,3:C.purple,4:C.red};
-  const lvColor=lvColors[minLv]||C.muted;
-  const LV_NAMES={1:"Bronze",2:"Silver",3:"Gold",4:"Platinum"};
-  const reqName=LV_NAMES[minLv]||"Nivel "+minLv;
-  const myName=LV_NAMES[userLevel]||"Nivel "+userLevel;
+  const canBuy=!locked&&!limitReached&&!noStock&&coins>=cost;
+  const lastOne=stock===1;
   return(
-    <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 13px",borderRadius:14,border:`1.5px solid ${locked?"#e8eaf6":canBuy?C.green:C.border}`,background:locked?"#f9fafb":canBuy?`${C.green}06`:C.bg,marginBottom:10,opacity:locked?0.65:1,transition:"all 0.2s"}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 13px",borderRadius:14,border:`1.5px solid ${locked?"#e8eaf6":canBuy?C.green:C.border}`,background:locked?"#f9fafb":canBuy?`${C.green}06`:C.bg,marginBottom:10,opacity:locked||noStock?0.65:1,transition:"all 0.2s"}}>
       <div style={{width:50,height:50,borderRadius:12,background:locked?"#e8eaf6":`linear-gradient(135deg,${C.blue}18,${C.red}10)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0,border:`1.5px solid ${locked?C.border:C.blue}20`}}>
         {locked?"🔒":p.emoji||"🎁"}
       </div>
@@ -860,39 +766,50 @@ function PrizeCard({p,coins,onRedeem,locked=false,userLevel=1}){
         <div style={{color:locked?C.muted:C.text,fontWeight:700,fontSize:14,marginBottom:3}}>{p.name}</div>
         {p.description&&<div style={{color:C.muted,fontSize:11,marginBottom:4,lineHeight:1.4}}>{p.description}</div>}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-          {minLv>1&&(<span style={{padding:"1px 7px",borderRadius:5,background:`${lvColor}18`,border:`1px solid ${lvColor}40`,color:lvColor,fontSize:10,fontWeight:800}}>LVL {minLv}+ requerido</span>)}
-          <span style={{color:noStock?C.red:C.muted,fontSize:11}}>{noStock?"Sin stock":`Stock: ${stock}`}</span>
+          {noStock?<span style={{color:C.red,fontSize:11,fontWeight:700}}>Agotado</span>
+            :stock===-1?<span style={{color:C.muted,fontSize:11}}>Disponible</span>
+            :lastOne?<span style={{color:C.red,fontSize:11,fontWeight:800}}>🔥 ¡Último disponible!</span>
+            :<span style={{color:C.muted,fontSize:11}}>Quedan {stock}</span>}
         </div>
       </div>
-      <div style={{textAlign:"right",flexShrink:0}}>
+      <div style={{textAlign:"right",flexShrink:0,maxWidth:150}}>
         <div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end",marginBottom:5}}>
           <span style={{fontSize:15}}>🪙</span>
           <span style={{color:locked?C.muted:canBuy?C.gold:C.muted,fontWeight:900,fontSize:17}}>{cost}</span>
         </div>
         {locked
-          ?<span style={{color:C.muted,fontSize:11,fontWeight:600}}>Requiere {reqName} — tú eres {myName}</span>
-          :<Btn onClick={()=>onRedeem(p)} disabled={!canBuy||noStock} color={canBuy&&!noStock?C.red:"#9ca3af"} sm>{noStock?"Agotado":canBuy?"Canjear":"Sin coins"}</Btn>
+          ?<span style={{color:C.muted,fontSize:11,fontWeight:600}}>{lockMsg}</span>
+          :<Btn onClick={()=>onRedeem(p)} disabled={!canBuy||busy} color={canBuy?C.red:"#9ca3af"} sm>{noStock?"Agotado":limitReached?"Sin canjes":canBuy?"Canjear":"Sin coins"}</Btn>
         }
       </div>
     </div>
   );
 }
 
-function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,coinSettings={},level=1,activityRegistrations=[]}){
+function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,coinSettings={},activityRegistrations=[]}){
   const [tab,setTab]=useState("store");
   const [myRedemptions,setMyRedemptions]=useState([]);
-  useEffect(()=>{
-    db.getMyRedemptions(user.id).then(d=>setMyRedemptions(d||[])).catch(()=>{});
-  },[user.id]);
+  const [seasonStart,setSeasonStart]=useState(null);
+  const [extra,setExtra]=useState(0);
+  const [busy,setBusy]=useState(false);
+  const reload=async()=>{
+    const [reds,ss,un]=await Promise.all([db.getMyRedemptions(user.id).catch(()=>[]),db.getSeasonStart(),db.getMyUnlocks(user.game_id||user.username||"")]);
+    setMyRedemptions(reds||[]);setSeasonStart(ss);setExtra(extraRedemptions(un||[],ss));
+  };
+  useEffect(()=>{reload();},[user.id]);
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings,activityRegistrations);
-  const totalSpent=myRedemptions.filter(r=>['pending','approved','delivered'].includes(r.status)).reduce((s,r)=>s+(r.points_spent||r.coins_spent||0),0);
-  const coins=Math.max(0,sc.coins-totalSpent);
-  const handleRedeem=async p=>{await onRedeem(p);db.getMyRedemptions(user.id).then(d=>setMyRedemptions(d||[])).catch(()=>{});};
+  const earned=sc.coins;
+  const seasonReds=inSeason(myRedemptions,seasonStart);
+  const coins=Math.max(0,earned-spentCoins(seasonReds));
+  const cat=unlockedCategory(earned);
+  const used=usedRedemptions(seasonReds);
+  const limit=MAX_REDEMPTIONS+extra;
+  const limitReached=used>=limit;
+  const handleRedeem=async p=>{if(busy)return;setBusy(true);try{await onRedeem(p);}finally{await reload();setBusy(false);}};
   const activePrizes=(prizes||[]).filter(p=>p.active!==false);
-  const freeSection=activePrizes.filter(p=>(p.minLevel||p.min_level||1)===1);
-  const exclusiveSection=activePrizes.filter(p=>(p.minLevel||p.min_level||1)>1);
-  const exclusiveUnlocked=exclusiveSection.filter(p=>(p.minLevel||p.min_level||1)<=level);
-  const exclusiveLocked=exclusiveSection.filter(p=>(p.minLevel||p.min_level||1)>level);
+  const catOf=p=>Math.min(3,Math.max(1,p.minLevel||p.min_level||1));
+  const sections=[1,2,3].map(n=>({n,items:activePrizes.filter(p=>catOf(p)===n)})).filter(x=>x.items.length>0);
+  const range=items=>{const c=items.map(p=>p.points_cost||p.pts||0);return `${Math.min(...c)}–${Math.max(...c)} 🪙`;};
   return(
     <div style={{paddingBottom:100}}>
       {/* Tabs */}
@@ -932,7 +849,7 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                   <div style={{flex:1}}>
                     <div style={{color:C.text,fontWeight:700,fontSize:14,marginBottom:4}}>{rEmoji} {rName}</div>
-                    <div style={{color:C.muted,fontSize:12}}>{rDate?new Date(rDate).toLocaleDateString("es-MX"):"—"}</div>
+                    <div style={{color:C.muted,fontSize:12}}>{rDate?new Date(rDate).toLocaleString("es-MX",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}):"—"}</div>
                   </div>
                   <div style={{textAlign:"right"}}>
                     <div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end",marginBottom:4}}>
@@ -951,66 +868,41 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
       {tab==="store"&&<div>
       {/* Header */}
       <div style={{background:`linear-gradient(135deg,${C.blue} 0%,#3b0764 50%,${C.red} 100%)`,borderRadius:20,padding:"18px 16px",marginBottom:14}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+        <div style={{color:"#fff",fontWeight:900,fontSize:22,letterSpacing:1,marginBottom:14}}>🏪 TIENDA</div>
+        <div style={{background:"rgba(255,255,255,0.12)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
           <div>
-            <div style={{color:"#fff",fontWeight:900,fontSize:22,letterSpacing:1}}>🏪 TIENDA</div>
-            <div style={{marginTop:4}}><Bdg l={level}/></div>
-          </div>
-          <Pzl pieces={user.puzzlePieces||0}/>
-        </div>
-        <div style={{background:"rgba(255,255,255,0.12)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div>
-            <div style={{color:"rgba(255,255,255,0.6)",fontSize:10,letterSpacing:1,marginBottom:2}}>TUS COINS</div>
+            <div style={{color:"rgba(255,255,255,0.6)",fontSize:10,letterSpacing:1,marginBottom:2}}>TU SALDO</div>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:24}}>🪙</span>
               <span style={{color:C.gold,fontWeight:900,fontSize:30,lineHeight:1}}>{coins}</span>
             </div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginBottom:2}}>TU NIVEL</div>
-            <div style={{color:"#fff",fontWeight:800,fontSize:16}}>LVL {level}</div>
-            <div style={{color:"rgba(255,255,255,0.5)",fontSize:10}}>llave de acceso 🔑</div>
+            <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginBottom:2}}>GANADOS ESTE TRIMESTRE</div>
+            <div style={{color:"#fff",fontWeight:800,fontSize:16}}>{earned}</div>
+            <div style={{color:"rgba(255,255,255,0.6)",fontSize:11}}>Premios hasta Categoría {cat}</div>
           </div>
+        </div>
+        <div style={{color:limitReached?"#fecaca":"rgba(255,255,255,0.75)",fontSize:12,fontWeight:700,marginTop:10}}>
+          🛍️ Canjes del trimestre: {used}/{limit}{limitReached?" — pide a un admin que te desbloquee más":""}
         </div>
       </div>
 
-      {/* SECCIÓN 1: COINS LIBRE */}
-      <div style={{marginBottom:6}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-          <div style={{width:4,height:20,borderRadius:2,background:C.gold}}/>
-          <div style={{color:C.text,fontWeight:800,fontSize:14}}>Disponibles para todos</div>
-          <div style={{flex:1,height:1,background:C.border}}/>
-          <span style={{color:C.muted,fontSize:11}}>{freeSection.length} premios</span>
-        </div>
-        {freeSection.length===0
-          ?<Card style={{textAlign:"center",padding:20,color:C.muted,fontSize:13}}>Sin premios en esta sección aún.</Card>
-          :freeSection.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={handleRedeem}/>)
-        }
-      </div>
-
-      {/* SECCIÓN 2: EXCLUSIVOS POR NIVEL */}
-      {exclusiveSection.length>0&&(
-        <div style={{marginTop:18}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-            <div style={{width:4,height:20,borderRadius:2,background:C.purple}}/>
-            <div style={{color:C.text,fontWeight:800,fontSize:14}}>Exclusivos por Nivel 🔑</div>
-            <div style={{flex:1,height:1,background:C.border}}/>
-            <span style={{color:C.muted,fontSize:11}}>{exclusiveSection.length} premios</span>
+      {sections.map(({n,items})=>{
+        const locked=cat<n;
+        return(
+          <div key={n} style={{marginBottom:18}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+              <div style={{width:4,height:20,borderRadius:2,background:n===1?C.gold:n===2?C.blue:C.purple}}/>
+              <div style={{color:C.text,fontWeight:800,fontSize:14}}>Categoría {n}{n===1?" · para todos":""}</div>
+              <div style={{flex:1,height:1,background:C.border}}/>
+              <span style={{color:C.muted,fontSize:11}}>{items.length} premios · {range(items)}</span>
+            </div>
+            {locked&&<div style={{color:C.muted,fontSize:11,fontWeight:700,marginBottom:8}}>🔒 Se abre con {CATEGORY_GATES[n]} coins ganados en el trimestre — llevas {earned}.</div>}
+            {items.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={handleRedeem} locked={locked} lockMsg={`Faltan ${Math.max(0,CATEGORY_GATES[n]-earned)} ganados`} limitReached={limitReached} busy={busy}/>)}
           </div>
-          {exclusiveUnlocked.length>0&&(
-            <div style={{marginBottom:8}}>
-              <div style={{color:C.green,fontSize:11,fontWeight:700,marginBottom:8}}>✅ Tu nivel {level} desbloquea estos:</div>
-              {exclusiveUnlocked.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={handleRedeem}/>)}
-            </div>
-          )}
-          {exclusiveLocked.length>0&&(
-            <div>
-              <div style={{color:C.muted,fontSize:11,fontWeight:700,marginBottom:8}}>🔒 Sube de nivel para acceder:</div>
-              {exclusiveLocked.map(p=><PrizeCard key={p.id} p={p} coins={coins} onRedeem={handleRedeem} locked userLevel={level}/>)}
-            </div>
-          )}
-        </div>
-      )}
+        );
+      })}
 
       {activePrizes.length===0&&(
         <Card style={{textAlign:"center",padding:40}}>
@@ -1020,6 +912,161 @@ function Rewards({user,prizes,onRedeem,weeklyMetrics,riddleAnswers,taskSubmissio
         </Card>
       )}
     </div>}
+    </div>
+  );
+}
+
+// ─── ADMIN: canjes extra por agente ───────────────────────────────────────────
+// Cada agente tiene MAX_REDEMPTIONS canjes por trimestre; un admin puede darle más con motivo.
+function UnlocksTab({allUsers,cu,toast}){
+  const [who,setWho]=useState("");const [extra,setExtra]=useState("1");const [reason,setReason]=useState("");
+  const [rows,setRows]=useState([]);const [seasonStart,setSeasonStart]=useState(null);const [info,setInfo]=useState(null);const [busy,setBusy]=useState(false);
+  const agents=(allUsers||[]).filter(u=>u.active&&u.role==="user");
+  const label=u=>`${u.name} · ${u.game_id||u.username}`;
+  const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:9,padding:"10px 13px",fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:C.bg,color:C.text};
+  const load=async()=>{
+    const ss=await db.getSeasonStart();setSeasonStart(ss);
+    setRows(await sbAll("redemption_unlocks?select=*&order=created_at.desc,id.asc").catch(()=>[]));
+  };
+  useEffect(()=>{load();},[]);
+  const target=agents.find(u=>label(u)===who);
+  useEffect(()=>{
+    (async()=>{
+      if(!target){setInfo(null);return;}
+      const [reds,un]=await Promise.all([db.getMyRedemptions(target.id).catch(()=>[]),db.getMyUnlocks(target.game_id||target.username||"")]);
+      setInfo({used:usedRedemptions(inSeason(reds||[],seasonStart)),limit:MAX_REDEMPTIONS+extraRedemptions(un||[],seasonStart)});
+    })();
+  },[who,seasonStart,rows.length]);
+  const give=async()=>{
+    const n=Number(extra);
+    if(!target){toast("Elige a un agente de la lista");return;}
+    if(!Number.isInteger(n)||n<=0||n>10){toast("Los canjes extra deben ser de 1 a 10");return;}
+    if(!reason.trim()){toast("Escribe el motivo");return;}
+    setBusy(true);
+    try{
+      await sbFetch("redemption_unlocks",{method:"POST",prefer:"return=minimal",body:JSON.stringify({game_id:target.game_id||target.username,extra:n,reason:reason.trim(),granted_by:cu.game_id||cu.username||cu.name||"admin"})});
+      db.createNotif({recipient_id:target.id,title:"🔓 Canjes extra desbloqueados",message:`Un admin te desbloqueó ${n} canje${n===1?"":"s"} extra en la tienda.`,type:"info",is_read:false}).catch(()=>{});
+      setWho("");setReason("");setExtra("1");toast(`🔓 +${n} canje${n===1?"":"s"} para ${target.name}`);load();
+    }catch(e){toast("Error: corre primero el SQL de canjes extra");}
+    setBusy(false);
+  };
+  const seasonRows=inSeason(rows,seasonStart,"created_at");
+  return(
+    <div>
+      <Card style={{marginBottom:14,border:`1.5px solid ${C.purple}33`}}>
+        <div style={{color:C.purple,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:6}}>DESBLOQUEAR CANJES EXTRA</div>
+        <div style={{color:C.muted,fontSize:12,marginBottom:12}}>Cada agente puede hacer {MAX_REDEMPTIONS} canjes por trimestre. Aquí le das más a una persona concreta.</div>
+        <div style={{marginBottom:10}}>
+          <div style={{color:C.muted,fontSize:11,marginBottom:4}}>AGENTE</div>
+          <input list="unlock-agents" value={who} onChange={e=>setWho(e.target.value)} style={inp} placeholder="Escribe para buscar..."/>
+          <datalist id="unlock-agents">{agents.map(u=><option key={u.id} value={label(u)}/>)}</datalist>
+          {info&&<div style={{color:C.muted,fontSize:11,marginTop:4}}>Canjes este trimestre: {info.used} de {info.limit}</div>}
+        </div>
+        <div style={{display:"flex",gap:10,marginBottom:10}}>
+          <div style={{width:110}}><div style={{color:C.muted,fontSize:11,marginBottom:4}}>EXTRA</div><input type="number" min={1} max={10} value={extra} onChange={e=>setExtra(e.target.value)} style={inp}/></div>
+          <div style={{flex:1}}><div style={{color:C.muted,fontSize:11,marginBottom:4}}>MOTIVO</div><input value={reason} onChange={e=>setReason(e.target.value)} style={inp} placeholder="Por qué se le desbloquea"/></div>
+        </div>
+        <Btn onClick={give} disabled={busy} color={C.purple} style={{width:"100%",padding:11}}>{busy?"Guardando...":"🔓 Desbloquear"}</Btn>
+      </Card>
+      {seasonRows.length>0&&(
+        <div>
+          <div style={{color:C.muted,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:8}}>DESBLOQUEOS DE ESTE TRIMESTRE</div>
+          {seasonRows.map(r=>(
+            <div key={r.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"9px 0",borderBottom:`1px solid ${C.border}`}}>
+              <div style={{minWidth:0}}>
+                <div style={{color:C.text,fontWeight:700,fontSize:13}}>{r.game_id}</div>
+                <div style={{color:C.muted,fontSize:11}}>{r.reason} — por {r.granted_by} · {new Date(r.created_at).toLocaleString("es-MX",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
+              </div>
+              <div style={{color:C.purple,fontWeight:900,fontSize:14,flexShrink:0}}>+{r.extra}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ADMIN: quién entra a la app ───────────────────────────────────────────────
+function AccessTab({allUsers}){
+  const [rows,setRows]=useState([]);const [loading,setLoading]=useState(true);const [err,setErr]=useState(false);
+  const [days,setDays]=useState(7);const [q,setQ]=useState("");
+  const [view,setView]=useState("log");
+  const since=new Date(Date.now()-days*86400000).toISOString();
+  useEffect(()=>{
+    (async()=>{
+      setLoading(true);setErr(false);
+      try{setRows(await sbAll(`app_logins?select=*&logged_in_at=gte.${encodeURIComponent(since)}&order=logged_in_at.desc,id.asc`));}
+      catch(e){setRows([]);setErr(true);}
+      setLoading(false);
+    })();
+  },[days]);
+  const agents=(allUsers||[]).filter(u=>u.active&&u.role==="user");
+  const byAgent={};
+  rows.filter(r=>r.user_type==="agent").forEach(r=>{const k=String(r.game_id||"").toUpperCase();const a=byAgent[k]||(byAgent[k]={count:0,last:r.logged_in_at,name:r.user_name,gid:r.game_id});a.count++;if(r.logged_in_at>a.last)a.last=r.logged_in_at;});
+  const entered=Object.keys(byAgent).length;
+  const never=agents.filter(u=>!byAgent[String(u.game_id||u.username||"").toUpperCase()]);
+  const dayKey=iso=>new Date(iso).toLocaleDateString("es-MX",{day:"2-digit",month:"short"});
+  const perDay={};rows.forEach(r=>{const d=dayKey(r.logged_in_at);const x=perDay[d]||(perDay[d]=new Set());x.add(`${r.user_type}|${String(r.game_id||"").toUpperCase()}`);});
+  const shown=rows.filter(r=>!q.trim()||`${r.user_name||""} ${r.game_id||""}`.toLowerCase().includes(q.toLowerCase())).slice(0,100);
+  const exportCsv=()=>{
+    const qq=v=>`"${String(v??"").replace(/"/g,'""')}"`;
+    const lines=[["fecha_hora","tipo","game_id","nombre"].join(",")];
+    rows.forEach(r=>lines.push([qq(new Date(r.logged_in_at).toLocaleString("es-MX")),qq(r.user_type),qq(r.game_id),qq(r.user_name)].join(",")));
+    const blob=new Blob(["\ufeff"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`accesos_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href);
+  };
+  const inp={width:"100%",border:`1.5px solid ${C.border}`,borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:C.bg,color:C.text};
+  return(
+    <div>
+      <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div>
+            <div style={{color:C.blue,fontWeight:800,fontSize:14,marginBottom:2}}>👣 Accesos a la app</div>
+            <div style={{color:C.muted,fontSize:12}}>Cada inicio de sesión de agentes y staff, con fecha y hora</div>
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <select value={days} onChange={e=>setDays(+e.target.value)} style={{...inp,width:"auto"}}>{[1,7,30,90].map(d=><option key={d} value={d}>{d===1?"Último día":`Últimos ${d} días`}</option>)}</select>
+            <Btn onClick={exportCsv} color={C.green} sm>⬇️ CSV</Btn>
+          </div>
+        </div>
+      </Card>
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {[["log","📋 Accesos"],["coaches","🏅 Ranking de coaches por uso"]].map(([id,label])=>(
+          <button key={id} onClick={()=>setView(id)} style={{flex:1,padding:"9px 6px",borderRadius:9,border:`1.5px solid ${view===id?C.blue:C.border}`,background:view===id?`${C.blue}12`:"#fff",color:view===id?C.blue:C.muted,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>
+        ))}
+      </div>
+      {view==="coaches"&&<CoachUsageBoard allUsers={allUsers} isAdmin/>}
+      {view==="log"&&err&&<Card style={{marginBottom:14,color:C.red,fontSize:13}}>No se pudo leer app_logins. Corre primero el SQL de accesos (sql/2026-10-19_categorias_historico.sql).</Card>}
+      {view==="log"&&loading&&<div style={{textAlign:"center",padding:30,color:C.muted}}>Cargando...</div>}
+      {view==="log"&&!loading&&!err&&(<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+          {[{l:"Inicios de sesión",v:rows.length,c:C.blue},{l:"Agentes que entraron",v:`${entered}/${agents.length}`,c:C.green},{l:"Sin entrar",v:never.length,c:C.yellow}].map(s=>(
+            <div key={s.l} style={{background:`${s.c}12`,border:`1px solid ${s.c}30`,borderRadius:10,padding:"10px 8px",textAlign:"center"}}>
+              <div style={{color:s.c,fontWeight:900,fontSize:20}}>{s.v}</div><div style={{color:C.muted,fontSize:10}}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+        <Card style={{marginBottom:14}}>
+          <div style={{color:C.muted,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:8}}>PERSONAS DISTINTAS POR DÍA</div>
+          {Object.keys(perDay).length===0?<div style={{color:C.muted,fontSize:13}}>Sin accesos en este periodo.</div>:Object.entries(perDay).map(([d,set])=>(
+            <div key={d} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}><span style={{color:C.text}}>{d}</span><span style={{color:C.blue,fontWeight:800}}>{set.size}</span></div>
+          ))}
+        </Card>
+        <div style={{color:C.muted,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:8}}>ÚLTIMOS ACCESOS</div>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="🔍 Buscar nombre o game id..." style={{...inp,marginBottom:8}}/>
+        {shown.map(r=>(
+          <div key={r.id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
+            <div style={{minWidth:0}}><div style={{color:C.text,fontWeight:700,fontSize:13}}>{r.user_name||r.game_id}</div><div style={{color:C.muted,fontSize:11}}>{r.game_id} · {r.user_type==="staff"?"Staff":"Agente"}</div></div>
+            <div style={{color:C.muted,fontSize:12,flexShrink:0,textAlign:"right"}}>{new Date(r.logged_in_at).toLocaleString("es-MX",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div>
+          </div>
+        ))}
+        {never.length>0&&(
+          <Card style={{marginTop:14}}>
+            <div style={{color:C.yellow,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:8}}>AGENTES QUE NO HAN ENTRADO EN ESTE PERIODO ({never.length})</div>
+            <div style={{color:C.muted,fontSize:12,lineHeight:1.7}}>{never.slice(0,80).map(u=>u.game_id||u.name).join(" · ")}{never.length>80?` … y ${never.length-80} más`:""}</div>
+          </Card>
+        )}
+      </>)}
     </div>
   );
 }
@@ -1151,11 +1198,11 @@ function Notifs({user,notifs,onMarkRead,onMarkAll,onRefresh}){
 
 function Info(){
   const secs=[
-    {icon:"📊",color:C.blue,title:"SCORE — determina tu nivel mensual",items:["QA Score: superas meta=5pts, igual=2pts, debajo=0pts","AHT: mejor que meta=5pts, igual=2pts, peor=0pts","Attendance: perfecta=5pts, 1 tardanza=2pts, falta o 2 tardanzas=0pts","Riddle aprobado: +2 pts por cada riddle (aprobado por admin)","Task aprobada: +2 pts por cada task (aprobada por admin)","El Score determina tu nivel: 100%=Nivel 4, ≥90%=Nivel 3, ≥80%=Nivel 2, <80%=Nivel 1"]},
-    {icon:"🪙",color:C.gold,title:"COINS — moneda para la tienda",items:["Coins = Score + Kudos + Referidos","Kudos: cada kudo regular = 1 coin, cada gold kudo = 5 coins","Referidos: enviado = 1 coin, si es contratado = 5 coins total","Los coins NO afectan tu nivel, solo sirven para comprar en la tienda","Los coins se reinician cada trimestre (admin)"]},
-    {icon:"🏆",color:C.purple,title:"Niveles del mes",items:["El nivel se calcula: Score ÷ Máximo posible del mes × 100","Nivel 4 LEGEND: 100% del máximo","Nivel 3 ELITE: 90% o más","Nivel 2 RISING: 80% o más","Nivel 1 ROOKIE: menos del 80%","El máximo = semanas × 15 + riddles × 2 + tasks × 2"]},
-    {icon:"🎁",color:C.red,title:"Tienda de premios",items:["Tu nivel del mes es la llave de acceso","Nivel 4 → acceso a todos los premios","Tus coins son los que gastas al canjear un premio","Cuida tus coins — se reinician cada trimestre"]},
-    {icon:"🧩",color:C.green,title:"El rompecabezas",items:["Mes perfecto = 100% en todas las métricas + todos los riddles y tasks aprobados","Cada mes perfecto = 1 pieza del rompecabezas","Al juntar 3 piezas desbloqueas un premio sorpresa"]},
+    {icon:"📊",color:C.blue,title:"PUNTOS SEMANALES (se convierten en coins)",items:[`QA: superas meta=${KPI_FULL.qa}, igualas=${kpiMid(KPI_FULL.qa)}, debajo=0`,`AHT: mejor que meta=${KPI_FULL.aht}, igualas=${kpiMid(KPI_FULL.aht)}, peor=0`,`Attendance: perfecta=${KPI_FULL.att}, 1 tardanza=${kpiMid(KPI_FULL.att)}, falta o 2 tardanzas=0`,`Máximo por semana: ${KPI_WEEK_MAX} coins`,"Las semanas excusadas (vacaciones, incapacidad) no cuentan a favor ni en contra"]},
+    {icon:"🔥",color:C.red,title:"BONO DE RACHA",items:[`${STREAK_BONUS.weeks} semanas seguidas en meta (${STREAK_MIN_PTS} o más de ${KPI_WEEK_MAX}) = +${STREAK_BONUS.coins} coins`,"Se paga por bloques de 3 y el conteo empieza de nuevo después de cada bono","Una semana fuera de meta reinicia el conteo","Se paga al cargar los resultados de la semana, y recibes un aviso"]},
+    {icon:"🎉",color:C.green,title:"ACTIVIDADES, KUDOS Y MÁS",items:["Actividades: cada una tiene sus coins fijos y no cambian; te registras y tu coach confirma tu participación","Kudo = 1 coin y Gold Kudo = 5 coins","Referido enviado = 1 coin; si es contratado = 5 coins en total","Riddles y Tasks aprobados suman coins","Un admin puede darte un bonus extraordinario por algo fuera de lo normal"]},
+    {icon:"🪙",color:C.gold,title:"SALDO Y GANADOS",items:["Saldo = lo que puedes gastar ahora","Ganados = todo lo que has sumado este trimestre; no baja cuando gastas","Los coins se reinician al empezar cada trimestre"]},
+    {icon:"🎁",color:C.purple,title:"TIENDA Y CATEGORÍAS",items:["Los premios están en 3 categorías según su valor","Categoría 1: para todos","Categoría 2: se abre con "+CATEGORY_GATES[2]+" coins ganados en el trimestre","Categoría 3: se abre con "+CATEGORY_GATES[3]+" coins ganados en el trimestre","Cada premio tiene pocas piezas: se lo lleva quien lo canjee primero","Puedes hacer hasta "+MAX_REDEMPTIONS+" canjes por trimestre; un admin puede desbloquearte más"]},
   ];
   return(
     <div style={{paddingBottom:100}}>
@@ -1182,11 +1229,11 @@ function Info(){
   );
 }
 
-function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,coinSettings={},level=1,activityRegistrations=[]}){
+function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,coinSettings={},wallet,activityRegistrations=[]}){
   const [av,setAv]=useState(user.avatar||{base:"b1",hair:null,accessory:null,outfit:null,background:null});
   const [tab,setTab]=useState("edit");const [saving,setSaving]=useState(false);
   const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings,activityRegistrations);
-  const coins=sc.coins;
+  const coins=wallet?wallet.balance:sc.coins;
   const types=["hair","accessory","outfit","background"];
   const tl={hair:"Cabello",accessory:"Accesorios",outfit:"Ropa",background:"Fondo"};
   const isOwned=id=>(user.ownedItems||[]).includes(id);
@@ -1211,7 +1258,6 @@ function Profile({user,onUpdate,toast,shop,weeklyMetrics,riddleAnswers,taskSubmi
       <Card style={{marginBottom:14,textAlign:"center"}}>
         <div style={{display:"flex",justifyContent:"center",marginBottom:10}}><Av av={av} sz={100} shop={shop}/></div>
         <div style={{color:C.text,fontWeight:800,fontSize:18}}>{user.name}</div>
-        <div style={{marginTop:4}}><Bdg l={level}/></div>
         {/* Coins */}
         <div style={{display:"flex",justifyContent:"center",gap:12,marginTop:12}}>
           <div style={{background:`${C.gold}10`,border:`1px solid ${C.gold}30`,borderRadius:10,padding:"8px 14px",textAlign:"center"}}>
@@ -1325,7 +1371,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
         <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>EMOJI</div><input value={pf.emoji} onChange={e=>setPf(p=>({...p,emoji:e.target.value}))} style={inp}/></div>
         <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>COINS 🪙</div><input type="number" value={pf.pts} onChange={e=>setPf(p=>({...p,pts:+e.target.value}))} style={inp}/></div>
         <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>STOCK (-1 = ilimitado)</div><input type="number" value={pf.stock} onChange={e=>setPf(p=>({...p,stock:+e.target.value}))} style={inp}/></div>
-        <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NIVEL MÍNIMO</div><select value={pf.minLevel} onChange={e=>setPf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Nivel 1 - Todos</option><option value={2}>Nivel 2+</option><option value={3}>Nivel 3+</option><option value={4}>Solo Nivel 4</option></select></div>
+        <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>CATEGORÍA</div><select value={pf.minLevel} onChange={e=>setPf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Categoría 1 · para todos</option><option value={2}>Categoría 2 · se abre con {CATEGORY_GATES[2]} ganados</option><option value={3}>Categoría 3 · se abre con {CATEGORY_GATES[3]} ganados</option></select></div>
         <div style={{gridColumn:"1/-1"}}><div style={{color:C.muted,fontSize:10,marginBottom:3}}>TÉRMINOS Y CONDICIONES</div><textarea value={pf.description} onChange={e=>setPf(p=>({...p,description:e.target.value}))} rows={3} placeholder="Condiciones de uso, restricciones, vigencia..." style={{...inp,resize:"vertical",height:"auto",lineHeight:1.5}}/></div>
       </div>
       <Btn onClick={addPrize} color={C.blue} style={{width:"100%",padding:11}}>AÑADIR PREMIO</Btn>
@@ -1341,7 +1387,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
               <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>EMOJI</div><input value={ef.emoji} onChange={e=>setEf(p=>({...p,emoji:e.target.value}))} style={{...inp,textAlign:"center",fontSize:18}}/></div>
               <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>COINS 🪙</div><input type="number" value={ef.pts} onChange={e=>setEf(p=>({...p,pts:e.target.value}))} style={inp}/></div>
               <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>STOCK (-1 = ilimitado)</div><input type="number" value={ef.stock} onChange={e=>setEf(p=>({...p,stock:e.target.value}))} style={inp}/></div>
-              <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>NIVEL MÍNIMO</div><select value={ef.minLevel} onChange={e=>setEf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Nivel 1 - Todos</option><option value={2}>Nivel 2+</option><option value={3}>Nivel 3+</option><option value={4}>Solo Nivel 4</option></select></div>
+              <div><div style={{color:C.muted,fontSize:10,marginBottom:3}}>CATEGORÍA</div><select value={ef.minLevel} onChange={e=>setEf(p=>({...p,minLevel:+e.target.value}))} style={inp}><option value={1}>Categoría 1 · para todos</option><option value={2}>Categoría 2 · se abre con {CATEGORY_GATES[2]} ganados</option><option value={3}>Categoría 3 · se abre con {CATEGORY_GATES[3]} ganados</option></select></div>
               <div style={{gridColumn:"1/-1"}}><div style={{color:C.muted,fontSize:10,marginBottom:3}}>TÉRMINOS Y CONDICIONES</div><textarea value={ef.description} onChange={e=>setEf(p=>({...p,description:e.target.value}))} rows={3} placeholder="Condiciones de uso, restricciones, vigencia..." style={{...inp,resize:"vertical",height:"auto",lineHeight:1.5}}/></div>
             </div>
             <div style={{display:"flex",gap:8}}>
@@ -1358,7 +1404,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
               <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4,flexWrap:"wrap"}}>
                 <span style={{fontSize:12}}>🪙</span>
                 <span style={{color:C.gold,fontWeight:700,fontSize:13}}>{p.points_cost||p.pts} coins</span>
-                <Tag color={C.purple}>Nivel {p.min_level||1}+</Tag>
+                <Tag color={C.purple}>Categoría {Math.min(3,p.min_level||1)}</Tag>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6}}>
                 <span style={{color:C.muted,fontSize:11,flexShrink:0}}>Stock:</span>
@@ -1376,7 +1422,7 @@ function PrizesTab({prizes,setPrizes,pf,setPf,addPrize,updPz,toast,inp}){
   </div>);
 }
 
-function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllPoints,resetAllLevels,reloadUsers,toast,inp}){
+function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllPoints,reloadUsers,toast,inp}){
   const [calcCoins,setCalcCoins]=useState(null);
   const [loading,setLoading]=useState(false);
   const [syncing,setSyncing]=useState(false);
@@ -1385,11 +1431,11 @@ function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllPoints,reset
     setLoading(true);
     try{
       const [kpiData,riddleData,taskData,activityData,bonusData]=await Promise.all([
-        sbFetch("weekly_metrics?select=game_id,qa_pts,aht_pts,attendance_pts").catch(()=>[]),
-        sbFetch("agent_riddle_answers?approved=eq.true&select=game_id").catch(()=>[]),
-        sbFetch("agent_task_submissions?approved=eq.true&select=game_id").catch(()=>[]),
-        sbFetch("activity_registrations?status=eq.approved&select=game_id,points_awarded").catch(()=>[]),
-        sbFetch("coin_bonuses?select=game_id,coins").catch(()=>[]),
+        sbAll("weekly_metrics?select=game_id,qa_pts,aht_pts,attendance_pts&order=id.asc").catch(()=>[]),
+        sbAll("agent_riddle_answers?approved=eq.true&select=game_id&order=id.asc").catch(()=>[]),
+        sbAll("agent_task_submissions?approved=eq.true&select=game_id&order=id.asc").catch(()=>[]),
+        sbAll("activity_registrations?status=eq.approved&select=game_id,points_awarded&order=id.asc").catch(()=>[]),
+        sbAll("coin_bonuses?select=game_id,coins&order=id.asc").catch(()=>[]),
       ]);
       const kpiMap={};
       (kpiData||[]).forEach(r=>{kpiMap[r.game_id]=(kpiMap[r.game_id]||0)+(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);});
@@ -1446,21 +1492,12 @@ function CoinsTab({allUsers,coinSettings,onSaveCoinSettings,resetAllPoints,reset
         doc de rediseño, sección "Qué va faltando decidir/diseñar". */}
     <Card style={{marginBottom:14,background:`${C.red}08`,border:`1.5px solid ${C.red}30`}}>
       <div style={{fontSize:24,marginBottom:8}}>📊</div>
-      <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:4}}>Reiniciar Temporada (Puntos y Coins)</div>
+      <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:4}}>Iniciar nuevo trimestre (reinicia coins)</div>
       <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>
-        Borra las métricas semanales (KPI), riddles, tasks, kudos y referidos de todos los agentes — esto pone su saldo de coins en 0.<br/>
-        Úsalo al iniciar una nueva temporada. <strong style={{color:C.red}}>No se puede deshacer.</strong>
+        Guarda primero una copia del historial de cada agente y luego borra las métricas semanales (KPI), riddles, tasks, kudos, referidos, actividades y bonus — esto pone su saldo de coins en 0. Los canjes se conservan como historial.<br/>
+        Úsalo al iniciar un nuevo trimestre. <strong style={{color:C.red}}>No se puede deshacer.</strong>
       </div>
-      <Btn onClick={resetAllPoints} color={C.red} style={{width:"100%",padding:12}}>⚠️ REINICIAR TEMPORADA</Btn>
-    </Card>
-
-    <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}30`}}>
-      <div style={{fontSize:24,marginBottom:8}}>🏆</div>
-      <div style={{color:C.text,fontWeight:800,fontSize:16,marginBottom:4}}>Reiniciar Niveles</div>
-      <div style={{color:C.muted,fontSize:13,marginBottom:16,lineHeight:1.6}}>
-        Regresa a todos los agentes a Nivel 1 sin borrar sus puntos ni coins.
-      </div>
-      <Btn onClick={resetAllLevels} color={C.blue} style={{width:"100%",padding:12}}>🔄 REINICIAR NIVELES A NIVEL 1</Btn>
+      <Btn onClick={resetAllPoints} color={C.red} style={{width:"100%",padding:12}}>⚠️ INICIAR NUEVO TRIMESTRE</Btn>
     </Card>
 
     <Card>
@@ -1525,16 +1562,12 @@ function CoinSettingsCard({coinSettings,onSave,inp}){
 
 function UtilizationTab({allUsers,allRedemptions}){
   const active=allUsers.filter(u=>u.active);
-  const lvCounts={1:0,2:0,3:0,4:0};
-  active.forEach(u=>{const lv=Math.min(4,Math.max(1,u.monthly_level||1));lvCounts[lv]++;});
   const totalUsers=active.length||1;
   const canjeSt={pending:0,approved:0,delivered:0,cancelled:0};
   (allRedemptions||[]).forEach(r=>{if(r.status in canjeSt)canjeSt[r.status]++;});
   const totalCanjes=(allRedemptions||[]).length||1;
   const totalCoins=active.reduce((s,u)=>s+(u.coins||0),0);
   const avgCoins=active.length?Math.round(totalCoins/active.length):0;
-  const lvColors=["","#cd7f32","#9ca3af","#f59e0b","#22d3ee"];
-  const lvNames=["","Bronce 🥉","Plata 🥈","Oro 🥇","Platino 💎"];
   const statItems=[
     {label:"Agentes activos",val:active.length,color:C.blue,icon:"👤"},
     {label:"Canjes totales",val:(allRedemptions||[]).length,color:C.green,icon:"📦"},
@@ -1564,23 +1597,6 @@ function UtilizationTab({allUsers,allRedemptions}){
             </div>
           ))}
         </div>
-      </Card>
-      <Card style={{marginBottom:10}}>
-        <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:10}}>🏆 Distribución de Niveles</div>
-        {[1,2,3,4].map(lv=>{
-          const pct=Math.round(lvCounts[lv]/totalUsers*100);
-          return(
-            <div key={lv} style={{marginBottom:8}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                <span style={{fontSize:12,color:C.text,fontWeight:600}}>Nivel {lv} — {lvNames[lv]}</span>
-                <span style={{fontSize:12,color:lvColors[lv],fontWeight:800}}>{lvCounts[lv]} ({pct}%)</span>
-              </div>
-              <div style={{background:C.border,borderRadius:4,height:10,overflow:"hidden"}}>
-                <div style={{width:`${pct}%`,height:"100%",background:lvColors[lv],borderRadius:4,transition:"width 0.5s"}}/>
-              </div>
-            </div>
-          );
-        })}
       </Card>
       <Card style={{marginBottom:10}}>
         <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:10}}>📦 Estado de Canjes</div>
@@ -1668,9 +1684,9 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   const [userScoreMap,setUserScoreMap]=useState<Record<string,number>>({});
   useEffect(()=>{
     Promise.all([
-      sbFetch("weekly_metrics?select=game_id,qa_pts,aht_pts,attendance_pts").catch(()=>[]),
-      sbFetch("agent_riddle_answers?approved=eq.true&select=game_id").catch(()=>[]),
-      sbFetch("agent_task_submissions?approved=eq.true&select=game_id").catch(()=>[]),
+      sbAll("weekly_metrics?select=game_id,qa_pts,aht_pts,attendance_pts&order=id.asc").catch(()=>[]),
+      sbAll("agent_riddle_answers?approved=eq.true&select=game_id&order=id.asc").catch(()=>[]),
+      sbAll("agent_task_submissions?approved=eq.true&select=game_id&order=id.asc").catch(()=>[]),
     ]).then(([kpiData,rdlData,tskData])=>{
       const kpiMap:Record<string,number>={};
       (kpiData||[]).forEach((r:any)=>{kpiMap[r.game_id]=(kpiMap[r.game_id]||0)+(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);});
@@ -1711,6 +1727,23 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
     }
   },[isSA]);
   const [allStaffRed,setAllStaffRed]=useState([]);
+  const [canjeSearch,setCanjeSearch]=useState("");
+  const canjesFiltered=allRedemptions.filter(r=>{
+    if(!canjeSearch.trim())return true;
+    const u=allUsers.find(x=>x.id===r.user_id);const pz=prizes.find(p=>p.id===r.reward_id);
+    return `${u?.name||""} ${u?.game_id||r.game_id||""} ${pz?.name||r.reward_name||""} ${r.status}`.toLowerCase().includes(canjeSearch.toLowerCase());
+  });
+  // Exporta el historial completo de canjes (quién, qué, cuándo con hora, cuánto, estado) a CSV
+  const exportCanjes=()=>{
+    const q=v=>`"${String(v??"").replace(/"/g,'""')}"`;
+    const lines=[["fecha_hora","agente","game_id","premio","categoria","coins","estado"].join(",")];
+    allRedemptions.forEach(r=>{
+      const u=allUsers.find(x=>x.id===r.user_id);const pz=prizes.find(p=>p.id===r.reward_id);
+      lines.push([q(r.redeemed_at?new Date(r.redeemed_at).toLocaleString("es-MX"):""),q(u?.name||r.user_id),q(u?.game_id||r.game_id||""),q(pz?.name||r.reward_name||""),q(r.category||pz?.min_level||""),q(r.points_spent||r.coins_spent||0),q(r.status)].join(","));
+    });
+    const blob=new Blob(["\ufeff"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`canjes_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href);
+  };
   const [coaches,setCoaches]=useState([]);
   const [groupEditId,setGroupEditId]=useState(null);
   const [groupEdits,setGroupEdits]=useState({});
@@ -1722,7 +1755,14 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   useEffect(()=>{if(isSA)reloadCanjes();},[isSA]);
   // Reload canjes every time the admin navigates to that tab
   useEffect(()=>{if(tab==="canjes"||tab==="utilization")reloadCanjes();},[tab]);
-  const addPrize=async()=>{if(!pf.name.trim()){toast("Escribe el nombre");return;}try{await db.createPrize({name:pf.name,emoji:pf.emoji||"🎁",points_cost:pf.pts,coins_cost:pf.pts,stock:pf.stock,category:"general",is_active:true,min_level:pf.minLevel,description:pf.description.trim()||null});const updated=await db.getPrizes();setPrizes(updated||[]);setPf({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1,description:""});toast("Premio anadido");}catch(e){toast("Error al crear premio");}};
+  const addPrize=async()=>{if(!pf.name.trim()){toast("Escribe el nombre");return;}try{await db.createPrize({name:pf.name,emoji:pf.emoji||"🎁",points_cost:pf.pts,coins_cost:pf.pts,stock:pf.stock,category:"general",is_active:true,min_level:pf.minLevel,description:pf.description.trim()||null});const updated=await db.getPrizes();setPrizes(updated||[]);
+        // Aviso a todos los agentes activos: la carrera por el premio empieza al mismo tiempo para todos
+        try{
+          const msg=`Categoría ${pf.minLevel} · ${pf.pts} coins · ${pf.stock===-1?"disponible":pf.stock+" pieza"+(pf.stock===1?"":"s")}. ¡Se lo lleva quien lo canjee primero!`;
+          const notifs=allUsers.filter(u=>u.active&&u.id).map(u=>({recipient_id:u.id,title:`🎁 Nuevo premio: ${pf.name}`,message:msg,type:"info",is_read:false}));
+          for(let i=0;i<notifs.length;i+=100)await sbFetch("notifications",{method:"POST",prefer:"return=minimal",body:JSON.stringify(notifs.slice(i,i+100))});
+        }catch(e){console.error("aviso de premio",e);}
+        setPf({name:"",pts:100,stock:10,emoji:"🎁",minLevel:1,description:""});toast("Premio añadido y avisado a los agentes");}catch(e){toast("Error al crear premio");}};
   const updPz=async(id,field,val)=>{const dbField=field==="pts"?"points_cost":field==="stock"?"stock":field==="minLevel"?"min_level":field;try{await db.updatePrize(id,{[dbField]:val});const updated=await db.getPrizes();setPrizes(updated||[]);}catch(e){toast("Error");}};
 
   // Reset de temporada (puntos + coins juntos)
@@ -1739,33 +1779,39 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
   // lo mismo (una bien, otra mal) — ver el doc de rediseño si en el futuro se
   // quiere un reset de coins de verdad independiente del historial de KPI/nivel.
   const resetAllPoints=async()=>{
-    if(!window.confirm("¿Reiniciar PUNTOS de TODOS los agentes?\n\nEsto borrará:\n• Métricas semanales (KPI)\n• Riddles y Tasks aprobadas\n• Kudos, Gold Kudos y Referidos\n• Registros de Actividades y bonus extraordinarios\n\nEsta acción NO se puede deshacer."))return;
+    if(!window.confirm("¿INICIAR UN NUEVO TRIMESTRE?\n\nPrimero se guarda una copia del historial de cada agente (coins ganados y gastados, semanas y actividades). Después se borran:\n• Métricas semanales (KPI)\n• Riddles y Tasks aprobadas\n• Kudos, Gold Kudos y Referidos\n• Registros de Actividades aprobados/rechazados y bonus (incluidos los de racha)\n\nSe CONSERVAN: los canjes (como historial, ya no restan coins) y los registros de actividades que siguen pendientes de revisar.\n\nNo se puede deshacer."))return;
     try{
-      await Promise.all([
-        sbFetch("weekly_metrics?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
-        sbFetch("agent_riddle_answers?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
-        sbFetch("agent_task_submissions?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
-        sbFetch("activity_registrations?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
-        sbFetch("coin_bonuses?game_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null),
+      toast("Guardando el historial del trimestre...");
+      const [wm,ra,ts,ar,bn,reds,ss]=await Promise.all([
+        sbAll("weekly_metrics?select=*&order=id.asc"),
+        sbAll("agent_riddle_answers?approved=eq.true&select=game_id,approved&order=id.asc"),
+        sbAll("agent_task_submissions?approved=eq.true&select=game_id,approved&order=id.asc"),
+        sbAll("activity_registrations?select=*&order=id.asc"),
+        sbAll("coin_bonuses?select=*&order=id.asc"),
+        sbAll("reward_redemptions?select=*&order=id.asc"),
+        db.getSeasonStart(),
       ]);
-      // referrals:[] closes the "coins de referidos nunca se resetean" gap —
-      // without it this array survives every reset forever.
+      const seasonId=(typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():null;
+      if(!seasonId)throw new Error("Este navegador no puede generar el id de la temporada");
+      const archive=buildSeasonArchive({users:allUsers,wm,ra,ts,ar,bn,reds,seasonStart:ss,seasonId,coinSettings});
+      for(let i=0;i<archive.length;i+=50){
+        await sbFetch("season_archive",{method:"POST",prefer:"return=minimal",body:JSON.stringify(archive.slice(i,i+50))});
+      }
+      // El historial ya está a salvo: ahora sí se borran las fuentes de coins
+      const del=(t)=>sbFetch(`${t}?game_id=not.is.null`,{method:"DELETE",prefer:"return=minimal"});
+      // Los registros PENDIENTES de actividades se conservan (son personas que ya se anotaron y aún no se revisan);
+      // se borran solo los aprobados/rechazados, que son los que daban coins del trimestre anterior.
+      await Promise.all([del("weekly_metrics"),del("agent_riddle_answers"),del("agent_task_submissions"),sbFetch("activity_registrations?game_id=not.is.null&status=neq.pending",{method:"DELETE",prefer:"return=minimal"}),del("coin_bonuses")]);
+      // referrals:[] closes the "coins de referidos nunca se resetean" gap
       await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({kudos:0,gold_kudos:0,coins:0,referrals:[]}),prefer:"return=minimal"});
-      await sbFetch("reward_redemptions?user_id=not.is.null",{method:"DELETE",prefer:"return=minimal"}).catch(()=>null);
-      await reloadUsers();toast("✓ Puntos reiniciados para todos los agentes");
-    }catch(e){toast("Error al reiniciar puntos");}
-  };
-
-  const resetAllLevels=async()=>{
-    if(!window.confirm("¿Reiniciar NIVELES de TODOS los agentes a Nivel 1?\n\nEsto también reinicia la racha y el historial de niveles."))return;
-    try{
-      await sbFetch("profiles?is_active=eq.true",{method:"PATCH",body:JSON.stringify({level:1,monthly_level:1,consecutive_weeks_on_target:0,weeks_at_elite:0,level_history:[]}),prefer:"return=minimal"});
-      await reloadUsers();toast("✓ Niveles y rachas reiniciados a Nivel 1");
-    }catch(e){toast("Error al reiniciar niveles");}
+      // Marca el inicio de la nueva temporada: los canjes anteriores se conservan pero ya no restan
+      await sbFetch("season_log",{method:"POST",prefer:"return=minimal",body:JSON.stringify({id:seasonId,started_by:cu.game_id||cu.username||cu.name||"admin",note:"Inicio de trimestre"})});
+      await reloadUsers();toast(`✓ Nuevo trimestre iniciado. Historial guardado de ${archive.length} agentes`);
+    }catch(e){toast("No se reinició nada o quedó incompleto: "+(e?.message||"revisa que el SQL de temporadas esté corrido"));console.error(e);}
   };
 
   const filtered=allUsers.filter(u=>filter==="active"?u.active:!u.active);
-  const tabs=[{id:"bulletin",label:"📋 Boletín"},{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"kudosHistory",label:"👏 Historial Kudos"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"},{id:"grupos",label:"👥 Grupos"},{id:"utilization",label:"📊 Utilización"},{id:"niveles",label:"🏆 Niveles"}];
+  const tabs=[{id:"bulletin",label:"📋 Boletín"},{id:"users",label:"Usuarios"},{id:"kudos",label:"Dar Kudo"},{id:"kudosHistory",label:"👏 Historial Kudos"},{id:"notifSend",label:"Enviar Aviso"},{id:"prizes",label:"Premios"},{id:"coins",label:"🪙 Coins"},{id:"canjes",label:"📦 Canjes"},{id:"referrals",label:"🤝 Referidos"},{id:"grupos",label:"👥 Grupos"},{id:"utilization",label:"📊 Utilización"},{id:"unlocks",label:"🔓 Canjes extra"},{id:"accesos",label:"👣 Accesos"}];
 
   return(
     <div style={{paddingBottom:100}}>
@@ -1854,18 +1900,10 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
           ))}
         </div>
         {filtered.map(u=>{
-          const lvl=u.level||1;
-          const lm=LEVEL_META[lvl]||LEVEL_META[1];
-          const streak=u.consecutive_weeks_on_target||0;
-          const eliteWks=u.weeks_at_elite||0;
-          const hist=(u.level_history||[]).slice(-9);
-          const streakTarget=lvl===1?3:lvl===2?9:4;
-          const streakCur=lvl===3?eliteWks:streak;
-          const streakPct=Math.min((streakCur/streakTarget)*100,100);
           const kudosCoins=(u.kudos||0)+(u.gold_kudos||0)*5;
           const refCoins=((u.referrals||[]).reduce((s,r)=>s+(r.approved?5:1),0));
           return(
-          <Card key={u.id} data-user-row={`${u.name} ${u.game_id||""} ${u.project||""}`} style={{marginBottom:10,opacity:u.active?1:0.7,border:`1.5px solid ${u.active?lm.color+"44":C.red+"55"}`}}>
+          <Card key={u.id} data-user-row={`${u.name} ${u.game_id||""} ${u.project||""}`} style={{marginBottom:10,opacity:u.active?1:0.7,border:`1.5px solid ${u.active?C.blue+"33":C.red+"55"}`}}>
             {/* Header row */}
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
               <Av av={u.avatar} sz={42} shop={DEFAULT_SHOP}/>
@@ -1878,7 +1916,6 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                 <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:3}}>
                   <Tag color={u.role==="superadmin"?C.red:u.role==="admin"?C.blue:C.muted}>{(u.role||"user").toUpperCase()}</Tag>
                   <Tag color={u.active?C.green:C.red}>{u.active?"ACTIVO":"INACTIVO"}</Tag>
-                  <Bdg l={lvl}/>
                 </div>
               </div>
               {isSA&&u.id!==cu.id&&(
@@ -1927,24 +1964,6 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
               ))}
             </div>
 
-            {/* Streak progress */}
-            <div style={{background:`${lm.color}08`,border:`1px solid ${lm.color}20`,borderRadius:8,padding:"8px 10px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-                <span style={{color:lm.color,fontSize:10,fontWeight:700,letterSpacing:1}}>
-                  {lvl<3?`RACHA: ${streakCur}/${streakTarget} semanas${lvl===1?" → RISING":" → ELITE"}`:`ELITE: ${eliteWks}/4 semanas`}
-                </span>
-                <span style={{color:C.muted,fontSize:9}}>{Math.round(streakPct)}%</span>
-              </div>
-              <div style={{display:"flex",gap:3,alignItems:"center",flexWrap:"wrap"}}>
-                {Array.from({length:streakTarget}).map((_,i)=>(
-                  <div key={i} style={{width:i<streakCur?12:9,height:i<streakCur?12:9,borderRadius:"50%",background:i<streakCur?lm.color:`${lm.color}28`,transition:"all 0.2s"}}/>
-                ))}
-                {hist.length>0&&<>
-                  <div style={{width:1,height:12,background:C.border,margin:"0 4px"}}/>
-                  {hist.map((h,i)=><div key={i} title={h.week||""} style={{width:8,height:8,borderRadius:"50%",background:h.on_target?"#22c55e":"#ef4444",opacity:0.5+i*0.06}}/>)}
-                </>}
-              </div>
-            </div>
             {isSA&&campaignEditId===u.id&&(
               <div style={{marginTop:12,padding:"12px 14px",background:`${C.blue}08`,borderRadius:10,border:`1.5px solid ${C.blue}30`,display:"flex",gap:8,alignItems:"flex-end"}}>
                 <div style={{flex:1}}>
@@ -1989,55 +2008,7 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
 
       {tab==="prizes"&&(<PrizesTab prizes={prizes} setPrizes={setPrizes} pf={pf} setPf={setPf} addPrize={addPrize} updPz={updPz} toast={toast} inp={inp}/>)}
 
-      {tab==="coins"&&(<CoinsTab allUsers={allUsers} coinSettings={coinSettings} onSaveCoinSettings={onSaveCoinSettings} resetAllPoints={resetAllPoints} resetAllLevels={resetAllLevels} reloadUsers={reloadUsers} toast={toast} inp={inp}/>)}
-
-      {tab==="niveles"&&(<div>
-        <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
-          <div style={{color:C.blue,fontWeight:800,fontSize:15,marginBottom:4}}>🏆 Estado de Niveles — Sistema KPI-Streak</div>
-          <div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>
-            ROOKIE → RISING: 3 semanas perfectas (QA+AHT+Asistencia al 100%) · RISING → ELITE: 9 semanas · ELITE: máx 4 semanas · Off-target = regresa a ROOKIE
-          </div>
-        </Card>
-        {allUsers.filter(u=>u.active).sort((a,b)=>(b.level||1)-(a.level||1)||(b.consecutive_weeks_on_target||0)-(a.consecutive_weeks_on_target||0)).map(u=>{
-          const lvl=u.level||1;
-          const lm=LEVEL_META[lvl]||LEVEL_META[1];
-          const streak=u.consecutive_weeks_on_target||0;
-          const elite=u.weeks_at_elite||0;
-          const hist=(u.level_history||[]).slice(-9);
-          const target=lvl===1?3:lvl===2?9:4;
-          const current=lvl===3?elite:streak;
-          const pct=Math.min((current/target)*100,100);
-          return(
-            <Card key={u.id} style={{marginBottom:8,borderLeft:`4px solid ${lm.color}`}}>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <Av av={u.avatar} sz={38} shop={DEFAULT_SHOP}/>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{color:C.text,fontWeight:700,fontSize:13}}>{u.name}</div>
-                  <div style={{display:"flex",gap:5,alignItems:"center",marginTop:3,flexWrap:"wrap"}}>
-                    <span style={{background:lm.bg,color:lm.color,fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:12,border:`1px solid ${lm.color}40`,letterSpacing:1}}>LVL{lvl} {lm.name}</span>
-                    <span style={{color:C.muted,fontSize:11}}>{lvl<3?`${current}/${target} racha`:`${elite}/4 semanas elite`}</span>
-                  </div>
-                  <div style={{marginTop:6,display:"flex",gap:3,alignItems:"center"}}>
-                    {Array.from({length:target}).map((_,i)=>(
-                      <div key={i} style={{width:i<current?12:9,height:i<current?12:9,borderRadius:"50%",background:i<current?lm.color:`${lm.color}30`,transition:"all 0.2s"}}/>
-                    ))}
-                    {hist.length>0&&<>
-                      <span style={{color:C.muted,fontSize:9,marginLeft:6}}>|</span>
-                      {hist.map((h,i)=><div key={i} title={h.week||""} style={{width:8,height:8,borderRadius:"50%",background:h.on_target?"#22c55e":"#ef4444",opacity:0.5+i*0.06,marginLeft:2}}/>)}
-                    </>}
-                  </div>
-                </div>
-                <div style={{textAlign:"right",flexShrink:0}}>
-                  <div style={{background:"#e8eaf6",borderRadius:5,overflow:"hidden",height:5,width:60,marginBottom:4}}>
-                    <div style={{width:`${pct}%`,height:"100%",background:lm.color,borderRadius:5}}/>
-                  </div>
-                  <div style={{color:C.muted,fontSize:10}}>{Math.round(pct)}%</div>
-                </div>
-              </div>
-            </Card>
-          );
-        })}
-      </div>)}
+      {tab==="coins"&&(<CoinsTab allUsers={allUsers} coinSettings={coinSettings} onSaveCoinSettings={onSaveCoinSettings} resetAllPoints={resetAllPoints} reloadUsers={reloadUsers} toast={toast} inp={inp}/>)}
 
       {tab==="kudosHistory"&&(
         <div>
@@ -2079,12 +2050,16 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
                 <div style={{color:C.blue,fontWeight:800,fontSize:14,marginBottom:4}}>📦 Historial de Canjes</div>
                 <div style={{color:C.muted,fontSize:12}}>Todos los canjes · Cancelar devuelve coins y repone stock</div>
               </div>
-              <Btn onClick={reloadCanjes} color={C.blue} sm>🔄 Actualizar</Btn>
+              <div style={{display:"flex",gap:6}}>
+                <Btn onClick={exportCanjes} color={C.green} sm>⬇️ CSV</Btn>
+                <Btn onClick={reloadCanjes} color={C.blue} sm>🔄 Actualizar</Btn>
+              </div>
             </div>
+            <input value={canjeSearch} onChange={e=>setCanjeSearch(e.target.value)} placeholder="🔍 Buscar por agente, game id, premio o estado..." style={{...inp,marginTop:10}}/>
           </Card>
           {/* Agentes */}
-          <div style={{color:C.text,fontWeight:700,fontSize:13,marginBottom:8}}>🏆 Agentes ({allRedemptions.length})</div>
-          {allRedemptions.length===0?<Card style={{marginBottom:14,textAlign:"center",color:C.muted,padding:20}}>Sin canjes de agentes aún.</Card>:allRedemptions.map((r,i)=>{
+          <div style={{color:C.text,fontWeight:700,fontSize:13,marginBottom:8}}>🏆 Agentes ({canjesFiltered.length}{canjeSearch.trim()?` de ${allRedemptions.length}`:""})</div>
+          {canjesFiltered.length===0?<Card style={{marginBottom:14,textAlign:"center",color:C.muted,padding:20}}>Sin canjes de agentes aún.</Card>:canjesFiltered.map((r,i)=>{
             const u=allUsers.find(x=>x.id===r.user_id);
             const prize=prizes.find(p=>p.id===r.reward_id);
             const prizeName=prize?.name||r.reward_name||"Premio eliminado";
@@ -2156,12 +2131,13 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
               <Card key={r.id||i} style={{marginBottom:8,borderLeft:borderColor[r.status]}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{color:C.text,fontWeight:700,fontSize:13}}>{u?.name||r.user_id}</div>
+                    <div style={{color:C.text,fontWeight:700,fontSize:13}}>{u?.name||r.user_id}{(u?.game_id||r.game_id)&&<span style={{color:C.muted,fontWeight:600,fontSize:11}}> · {u?.game_id||r.game_id}</span>}</div>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginTop:3}}>
                       <span style={{fontSize:16}}>{prizeEmoji}</span>
                       <span style={{color:C.text,fontSize:13,fontWeight:600}}>{prizeName}</span>
+                      <Tag color={C.purple}>Cat. {Math.min(3,r.category||prize?.min_level||1)}</Tag>
                     </div>
-                    {r.redeemed_at&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>📅 Solicitado: {new Date(r.redeemed_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}</div>}
+                    {r.redeemed_at&&<div style={{color:C.muted,fontSize:11,marginTop:2}}>📅 Solicitado: {new Date(r.redeemed_at).toLocaleString("es-MX",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div>}
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:6,justifyContent:"flex-end"}}>
@@ -2254,6 +2230,8 @@ function AdminPanel({cu,allUsers,setAllUsers,prizes,setPrizes,shop,notifs,setNot
       )}
       {tab==="referrals"&&<ReferralsPanel isAdmin={true} currentUser={{game_id:cu.game_id||cu.username||"",username:cu.username||cu.name||""}}/>}
       {tab==="utilization"&&<UtilizationTab allUsers={allUsers} allRedemptions={allRedemptions}/>}
+      {tab==="unlocks"&&<UnlocksTab allUsers={allUsers} cu={cu} toast={toast}/>}
+      {tab==="accesos"&&<AccessTab allUsers={allUsers}/>}
       {tab==="grupos"&&(
         <div>
           <Card style={{marginBottom:14,background:`${C.blue}08`,border:`1.5px solid ${C.blue}20`}}>
@@ -2698,18 +2676,166 @@ function StaffAdminPanel({cu,allStaff,toast,reloadStaff}){
 }
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
-function HeaderScorePills({weeklyMetrics,riddleAnswers,taskSubmissions,riddleCount,taskCount,user,coinSettings={},level=1,activityRegistrations=[]}){
-  if(!user||!weeklyMetrics||weeklyMetrics.length===0)return null;
-  const sc=calcScoreCoins(weeklyMetrics,riddleAnswers,taskSubmissions,user.kudos,user.gold_kudos,user.referrals,coinSettings,activityRegistrations);
+// ─── STAFF: "MY AGENTS" VIEWS ─────────────────────────────────────────────────
+// The only things staff sees for now (plus Kudos): a ranking of the agents
+// assigned to them and what those agents joined. Assignment comes from the
+// weekly Excel (weekly_metrics.coach / qa_coach / manager_game_id) using each
+// agent's most recent row. Training roles and superadmin have no column of
+// their own, so they see every agent.
+const MY_AGENT_FIELD={team_coach:"coach",quality_coach:"qa_coach",manager:"manager_game_id"};
+function useMyAgents(user,allUsers,allStaff){
+  const [st,setSt]=useState({loading:true,rows:[],all:!MY_AGENT_FIELD[user?.role]});
+  useEffect(()=>{let live=true;(async()=>{
+    try{
+      const wm=await sbAll("weekly_metrics?select=game_id,week,qa_pts,aht_pts,attendance_pts,coach,qa_coach,manager_game_id&order=week.desc,id.asc").catch(()=>[]);
+      const field=MY_AGENT_FIELD[user?.role];
+      const me=String(user?.gameId||user?.game_id||user?.username||"").toUpperCase();
+      const byAgent={};
+      (wm||[]).forEach(r=>{
+        const k=String(r.game_id||"").toUpperCase();if(!k)return;
+        const a=byAgent[k]||(byAgent[k]={gameId:r.game_id,pts:0,latest:r});
+        a.pts+=(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0);
+      });
+      const profByGid={};(allUsers||[]).forEach(u=>{if(u.game_id)profByGid[String(u.game_id).toUpperCase()]=u;});
+      // Sin semanas cargadas (p.ej. justo después de iniciar un trimestre) la asignación sale del perfil:
+      // coach_id y qa_coach; el manager se deduce del manager del coach del agente.
+      const staffByGid={};(allStaff||[]).forEach(t=>{if(t.gameId)staffByGid[String(t.gameId).toUpperCase()]=t;});
+      Object.entries(profByGid).forEach(([k,u])=>{
+        if(byAgent[k]||!u.active||u.role!=="user")return;
+        const coachStaff=staffByGid[String(u.coach_id||"").toUpperCase()];
+        const mgr=coachStaff?.managerId&&(allStaff||[]).find(t=>t.id===coachStaff.managerId);
+        byAgent[k]={gameId:u.game_id,pts:0,latest:{coach:u.coach_id||"",qa_coach:u.qa_coach||"",manager_game_id:mgr?.gameId||""}};
+      });
+      let rows=Object.entries(byAgent).map(([k,a])=>({gameId:a.gameId,key:k,pts:a.pts,latest:a.latest,prof:profByGid[k]}));
+      rows=rows.filter(r=>!r.prof||r.prof.active!==false);
+      if(field)rows=rows.filter(r=>String(r.latest[field]||"").toUpperCase()===me);
+      rows=rows.map(r=>({gameId:r.gameId,key:r.key,pts:r.pts,name:r.prof?.name||r.gameId,}));
+      rows.sort((a,b)=>b.pts-a.pts);
+      if(live)setSt({loading:false,rows,all:!field});
+    }catch(e){if(live)setSt({loading:false,rows:[],all:!MY_AGENT_FIELD[user?.role]});}
+  })();return()=>{live=false;};},[user?.role,user?.gameId,user?.game_id,user?.username,allUsers]);
+  return st;
+}
+
+function StaffMyAgents({user,allUsers,allStaff}){
+  const {loading,rows,all}=useMyAgents(user,allUsers,allStaff);
   return(
-    <div style={{display:"flex",gap:6,alignItems:"center"}}>
-      <div style={{background:`${lc(level)}15`,border:`1px solid ${lc(level)}40`,borderRadius:8,padding:"3px 8px",textAlign:"center"}}>
-        <div style={{color:lc(level),fontWeight:900,fontSize:12}}>L{level}</div>
-      </div>
-      <div style={{background:`${C.gold}15`,border:`1px solid ${C.gold}40`,borderRadius:8,padding:"3px 8px",display:"flex",alignItems:"center",gap:3}}>
-        <span style={{fontSize:11}}>🪙</span>
-        <span style={{color:C.gold,fontWeight:900,fontSize:12}}>{sc.coins}</span>
-      </div>
+    <div style={{paddingBottom:100}}>
+      <SCard style={{marginBottom:14}}>
+        <div style={{color:S.text,fontWeight:800,fontSize:18}}>🏆 My agents</div>
+        <div style={{color:S.muted,fontSize:12,marginTop:2}}>{all?"All agents":"Agents assigned to you"} · performance points ({rows.length})</div>
+      </SCard>
+      {loading&&<div style={{textAlign:"center",padding:40,color:S.muted}}>Loading...</div>}
+      {!loading&&rows.length===0&&<SCard><div style={{textAlign:"center",color:S.muted,padding:20,fontSize:13}}>No agents assigned to you yet. They show up after the next weekly upload.</div></SCard>}
+      {rows.map((r,i)=>(
+        <SCard key={r.key} style={{marginBottom:8,padding:"11px 14px",display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:28,textAlign:"center",fontWeight:900,fontSize:i<3?20:13,color:i<3?S.yellow:S.muted}}>{i<3?["🥇","🥈","🥉"][i]:i+1}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{color:S.text,fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</div>
+            <div style={{color:S.muted,fontSize:11}}>{r.gameId}</div>
+          </div>
+          <div style={{color:S.accent,fontWeight:900,fontSize:18}}>{r.pts}</div>
+        </SCard>
+      ))}
+    </div>
+  );
+}
+
+function StaffMyActivities({user,allUsers,allStaff}){
+  const {loading:agLoading,rows:agents,all}=useMyAgents(user,allUsers,allStaff);
+  const [acts,setActs]=useState([]);const [regs,setRegs]=useState([]);const [loading,setLoading]=useState(true);
+  useEffect(()=>{(async()=>{
+    try{
+      const [a,r]=await Promise.all([
+        sbFetch("activities?active=eq.true&select=id,title,coins&order=created_at.desc").catch(()=>[]),
+        sbAll("activity_registrations?select=activity_id,game_id,status&order=id.asc").catch(()=>[]),
+      ]);
+      setActs(a||[]);setRegs(r||[]);
+    }catch(e){}
+    setLoading(false);
+  })();},[]);
+  const mine=new Set(agents.map(a=>a.key));
+  const myRegs=regs.filter(r=>mine.has(String(r.game_id||"").toUpperCase())&&r.status!=="rejected");
+  const joinedBy=id=>new Set(myRegs.filter(r=>r.activity_id===id).map(r=>String(r.game_id).toUpperCase())).size;
+  const perAgent=agents.map(a=>({...a,joined:new Set(myRegs.filter(r=>String(r.game_id).toUpperCase()===a.key).map(r=>r.activity_id)).size})).sort((x,y)=>x.joined-y.joined||x.name.localeCompare(y.name));
+  return(
+    <div style={{paddingBottom:100}}>
+      <SCard style={{marginBottom:14}}>
+        <div style={{color:S.text,fontWeight:800,fontSize:18}}>🎉 Activities</div>
+        <div style={{color:S.muted,fontSize:12,marginTop:2}}>What {all?"the agents":"your agents"} joined · {agents.length} agents</div>
+      </SCard>
+      {(loading||agLoading)&&<div style={{textAlign:"center",padding:40,color:S.muted}}>Loading...</div>}
+      {!loading&&!agLoading&&(<>
+        {acts.length===0&&<SCard><div style={{textAlign:"center",color:S.muted,padding:20,fontSize:13}}>No open activities right now.</div></SCard>}
+        {acts.map(a=>(
+          <SCard key={a.id} style={{marginBottom:8,padding:"11px 14px",display:"flex",alignItems:"center",gap:12}}>
+            <div style={{flex:1,minWidth:0,color:S.text,fontWeight:700,fontSize:14}}>{a.title}</div>
+            <div style={{color:S.muted,fontSize:12,whiteSpace:"nowrap"}}>{joinedBy(a.id)} of {agents.length}</div>
+            {a.coins>0&&<div style={{color:S.yellow,fontWeight:800,fontSize:13,whiteSpace:"nowrap"}}>+{a.coins} 🪙</div>}
+          </SCard>
+        ))}
+        {perAgent.length>0&&acts.length>0&&(
+          <SCard style={{marginTop:14}}>
+            <div style={{color:S.accent,fontSize:11,letterSpacing:2,fontWeight:700,marginBottom:10}}>PER AGENT (FEWEST FIRST)</div>
+            {perAgent.slice(0,40).map(a=>(
+              <div key={a.key} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${S.border}`,fontSize:13}}>
+                <span style={{color:S.text}}>{a.name}</span>
+                <span style={{color:a.joined===0?S.yellow:S.green,fontWeight:700}}>{a.joined} joined</span>
+              </div>
+            ))}
+            {perAgent.length>40&&<div style={{color:S.muted,fontSize:11,paddingTop:8,borderTop:`1px solid ${S.border}`}}>Showing the 40 with the fewest activities of {perAgent.length}.</div>}
+          </SCard>
+        )}
+      </>)}
+    </div>
+  );
+}
+
+// Any staff member can recognize any agent (same +1 / +5 coin kudos agents
+// already get from admins). Agents only — staff-to-staff kudos stay hidden.
+function StaffAgentKudos({cu,allUsers,toast,reloadUsers}){
+  const [who,setWho]=useState("");const [gold,setGold]=useState(false);const [reason,setReason]=useState("");const [busy,setBusy]=useState(false);
+  const agents=(allUsers||[]).filter(u=>u.active&&u.role==="user");
+  const label=u=>`${u.name} · ${u.game_id||u.username}${u.project?` · ${u.project}`:""}`;
+  const inp={width:"100%",border:`1px solid ${S.border}`,borderRadius:8,padding:"9px 11px",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",background:S.bg,color:S.text};
+  const send=async()=>{
+    const target=agents.find(u=>label(u)===who);
+    if(!target){toast("Pick an agent from the list");return;}
+    if(!reason.trim()){toast("Write the reason");return;}
+    setBusy(true);
+    try{
+      const pts=gold?5:1;
+      await db.createKudo({from_user_id:cu.id,to_user_id:target.id,reason:reason.trim(),category:"general",points_given:pts});
+      await db.updateUser(target.id,{kudos:(target.kudos||0)+(gold?0:1),gold_kudos:(target.gold_kudos||0)+(gold?1:0)});
+      await db.createNotif({recipient_id:target.id,title:gold?"Gold Kudo! 🌟":"Kudo! 👏",message:`${cu.gameId||cu.name} te reconoció: "${reason.trim()}" — +${pts} coins`,type:"kudos"});
+      await reloadUsers();
+      setWho("");setReason("");setGold(false);
+      toast("Kudo sent!");
+    }catch(e){toast("Error sending kudo");}
+    setBusy(false);
+  };
+  return(
+    <div style={{paddingBottom:100}}>
+      <SCard style={{marginBottom:14}}>
+        <div style={{color:S.text,fontWeight:800,fontSize:18}}>👏 Kudos</div>
+        <div style={{color:S.muted,fontSize:12,marginTop:2}}>Recognize any agent</div>
+      </SCard>
+      <SCard>
+        <div style={{marginBottom:10}}>
+          <div style={{color:S.muted,fontSize:11,marginBottom:4}}>AGENT</div>
+          <input list="kudo-agents" value={who} onChange={e=>setWho(e.target.value)} style={inp} placeholder="Type a name to search..."/>
+          <datalist id="kudo-agents">{agents.map(u=><option key={u.id} value={label(u)}/>)}</datalist>
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <div onClick={()=>setGold(false)} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${!gold?S.accent:S.border}`,background:!gold?`${S.accent}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>👏</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Kudo (+1)</div></div>
+          <div onClick={()=>setGold(true)} style={{flex:1,padding:10,borderRadius:9,border:`1.5px solid ${gold?S.yellow:S.border}`,background:gold?`${S.yellow}18`:S.bg,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>🌟</div><div style={{color:S.text,fontWeight:700,fontSize:12}}>Gold (+5)</div></div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{color:S.muted,fontSize:11,marginBottom:4}}>REASON</div>
+          <textarea value={reason} onChange={e=>setReason(e.target.value)} rows={3} style={{...inp,resize:"vertical"}} placeholder="Why do they deserve it?"/>
+        </div>
+        <SBtn onClick={send} disabled={busy} style={{width:"100%"}}>{busy?"Sending...":"Send kudo"}</SBtn>
+      </SCard>
     </div>
   );
 }
@@ -2779,7 +2905,7 @@ export default function App(){
   const [users,setUsers]=useState([]);const [prizes,setPrizes]=useState([]);
   const [shop]=useState(DEFAULT_SHOP);const [notifs,setNotifs]=useState([]);
   const [loggedIn,setLoggedIn]=useState(null);const [screen,setScreen]=useState("dashboard");
-  const [toastMsg,setToastMsg]=useState("");const [appLoading,setAppLoading]=useState(true);const [isWide,setIsWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
+  const [toastMsg,setToastMsg]=useState("");const [agentWallet,setAgentWallet]=useState(null);const [appLoading,setAppLoading]=useState(true);const [isWide,setIsWide]=useState(typeof window!=="undefined"&&window.innerWidth>=900);
   const [coinSettings,setCoinSettings]=useState<any>({riddle_coins:2,task_coins:2});
   const [allStaff,setAllStaff]=useState([]);const [staffMetrics,setStaffMetrics]=useState([]);
   const [staffPoints,setStaffPoints]=useState(null);const [staffBadges,setStaffBadges]=useState([]);
@@ -2849,9 +2975,18 @@ export default function App(){
     const newMonthTaskCount=(tasks||[]).filter(t=>t.created_at&&thisMonth(t.created_at)).length;
     setMonthRiddleCount(newMonthRiddleCount);
     setMonthTaskCount(newMonthTaskCount);
-    // Compute total earned coins for display (level is now DB-driven via ExcelUpload)
+    // Cartera: coins ganados (todo el trimestre), saldo (menos canjes de la temporada),
+    // canjes usados y racha hacia el siguiente bono.
     const sc=calcScoreCoins(wm||[],ra||[],ts||[],agent.kudos,agent.gold_kudos,agent.referrals,coinSettings,ar||[]);
     setAgentTotalCoins(sc.coins);
+    const [myReds,seasonStart,unlocks]=await Promise.all([
+      safeGet(()=>db.getMyRedemptions(agent.id)),
+      db.getSeasonStart(),
+      db.getMyUnlocks(agent.game_id||agent.username||""),
+    ]);
+    const seasonReds=inSeason(myReds||[],seasonStart);
+    const streak=streakProgress((wm||[]).map((r)=>({week:r.week,total:(r.qa_pts||0)+(r.aht_pts||0)+(r.attendance_pts||0),excused:r.attendance_status==="excused"||r.flag==="msl"})));
+    setAgentWallet({earned:sc.coins,spent:spentCoins(seasonReds),balance:Math.max(0,sc.coins-spentCoins(seasonReds)),used:usedRedemptions(seasonReds),limit:MAX_REDEMPTIONS+extraRedemptions(unlocks||[],seasonStart),streak});
   };
 
   const loadNotifs=async(uid)=>{try{const d=await db.getNotifs(uid);setNotifs(d||[]);}catch(e){}};
@@ -2929,13 +3064,13 @@ export default function App(){
 
   // Score props — last evaluated week for display; level is DB-driven (set by ExcelUpload)
   const agentMetricsFiltered=isSA?(selectedWeek?agentWeeklyMetrics.filter((w)=>w.week===selectedWeek):agentWeeklyMetrics):agentWeeklyMetrics.filter((w)=>w.week===lastEvaluatedWeek);
-  const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount,coinSettings,totalCoins:agentTotalCoins,level:cu?.level||1,streak:cu?.consecutive_weeks_on_target||0,weeksAtElite:cu?.weeks_at_elite||0,levelHistory:cu?.level_history||[],activityRegistrations:agentActivityRegistrations};
+  const scoreProps={weeklyMetrics:agentMetricsFiltered,riddleAnswers:agentRiddleAnswers,taskSubmissions:agentTaskSubmissions,riddleCount:monthRiddleCount,taskCount:monthTaskCount,coinSettings,wallet:agentWallet,activityRegistrations:agentActivityRegistrations};
 
   if(appLoading){return(<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:16}}><Logo sz={64}/><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:C.blue,letterSpacing:2}}>PERFORMANCE ARENA</div><div style={{color:C.muted,fontSize:14,marginTop:8}}>Loading...</div></div>);}
 
   if(!loggedIn){
     const baseStyle=<style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif}input,select,textarea{font-family:inherit}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>;
-    return<>{baseStyle}<UnifiedLogin onLoginAgent={u=>{setLoggedIn(u);setScreen("dashboard");}} onLoginStaff={u=>{setLoggedIn(u);setScreen("dashboard");}}/></>;
+    return<>{baseStyle}<UnifiedLogin onLoginAgent={u=>{setLoggedIn(u);setScreen("dashboard");}} onLoginStaff={u=>{setLoggedIn(u);setScreen(u?.gameId==="YURITO"?"dashboard":"myagents");}}/></>;
   }
 
   // ── STAFF APP ──
@@ -2943,6 +3078,12 @@ export default function App(){
     const isManager=cu?.role==="manager"||cu?.role==="training_manager"||cu?.role==="superadmin";
     const isSAorManager=cu?.role==="superadmin"||cu?.role==="manager";
     const isYurito=cu?.gameId==="YURITO";
+    // For now staff only gets "My agents" (ranking + activities of their agents)
+    // and Kudos for any agent. Everything else in the staff arena is hidden, not
+    // deleted: flip this to false to bring the old menu back.
+    const STAFF_ARENA_SIMPLE=true;
+    const simpleStaffNav=[{id:"myagents",icon:"🏆",label:"My agents"},{id:"myactivities",icon:"🎉",label:"Activities"},{id:"agentkudos",icon:"👏",label:"Kudos"},{id:"coachrank",icon:"🏅",label:"Coach ranking"},
+      ...(cu?.role==="superadmin"?[{id:"report",icon:"📊",label:"Reporte"},{id:"admin",icon:"⚙️",label:"Admin"}]:[])];
     const staffNavByRole=isYurito?[{id:"dashboard",icon:"🏠",label:"Home"},{id:"kudos",icon:"👏",label:"Kudos"}]:[
       {id:"dashboard",icon:"🏠",label:"Home"},
       {id:"leaderboard",icon:"🏆",label:"Rankings"},
@@ -2956,8 +3097,8 @@ export default function App(){
       ...(cu?.role==="superadmin"?[{id:"report",icon:"📊",label:"Reporte"},{id:"admin",icon:"⚙️",label:"Admin"}]:[])];
     // Per-person permissions can only NARROW what the role already sees — never
     // grant more — and "report"/"admin" (superadmin-only) are never filterable.
-    const staffNav=(!cu?.navPermissions||isYurito)?staffNavByRole:staffNavByRole.filter(item=>item.id==="report"||item.id==="admin"||cu.navPermissions.includes(item.id));
-    const staffTitles={dashboard:"Dashboard",leaderboard:"Leaderboard",kudos:"Kudos",innovation:"Innovation & AI",sessions:"Coaching Sessions",activities:"Actividades & Puntos",store:"Staff Store",report:"Reporte de Puntos",profile:"Profile",admin:"Admin Panel"};
+    const staffNav=(STAFF_ARENA_SIMPLE&&!isYurito)?simpleStaffNav:(!cu?.navPermissions||isYurito)?staffNavByRole:staffNavByRole.filter(item=>item.id==="report"||item.id==="admin"||cu.navPermissions.includes(item.id));
+    const staffTitles={coachrank:"Coach ranking",myagents:"My agents",myactivities:"Activities",agentkudos:"Kudos",dashboard:"Dashboard",leaderboard:"Leaderboard",kudos:"Kudos",innovation:"Innovation & AI",sessions:"Coaching Sessions",activities:"Actividades & Puntos",store:"Staff Store",report:"Reporte de Puntos",profile:"Profile",admin:"Admin Panel"};
     return<>
       <style>{`*{box-sizing:border-box;margin:0;padding:0}body{font-family:"Segoe UI",system-ui,sans-serif;background:${S.bg}}input,select,textarea{font-family:inherit}@keyframes slideDown{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
       {cu?.needsPwChange&&<TempPwModal user={cu} dark={true} onSave={async pw=>{await staffDb.update(cu.id,{password_hash:pw,needs_pw_change:false,temp_pw:null});setLoggedIn({...cu,needsPwChange:false,tempPw:null});toast("Password updated!");}}/>}
@@ -2970,6 +3111,10 @@ export default function App(){
         </div>
       </div>
       <div style={{marginLeft:isWide?188:0,padding:isWide?"20px 28px 40px":"14px 14px 0"}}>
+        {screen==="myagents"&&<StaffMyAgents user={cu} allUsers={users} allStaff={allStaff}/>}
+        {screen==="myactivities"&&<StaffMyActivities user={cu} allUsers={users} allStaff={allStaff}/>}
+        {screen==="coachrank"&&<CoachUsageBoard allUsers={users} myCoachId={cu?.role==="team_coach"?(cu.gameId||cu.game_id||cu.username):null} dark/>}
+        {screen==="agentkudos"&&<StaffAgentKudos cu={cu} allUsers={users} toast={toast} reloadUsers={reloadUsers}/>}
         {screen==="dashboard"&&((isYurito||isSAorManager)?<OperationsDashboard user={loggedIn}/>:<StaffDashboard user={cu} allStaff={allStaff} metrics={staffMetrics} points={staffPoints} badges={staffBadges} kudos={staffKudos} bulletin={bulletin}/>)}
         {screen==="leaderboard"&&<StaffLeaderboard user={cu} allStaff={allStaff}/>}
         {screen==="kudos"&&(isYurito?<YuritoKudos cu={cu} allUsers={users} allStaff={allStaff} toast={toast} reloadUsers={reloadUsers}/>:<StaffKudos user={cu} allStaff={allStaff} kudos={[...staffKudos,...pendingKudos.filter(pk=>!staffKudos.find(sk=>sk.id===pk.id))]} isManager={isManager} allAgents={users}
@@ -3031,26 +3176,36 @@ export default function App(){
       {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop} coinSettings={coinSettings} lastEvaluatedWeek={lastEvaluatedWeek}/>}
       {screen==="rewards"&&<Rewards user={cu} prizes={prizes} {...scoreProps} weeklyMetrics={agentWeeklyMetrics} onRedeem={async p=>{
         const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals,coinSettings,agentActivityRegistrations);
+        const earned=sc.coins;
         const cost=p.points_cost||p.pts||0;
-        const stock=p.stock!==undefined?p.stock:(p.stock_remaining??0);
-        if(stock!==-1&&stock<=0){toast("Sin stock");return;}
-        // Level gate
-        const minLv=p.min_level||p.minLevel||1;
-        if(minLv>1){
-          const playerLv=cu?.level||1;
-          if(playerLv<minLv){toast(`Este premio requiere Nivel ${minLv}. Tu nivel actual es ${playerLv}.`);return;}
-        }
-        // Compute spendable = total earned - total spent (same formula used in display)
-        const myReds=await db.getMyRedemptions(cu.id).catch(()=>[]);
-        const totalSpent=(myReds||[]).filter(r=>['pending','approved','delivered'].includes(r.status)).reduce((s,r)=>s+(r.points_spent||r.coins_spent||0),0);
-        const currentCoins=Math.max(0,sc.coins-totalSpent);
+        // Categoría: se abre con coins GANADOS en el trimestre (no con el saldo)
+        const cat=Math.min(3,Math.max(1,p.min_level||p.minLevel||1));
+        if(unlockedCategory(earned)<cat){toast(`La Categoría ${cat} se abre con ${CATEGORY_GATES[cat]} coins ganados. Llevas ${earned}.`);return;}
+        // Datos frescos de la base: canjes de la temporada, canjes extra y saldo
+        const [myReds,seasonStart,unlocks]=await Promise.all([db.getMyRedemptions(cu.id).catch(()=>[]),db.getSeasonStart(),db.getMyUnlocks(cu.game_id||cu.username||"")]);
+        const seasonReds=inSeason(myReds||[],seasonStart);
+        const limit=MAX_REDEMPTIONS+extraRedemptions(unlocks||[],seasonStart);
+        if(usedRedemptions(seasonReds)>=limit){toast(`Ya usaste tus ${limit} canjes del trimestre. Pide a un admin que te desbloquee más.`);return;}
+        const currentCoins=Math.max(0,earned-spentCoins(seasonReds));
         if(currentCoins<cost){toast(`Necesitas ${cost} 🪙, tienes ${currentCoins}`);return;}
+        // Reclamar la pieza ANTES de crear el canje: si alguien se la llevó primero, no se cobra nada
+        const claim=await claimStock(p.id).catch(()=>({ok:false,error:true}));
+        if(!claim.ok){
+          toast(claim.soldOut?"¡Se agotó! Alguien lo canjeó antes que tú.":"No se pudo canjear, intenta de nuevo.");
+          db.getPrizes().then(u=>setPrizes(u||[])).catch(()=>{});
+          return;
+        }
         try{
-          await db.createRedemption({user_id:cu.id,reward_id:p.id,points_spent:cost,reward_name:p.name||"Premio",status:"pending",redeemed_at:new Date().toISOString()});
-          if(stock!==-1)await db.updatePrize(p.id,{stock:stock-1});
+          const base={user_id:cu.id,reward_id:p.id,points_spent:cost,reward_name:p.name||"Premio",status:"pending",redeemed_at:new Date().toISOString()};
+          // game_id y categoría quedan en el canje para el historial (si el SQL aún no corrió, se guarda sin ellos)
+          try{await db.createRedemption({...base,game_id:cu.game_id||cu.username||null,category:cat});}
+          catch(e1){await db.createRedemption(base);}
           const updated=await db.getPrizes();setPrizes(updated||[]);
           toast(`${p.name} canjeado! -${cost} 🪙`);
-        }catch(e){toast("Error al canjear: "+(e?.message||"ver consola"));}
+        }catch(e){
+          await releaseStock(p.id);
+          toast("Error al canjear: "+(e?.message||"ver consola"));
+        }
       }}/>}
       {screen==="referrals"&&<ReferralsPanel isAdmin={false} currentUser={{game_id:cu.game_id||cu.username||"",username:cu.username||cu.name||""}}/>}
       {screen==="report"&&isSA&&<GeneralReport/>}

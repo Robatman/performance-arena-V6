@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useState, useEffect } from "react";
+import { pageAll } from "../pageAll";
 
 const SUPABASE_URL = "https://dxwjjptjyhiitejupvaq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4d2pqcHRqeWhpaXRlanVwdmFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODgwMjEsImV4cCI6MjA5MjU2NDAyMX0.UgQDse6To0oe49llGDC7e9jYO1_bR6gxk-YcE6h7Bn8";
@@ -52,22 +53,55 @@ export default function Activities({ gameId, isAdmin }: Props) {
   const [myRegs, setMyRegs] = useState<any[]>([]);
   const [pending, setPending] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [adminTab, setAdminTab] = useState<'pending'|'manage'|'create'|'bonus'>('pending');
+  const [adminTab, setAdminTab] = useState<'pending'|'manage'|'create'|'bonus'|'participation'>('pending');
   const [form, setForm] = useState({ title:'', description:'', coins:'', event_date:'' });
   const [people, setPeople] = useState<any[]>([]);
   const [bonusForm, setBonusForm] = useState({ who:'', coins:'', reason:'' });
   const [recentBonuses, setRecentBonuses] = useState<any[]>([]);
   const [awardInput, setAwardInput] = useState<Record<string,string>>({});
+  const [pendingActFilter, setPendingActFilter] = useState('all');
+  const [pendingQuery, setPendingQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
   const [regFormId, setRegFormId] = useState<string|null>(null);
   const [regForm, setRegForm] = useState({ fullName:'', coachName:'', campaignName:'' });
   const [editId, setEditId] = useState<string|null>(null);
   const [editForm, setEditForm] = useState({ title:'', description:'', event_date:'' });
+  // Datos del propio agente (coach y campaña salen de su perfil, que el Excel semanal mantiene al día)
+  const [me, setMe] = useState<any>({});
+  const [lastFullName, setLastFullName] = useState('');
+  const [editMeta, setEditMeta] = useState(false);
+  const [coachList, setCoachList] = useState<string[]>([]);
+  const [campaignList, setCampaignList] = useState<string[]>([]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
   useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { if (!isAdmin) loadMyMeta(); }, [gameId, isAdmin]);
+
+  // Coach y campaña NO se escriben: se toman del perfil. El nombre completo se recuerda
+  // de su último registro (no se toca profiles.full_name, que se usa como nombre en rankings).
+  async function loadMyMeta() {
+    try {
+      const [p, regs] = await Promise.all([
+        sbFetch(`profiles?game_id=eq.${encodeURIComponent(gameId)}&select=full_name,team,coach_id`).catch(() => []),
+        sbFetch(`activity_registrations?game_id=eq.${encodeURIComponent(gameId)}&select=full_name,registered_at&order=registered_at.desc&limit=5`).catch(() => []),
+      ]);
+      setMe(p && p[0] ? p[0] : {});
+      setLastFullName((regs || []).map((r: any) => r.full_name).find((n: any) => n && String(n).trim()) || '');
+    } catch (e) { console.error(e); }
+  }
+
+  // Listas para el desplegable de respaldo (solo se cargan si hacen falta)
+  async function loadLists() {
+    if (coachList.length || campaignList.length) return;
+    const [coaches, teams] = await Promise.all([
+      sbFetch("staff_profiles?role=eq.team_coach&is_active=eq.true&select=game_id&order=game_id.asc").catch(() => []),
+      sbFetch("profiles?is_active=eq.true&select=team&limit=1000").catch(() => []),
+    ]);
+    setCoachList((coaches || []).map((c: any) => c.game_id).filter(Boolean));
+    setCampaignList([...new Set((teams || []).map((t: any) => t.team).filter(Boolean))].sort() as string[]);
+  }
   useEffect(() => { if (isAdmin && adminTab === 'bonus') loadBonusData(); }, [adminTab]);
 
   async function loadBonusData() {
@@ -216,22 +250,26 @@ export default function Activities({ gameId, isAdmin }: Props) {
 
   function openRegForm(activityId: string) {
     setRegFormId(prev => prev === activityId ? null : activityId);
-    setRegForm({ fullName:'', coachName:'', campaignName:'' });
+    const coach = isMissingValue(me.coach_id) ? '' : String(me.coach_id).trim();
+    const camp = isMissingValue(me.team) ? '' : String(me.team).trim();
+    setRegForm({ fullName: lastFullName, coachName: coach, campaignName: camp });
+    setEditMeta(!coach || !camp);
+    if (!coach || !camp) loadLists();
   }
 
   async function submitRegistration(activity: any) {
-    if (!regForm.fullName.trim()) { showToast('Escribe tu nombre completo'); return; }
-    if (!regForm.coachName.trim()) { showToast('Escribe el nombre de tu coach'); return; }
-    if (!regForm.campaignName.trim()) { showToast('Escribe el nombre de tu campaña'); return; }
+    if (!regForm.coachName.trim()) { showToast('Elige tu coach'); return; }
+    if (!regForm.campaignName.trim()) { showToast('Elige tu campaña'); return; }
     setSaving(true);
     try {
       const existing = await sbFetch(`activity_registrations?activity_id=eq.${activity.id}&game_id=eq.${encodeURIComponent(gameId)}&select=id`);
       if (existing && existing.length > 0) { fetchAll(); showToast('Ya estás registrado en esta actividad'); setRegFormId(null); setSaving(false); return; }
       await sbFetch("activity_registrations", { method:"POST", body: JSON.stringify({
         activity_id: activity.id, game_id: gameId, status: "pending",
-        full_name: regForm.fullName.trim(), coach_name: regForm.coachName.trim(),
+        full_name: regForm.fullName.trim() || null, coach_name: regForm.coachName.trim(),
         campaign_name: regForm.campaignName.trim(), registered_at: new Date().toISOString(),
       })});
+      if (regForm.fullName.trim()) setLastFullName(regForm.fullName.trim());
       showToast('✅ Registrado — el admin confirmará tu participación');
       setRegFormId(null);
       fetchAll();
@@ -285,6 +323,18 @@ export default function Activities({ gameId, isAdmin }: Props) {
 
   if (loading) return <div style={{textAlign:"center", padding:40, color:C.muted}}>Cargando...</div>;
 
+  // Pendientes: filtro por actividad (con conteo) y búsqueda por game id, nombre, coach o campaña
+  const pendingByAct: Record<string, number> = {};
+  pending.forEach(r => { pendingByAct[r.activity_id] = (pendingByAct[r.activity_id] || 0) + 1; });
+  const pendingActOptions = Object.keys(pendingByAct)
+    .map(id => ({ id, title: activities.find(a => a.id === id)?.title || '(actividad eliminada)', n: pendingByAct[id] }))
+    .sort((a, b) => b.n - a.n);
+  const pq = pendingQuery.trim().toLowerCase();
+  const pendingShown = pending.filter(r =>
+    (pendingActFilter === 'all' || r.activity_id === pendingActFilter) &&
+    (!pq || `${r.game_id || ''} ${r.full_name || ''} ${r.coach_name || ''} ${r.campaign_name || ''}`.toLowerCase().includes(pq))
+  );
+
   const activeActivities = activities.filter(a => a.active);
   const myRegByActivity = Object.fromEntries(myRegs.map(r => [r.activity_id, r]));
   const STATUS_LABEL = { pending:"⏳ Pendiente de confirmación", approved:"✅ Aprobado", rejected:"❌ No confirmado" };
@@ -303,6 +353,7 @@ export default function Activities({ gameId, isAdmin }: Props) {
               {id:'manage', label:'📋 Gestionar'},
               {id:'create', label:'➕ Crear'},
               {id:'bonus', label:'⭐ Bonus'},
+              {id:'participation', label:'📊 Participación'},
             ].map(t => (
               <button key={t.id} onClick={() => setAdminTab(t.id as any)} style={{flex:1, padding:"8px 4px", borderRadius:9, border:`1.5px solid ${adminTab===t.id?C.purple:C.border}`, background:adminTab===t.id?`${C.purple}12`:C.card, color:adminTab===t.id?C.purple:C.muted, fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit"}}>
                 {t.label}
@@ -310,14 +361,31 @@ export default function Activities({ gameId, isAdmin }: Props) {
             ))}
           </div>
 
+          {adminTab === 'participation' && <ParticipationPanel activities={activities} />}
+
           {adminTab === 'pending' && (
             <div>
-              {pending.length === 0 ? (
-                <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:32, textAlign:"center"}}>
-                  <div style={{fontSize:40, marginBottom:8}}>✅</div>
-                  <div style={{color:C.muted}}>No hay registros pendientes</div>
+              {pending.length > 0 && (
+                <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:12, marginBottom:12}}>
+                  <select value={pendingActFilter} onChange={e => setPendingActFilter(e.target.value)} style={{...inp, marginBottom:8}}>
+                    <option value="all">Todas las actividades ({pending.length})</option>
+                    {pendingActOptions.map(o => <option key={o.id} value={o.id}>{o.title} ({o.n})</option>)}
+                  </select>
+                  <input value={pendingQuery} onChange={e => setPendingQuery(e.target.value)} placeholder="🔍 Buscar por game id, nombre, coach o campaña..." style={inp}/>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8, color:C.muted, fontSize:12}}>
+                    <span>Mostrando {pendingShown.length} de {pending.length} pendientes</span>
+                    {(pendingActFilter !== 'all' || pq) && (
+                      <button onClick={() => { setPendingActFilter('all'); setPendingQuery(''); }} style={{background:"none", border:"none", color:C.purple, fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit"}}>Limpiar filtros</button>
+                    )}
+                  </div>
                 </div>
-              ) : pending.map(reg => {
+              )}
+              {pendingShown.length === 0 ? (
+                <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:32, textAlign:"center"}}>
+                  <div style={{fontSize:40, marginBottom:8}}>{pending.length === 0 ? '✅' : '🔎'}</div>
+                  <div style={{color:C.muted}}>{pending.length === 0 ? 'No hay registros pendientes' : 'Ningún pendiente con ese filtro'}</div>
+                </div>
+              ) : pendingShown.map(reg => {
                 const activity = activities.find(a => a.id === reg.activity_id);
                 return (
                   <div key={reg.id} style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:16, marginBottom:10}}>
@@ -499,23 +567,36 @@ export default function Activities({ gameId, isAdmin }: Props) {
                   </div>
                 ) : regFormId === a.id ? (
                   <div>
-                    <div style={{display:"flex", flexDirection:"column", gap:9, marginBottom:10}}>
-                      <div>
-                        <div style={{color:C.muted, fontSize:10, marginBottom:3}}>NOMBRE COMPLETO *</div>
-                        <input value={regForm.fullName} onChange={e=>setRegForm(p=>({...p,fullName:e.target.value}))} style={inp} placeholder="Tu nombre completo"/>
+                    <div style={{background:C.bg, borderRadius:10, padding:"10px 12px", marginBottom:10}}>
+                      <div style={{color:C.muted, fontSize:10, marginBottom:4}}>TE REGISTRAS COMO</div>
+                      <div style={{color:C.text, fontWeight:800, fontSize:14}}>🎮 {gameId}</div>
+                      {!editMeta && (<>
+                        <div style={{color:C.muted, fontSize:12, marginTop:3}}>Coach: <strong style={{color:C.text}}>{regForm.coachName}</strong></div>
+                        <div style={{color:C.muted, fontSize:12, marginTop:1}}>Campaña: <strong style={{color:C.text}}>{regForm.campaignName}</strong></div>
+                        <button onClick={() => { setEditMeta(true); loadLists(); }} style={{marginTop:6, background:"none", border:"none", color:C.purple, fontSize:11, fontWeight:700, cursor:"pointer", padding:0, fontFamily:"inherit"}}>Esto no es correcto</button>
+                      </>)}
+                    </div>
+                    {editMeta && (
+                      <div style={{display:"flex", flexDirection:"column", gap:9, marginBottom:10}}>
+                        <div>
+                          <div style={{color:C.muted, fontSize:10, marginBottom:3}}>TU COACH *</div>
+                          <select value={regForm.coachName} onChange={e=>setRegForm(p=>({...p,coachName:e.target.value}))} style={inp}>
+                            <option value="">Elige tu coach...</option>
+                            {[...new Set([regForm.coachName, ...coachList].filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <div style={{color:C.muted, fontSize:10, marginBottom:3}}>TU CAMPAÑA *</div>
+                          <select value={regForm.campaignName} onChange={e=>setRegForm(p=>({...p,campaignName:e.target.value}))} style={inp}>
+                            <option value="">Elige tu campaña...</option>
+                            {[...new Set([regForm.campaignName, ...campaignList].filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
                       </div>
-                      <div>
-                        <div style={{color:C.muted, fontSize:10, marginBottom:3}}>GAME ID (auto)</div>
-                        <input value={gameId} readOnly style={{...inp, opacity:0.6, cursor:"not-allowed"}}/>
-                      </div>
-                      <div>
-                        <div style={{color:C.muted, fontSize:10, marginBottom:3}}>NOMBRE DEL COACH *</div>
-                        <input value={regForm.coachName} onChange={e=>setRegForm(p=>({...p,coachName:e.target.value}))} style={inp} placeholder="Nombre de tu coach"/>
-                      </div>
-                      <div>
-                        <div style={{color:C.muted, fontSize:10, marginBottom:3}}>CAMPAÑA *</div>
-                        <input value={regForm.campaignName} onChange={e=>setRegForm(p=>({...p,campaignName:e.target.value}))} style={inp} placeholder="Nombre de tu campaña"/>
-                      </div>
+                    )}
+                    <div style={{marginBottom:10}}>
+                      <div style={{color:C.muted, fontSize:10, marginBottom:3}}>NOMBRE COMPLETO (opcional)</div>
+                      <input value={regForm.fullName} onChange={e=>setRegForm(p=>({...p,fullName:e.target.value}))} style={inp} placeholder="Para entregar tu premio"/>
                     </div>
                     <div style={{display:"flex", gap:8}}>
                       <button onClick={() => submitRegistration(a)} disabled={saving} style={{flex:1, padding:11, borderRadius:10, border:"none", background:saving?C.muted:C.purple, color:"#fff", fontWeight:800, fontSize:13, cursor:saving?"not-allowed":"pointer", fontFamily:"inherit"}}>{saving?"Registrando...":"✅ Confirmar registro"}</button>
@@ -671,6 +752,119 @@ export function ActivityDashboardCard({ gameId, onOpen }: { gameId: string; onOp
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Un coach o campaña "vacío" o "Pending Coach" cuenta como sin asignar.
+function isMissingValue(v: any) {
+  return !v || !String(v).trim() || /pending|sin asignar/i.test(String(v));
+}
+
+// ─── ADMIN: participación por coach y por campaña ────────────────────────────
+// Cruza cada registro con el perfil del agente (coach_id / team, que el Excel semanal
+// mantiene) para contar cuántos agentes de cada coach o campaña se registraron, cuántos
+// fueron aprobados y cuántos coins se entregaron. Si el perfil no tiene el dato, usa lo
+// guardado en el registro; si tampoco, queda como SIN ASIGNAR.
+function ParticipationPanel({ activities }: { activities: any[] }) {
+  const [data, setData] = useState<any>(null);
+  const [err, setErr] = useState(false);
+  const [actId, setActId] = useState('all');
+  const [groupBy, setGroupBy] = useState<'coach'|'campaign'>('coach');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [regs, profs] = await Promise.all([
+          pageAll(sbFetch, "activity_registrations?select=*&order=id.asc"),
+          pageAll(sbFetch, "profiles?is_active=eq.true&select=game_id,team,coach_id&order=id.asc"),
+        ]);
+        setData({ regs, profs });
+      } catch (e) { setErr(true); }
+    })();
+  }, []);
+
+  if (err) return <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:24, textAlign:"center", color:C.red}}>No se pudo cargar la participación.</div>;
+  if (!data) return <div style={{textAlign:"center", padding:30, color:C.muted}}>Cargando...</div>;
+
+  const norm = (v: any) => String(v || '').trim().toUpperCase();
+  const profBy: Record<string, any> = {};
+  data.profs.forEach((p: any) => { profBy[norm(p.game_id)] = p; });
+  const field = groupBy === 'coach' ? 'coach_id' : 'team';
+  const snap = groupBy === 'coach' ? 'coach_name' : 'campaign_name';
+  const keyOf = (p: any, reg: any) => {
+    const live = p ? p[field] : null;
+    const saved = reg ? reg[snap] : null;
+    const v = !isMissingValue(live) ? live : (!isMissingValue(saved) ? saved : null);
+    return v ? norm(v) : 'SIN ASIGNAR';
+  };
+
+  const groups: Record<string, any> = {};
+  const g = (k: string) => (groups[k] = groups[k] || { key: k, assigned: 0, registered: new Set(), approved: new Set(), coins: 0, regs: 0 });
+  data.profs.forEach((p: any) => { g(keyOf(p, null)).assigned++; });
+  const regs = data.regs.filter((r: any) => r.status !== 'rejected' && (actId === 'all' || r.activity_id === actId));
+  regs.forEach((r: any) => {
+    const x = g(keyOf(profBy[norm(r.game_id)], r));
+    x.registered.add(norm(r.game_id)); x.regs++;
+    if (r.status === 'approved') { x.approved.add(norm(r.game_id)); x.coins += r.points_awarded || 0; }
+  });
+  const rows = Object.values(groups).map((x: any) => ({ ...x, nReg: x.registered.size, nApp: x.approved.size, pct: x.assigned ? Math.round((x.registered.size / x.assigned) * 100) : 0 }))
+    .sort((a: any, b: any) => b.nReg - a.nReg || b.pct - a.pct);
+  const totals = rows.reduce((t: any, x: any) => ({ assigned: t.assigned + x.assigned, nReg: t.nReg + x.nReg, nApp: t.nApp + x.nApp, coins: t.coins + x.coins, regs: t.regs + x.regs }), { assigned: 0, nReg: 0, nApp: 0, coins: 0, regs: 0 });
+  const maxReg = Math.max(1, ...rows.map((x: any) => x.nReg));
+
+  const exportCsv = () => {
+    const NL = String.fromCharCode(10);
+    const BOM = String.fromCharCode(65279);
+    const q = (v: any) => '"' + String(v ?? '').split('"').join('""') + '"';
+    const title = groupBy === 'coach' ? 'coach' : 'campana';
+    const lines = [[title, 'agentes_asignados', 'agentes_registrados', 'porcentaje', 'agentes_aprobados', 'inscripciones', 'coins_entregados'].map(q).join(',')];
+    rows.forEach((x: any) => lines.push([x.key, x.assigned, x.nReg, x.pct, x.nApp, x.regs, x.coins].map(q).join(',')));
+    const blob = new Blob([BOM + lines.join(NL)], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `participacion_${title}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const pill = (id: string, label: string) => (
+    <button key={id} onClick={() => setGroupBy(id as any)} style={{padding:"7px 14px", borderRadius:9, border:`1.5px solid ${groupBy===id?C.purple:C.border}`, background:groupBy===id?`${C.purple}12`:C.card, color:groupBy===id?C.purple:C.muted, fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit"}}>{label}</button>
+  );
+
+  return (
+    <div>
+      <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:14, marginBottom:12}}>
+        <div style={{display:"flex", gap:6, marginBottom:10, flexWrap:"wrap", alignItems:"center"}}>
+          {pill('coach', 'Por coach')}{pill('campaign', 'Por campaña')}
+          <button onClick={exportCsv} style={{marginLeft:"auto", padding:"7px 14px", borderRadius:9, border:"none", background:C.green, color:"#fff", fontWeight:800, fontSize:12, cursor:"pointer", fontFamily:"inherit"}}>⬇️ CSV</button>
+        </div>
+        <select value={actId} onChange={e => setActId(e.target.value)} style={inp}>
+          <option value="all">Todas las actividades</option>
+          {activities.map((a: any) => <option key={a.id} value={a.id}>{a.title}</option>)}
+        </select>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginTop:12}}>
+          {[{l:'Agentes registrados', v:`${totals.nReg}/${totals.assigned}`, c:C.purple}, {l:'Inscripciones', v:totals.regs, c:C.blue}, {l:'Coins entregados', v:totals.coins, c:C.gold}].map(x => (
+            <div key={x.l} style={{background:`${x.c}12`, border:`1px solid ${x.c}30`, borderRadius:10, padding:"8px 6px", textAlign:"center"}}>
+              <div style={{color:x.c, fontWeight:900, fontSize:18}}>{x.v}</div><div style={{color:C.muted, fontSize:10}}>{x.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {rows.map((x: any) => (
+        <div key={x.key} style={{background:C.card, border:`1.5px solid ${x.key==='SIN ASIGNAR'?C.yellow:C.border}`, borderRadius:12, padding:"10px 14px", marginBottom:8}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:8}}>
+            <div style={{color:C.text, fontWeight:800, fontSize:14}}>{x.key}</div>
+            <div style={{color:C.purple, fontWeight:900, fontSize:14}}>{x.nReg} <span style={{color:C.muted, fontWeight:600, fontSize:11}}>de {x.assigned} · {x.pct}%</span></div>
+          </div>
+          <div style={{background:C.border, borderRadius:4, height:7, overflow:"hidden", margin:"7px 0"}}>
+            <div style={{width:`${Math.round((x.nReg / maxReg) * 100)}%`, height:"100%", background:C.purple, borderRadius:4}}/>
+          </div>
+          <div style={{color:C.muted, fontSize:11}}>Aprobados: {x.nApp} · Inscripciones: {x.regs} · Coins entregados: {x.coins}</div>
+        </div>
+      ))}
+      {rows.length === 0 && <div style={{textAlign:"center", padding:24, color:C.muted}}>Sin registros todavía.</div>}
     </div>
   );
 }
