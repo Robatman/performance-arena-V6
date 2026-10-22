@@ -642,6 +642,179 @@ function AutoKpiPanel({ gameId }: { gameId: string }) {
   );
 }
 
+// ─── ARENA ACTIVITIES — registers into same activity_registrations table ──
+
+function StaffArenaActivities({ user }: { user: any }) {
+  const gameId = user?.gameId || user?.game_id;
+  const fullNameDefault = user?.full_name || user?.name || "";
+
+  const [acts, setActs] = useState<any[]>([]);
+  const [regs, setRegs] = useState<Record<string, any>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [form, setForm] = useState({ fullName: fullNameDefault, supervisorName: "", teamName: "" });
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3500); };
+
+  const load = async () => {
+    setLoading(true);
+    const [a, r] = await Promise.all([
+      sbFetch("activities?active=eq.true&order=created_at.desc"),
+      sbFetch(`activity_registrations?game_id=eq.${encodeURIComponent(gameId)}&select=id,activity_id,status,registered_at`),
+    ]);
+    setActs(a || []);
+    const map: Record<string, any> = {};
+    (r || []).forEach((x: any) => { map[x.activity_id] = x; });
+    setRegs(map);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [gameId]);
+
+  const openForm = (id: string) => {
+    if (openId === id) { setOpenId(null); return; }
+    setOpenId(id);
+    setForm({ fullName: fullNameDefault, supervisorName: "", teamName: "" });
+  };
+
+  const register = async (a: any) => {
+    if (!form.fullName.trim()) { showToast("Escribe tu nombre completo"); return; }
+    if (!form.supervisorName.trim()) { showToast("Escribe el nombre de tu supervisor"); return; }
+    if (!form.teamName.trim()) { showToast("Escribe el nombre de tu equipo"); return; }
+    setSaving(true);
+    try {
+      const existing = await sbFetch(`activity_registrations?activity_id=eq.${a.id}&game_id=eq.${encodeURIComponent(gameId)}&select=id`);
+      if (existing && existing.length > 0) {
+        showToast("Ya estás registrado en esta actividad");
+        setOpenId(null);
+        load();
+        setSaving(false);
+        return;
+      }
+      await sbFetch("activity_registrations", {
+        method: "POST",
+        body: JSON.stringify({
+          activity_id: a.id,
+          game_id: gameId,
+          status: "pending",
+          full_name: form.fullName.trim(),
+          coach_name: form.supervisorName.trim(),
+          campaign_name: form.teamName.trim(),
+          registered_at: new Date().toISOString(),
+        }),
+      });
+      showToast("✅ Registrado — el organizador confirmará tu participación");
+      setOpenId(null);
+      load();
+    } catch { showToast("Error al registrarte"); }
+    setSaving(false);
+  };
+
+  const STATUS_META: Record<string, { label: string; color: string }> = {
+    pending: { label: "Pendiente", color: S.yellow },
+    approved: { label: "Aprobado", color: S.green },
+    rejected: { label: "Rechazado", color: S.red },
+  };
+
+  return (
+    <div style={{ paddingBottom: 20 }}>
+      {toast && (
+        <div style={{
+          position: "fixed", top: 20, right: 20, zIndex: 9999,
+          padding: "12px 20px", borderRadius: 8, fontWeight: 700, fontSize: 13,
+          background: toast.startsWith("✅") ? "#052e16" : "#2d1515",
+          border: `1px solid ${toast.startsWith("✅") ? "#14532d" : "#7f1d1d"}`,
+          color: toast.startsWith("✅") ? S.green : S.red,
+        }}>{toast}</div>
+      )}
+
+      <SCard style={{ marginBottom: 14, background: "linear-gradient(135deg,#1e1b4b,#312e81)", border: "none" }}>
+        <div style={{ fontSize: 22, marginBottom: 4 }}>🎪</div>
+        <div style={{ color: "#e8eaf6", fontWeight: 800, fontSize: 15 }}>Actividades Arena</div>
+        <div style={{ color: "#a5b4fc", fontSize: 12, marginTop: 2 }}>
+          Regístrate en las actividades del Performance Arena. Tu participación queda en la misma lista que los agentes.
+        </div>
+      </SCard>
+
+      {loading && <div style={{ color: S.muted, textAlign: "center", padding: 40 }}>Cargando...</div>}
+      {!loading && acts.length === 0 && (
+        <SCard style={{ textAlign: "center", padding: 40 }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>🏖️</div>
+          <div style={{ color: S.muted, fontSize: 13 }}>No hay actividades activas en este momento.</div>
+        </SCard>
+      )}
+
+      {acts.map(a => {
+        const reg = regs[a.id];
+        const sm = reg ? STATUS_META[reg.status] || STATUS_META.pending : null;
+        return (
+          <SCard key={a.id} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: "#e8eaf6", fontWeight: 700, fontSize: 15 }}>{a.title}</div>
+                {a.description && <div style={{ color: S.muted, fontSize: 12, marginTop: 3 }}>{a.description}</div>}
+                <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                  {a.coins && (
+                    <span style={{ padding: "2px 8px", borderRadius: 4, background: `${S.yellow}22`, color: S.yellow, fontSize: 11, fontWeight: 700 }}>
+                      🪙 {a.coins} coins
+                    </span>
+                  )}
+                  {a.event_date && (
+                    <span style={{ padding: "2px 8px", borderRadius: 4, background: `${S.blue}22`, color: S.blue, fontSize: 11, fontWeight: 700 }}>
+                      📅 {a.event_date}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {sm && (
+                <span style={{ padding: "3px 10px", borderRadius: 5, background: `${sm.color}22`, color: sm.color, fontSize: 11, fontWeight: 700, flexShrink: 0, marginLeft: 10 }}>
+                  {sm.label}
+                </span>
+              )}
+            </div>
+
+            {reg ? (
+              <div style={{ color: S.muted, fontSize: 12, padding: "8px 10px", background: "#0a1020", borderRadius: 8 }}>
+                Registrado el {new Date(reg.registered_at).toLocaleDateString("es-MX")}
+                {reg.status === "approved" && <span style={{ color: S.green, fontWeight: 700 }}> · ¡Aprobado!</span>}
+              </div>
+            ) : openId === a.id ? (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 10 }}>
+                  <div>
+                    <div style={{ color: S.muted, fontSize: 11, marginBottom: 4 }}>NOMBRE COMPLETO</div>
+                    <input style={inp} value={form.fullName} onChange={e => setForm(p => ({ ...p, fullName: e.target.value }))} placeholder="Tu nombre completo" />
+                  </div>
+                  <div>
+                    <div style={{ color: S.muted, fontSize: 11, marginBottom: 4 }}>SUPERVISOR / MANAGER</div>
+                    <input style={inp} value={form.supervisorName} onChange={e => setForm(p => ({ ...p, supervisorName: e.target.value }))} placeholder="Nombre de tu supervisor" />
+                  </div>
+                  <div>
+                    <div style={{ color: S.muted, fontSize: 11, marginBottom: 4 }}>EQUIPO / PROYECTO</div>
+                    <input style={inp} value={form.teamName} onChange={e => setForm(p => ({ ...p, teamName: e.target.value }))} placeholder="Nombre de tu equipo o proyecto" />
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => register(a)} disabled={saving} style={{ flex: 1, padding: 11, borderRadius: 10, border: "none", background: saving ? S.muted : S.accent, color: "#fff", fontWeight: 800, fontSize: 13, cursor: saving ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                    {saving ? "Registrando..." : "✅ Confirmar registro"}
+                  </button>
+                  <button onClick={() => setOpenId(null)} style={{ padding: "11px 14px", borderRadius: 10, border: `1px solid ${S.border}`, background: S.card, color: S.muted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => openForm(a.id)} style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: S.accent, color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
+                Registrarme
+              </button>
+            )}
+          </SCard>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── MAIN EXPORT ─────────────────────────────────────────────────────────
 
 export default function StaffActivitiesPanel({ user }: { user: any }) {
@@ -652,7 +825,7 @@ export default function StaffActivitiesPanel({ user }: { user: any }) {
   const isApprover = ["manager", "training_manager", "superadmin"].includes(role);
   const isScored = ["team_coach", "quality_coach", "training_coach"].includes(role);
 
-  const [tab, setTab] = useState<"submit" | "mine" | "approve">(
+  const [tab, setTab] = useState<"submit" | "mine" | "approve" | "arena">(
     isApprover ? "approve" : "submit"
   );
 
@@ -663,6 +836,7 @@ export default function StaffActivitiesPanel({ user }: { user: any }) {
       { id: "kpi", label: "📊 Puntos automáticos" },
     ] : []),
     ...(isApprover ? [{ id: "approve", label: `⚡ Aprobaciones` }] : []),
+    { id: "arena", label: "🎪 Arena" },
   ];
 
   return (
@@ -693,8 +867,11 @@ export default function StaffActivitiesPanel({ user }: { user: any }) {
       {tab === "approve" && isApprover && (
         <ApprovalPanel approver={user} />
       )}
+      {tab === "arena" && (
+        <StaffArenaActivities user={user} />
+      )}
 
-      {!isScored && !isApprover && (
+      {!isScored && !isApprover && tab !== "arena" && (
         <SCard style={{ textAlign: "center", padding: 40 }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>🔒</div>
           <div style={{ color: S.muted }}>Tu rol no tiene actividades de scoring configuradas.</div>

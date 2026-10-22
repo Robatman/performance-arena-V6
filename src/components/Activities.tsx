@@ -53,7 +53,7 @@ export default function Activities({ gameId, isAdmin }: Props) {
   const [pending, setPending] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [adminTab, setAdminTab] = useState<'pending'|'manage'|'create'|'bonus'>('pending');
-  const [form, setForm] = useState({ title:'', description:'', coins:'' });
+  const [form, setForm] = useState({ title:'', description:'', coins:'', event_date:'' });
   const [people, setPeople] = useState<any[]>([]);
   const [bonusForm, setBonusForm] = useState({ who:'', coins:'', reason:'' });
   const [recentBonuses, setRecentBonuses] = useState<any[]>([]);
@@ -62,6 +62,8 @@ export default function Activities({ gameId, isAdmin }: Props) {
   const [toast, setToast] = useState('');
   const [regFormId, setRegFormId] = useState<string|null>(null);
   const [regForm, setRegForm] = useState({ fullName:'', coachName:'', campaignName:'' });
+  const [editId, setEditId] = useState<string|null>(null);
+  const [editForm, setEditForm] = useState({ title:'', description:'', event_date:'' });
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -155,8 +157,9 @@ export default function Activities({ gameId, isAdmin }: Props) {
       await sbFetch("activities", { method:"POST", body: JSON.stringify({
         title: form.title.trim(), description: form.description.trim() || null,
         active: true, created_by: gameId, coins,
+        event_date: form.event_date || null,
       })});
-      setForm({ title:'', description:'', coins:'' });
+      setForm({ title:'', description:'', coins:'', event_date:'' });
       showToast('✅ Actividad publicada');
       fetchAll();
     } catch(e) { showToast('Error al crear'); }
@@ -168,6 +171,47 @@ export default function Activities({ gameId, isAdmin }: Props) {
       await sbFetch(`activities?id=eq.${activity.id}`, { method:"PATCH", body: JSON.stringify({ active: !activity.active }) });
       fetchAll();
     } catch(e) { showToast('Error'); }
+  }
+
+  function openEdit(a: any) {
+    if (editId === a.id) { setEditId(null); return; }
+    setEditId(a.id);
+    setEditForm({ title: a.title || '', description: a.description || '', event_date: a.event_date || '' });
+  }
+
+  async function saveEdit(id: string) {
+    if (!editForm.title.trim()) { showToast('El título no puede estar vacío'); return; }
+    setSaving(true);
+    try {
+      await sbFetch(`activities?id=eq.${id}`, { method:"PATCH", body: JSON.stringify({
+        title: editForm.title.trim(),
+        description: editForm.description.trim() || null,
+        event_date: editForm.event_date || null,
+      })});
+      setEditId(null);
+      showToast('✅ Actividad actualizada');
+      fetchAll();
+    } catch(e) { showToast('Error al guardar'); }
+    setSaving(false);
+  }
+
+  async function deleteActivity(a: any) {
+    if (!window.confirm(`¿Eliminar la actividad "${a.title}"?\n\nSe eliminarán todos los registros de participantes. Esta acción no se puede deshacer.`)) return;
+    try {
+      await sbFetch(`activity_registrations?activity_id=eq.${a.id}`, { method:"DELETE", prefer:"return=minimal" }).catch(() => {});
+      await sbFetch(`activities?id=eq.${a.id}`, { method:"DELETE", prefer:"return=minimal" });
+      showToast('Actividad eliminada');
+      fetchAll();
+    } catch(e) { showToast('Error al eliminar'); }
+  }
+
+  async function resetParticipants(a: any) {
+    if (!window.confirm(`¿Resetear todos los participantes de "${a.title}"?\n\nSe borrarán todos los registros (pendientes, aprobados y rechazados). Esta acción no se puede deshacer.`)) return;
+    try {
+      await sbFetch(`activity_registrations?activity_id=eq.${a.id}`, { method:"DELETE", prefer:"return=minimal" });
+      showToast('Participantes reseteados');
+      fetchAll();
+    } catch(e) { showToast('Error al resetear'); }
   }
 
   function openRegForm(activityId: string) {
@@ -304,19 +348,54 @@ export default function Activities({ gameId, isAdmin }: Props) {
                 <div style={{background:C.card, border:`1.5px solid ${C.border}`, borderRadius:14, padding:32, textAlign:"center", color:C.muted}}>No hay actividades creadas aún</div>
               ) : activities.map(a => (
                 <div key={a.id} style={{background:C.card, border:`1.5px solid ${a.active?C.green:C.border}`, borderRadius:14, padding:14, marginBottom:10}}>
-                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
+                  {/* Header row */}
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10}}>
                     <div style={{flex:1}}>
-                      <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:4}}>
+                      <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:4, flexWrap:"wrap"}}>
                         <span style={{padding:"2px 8px", borderRadius:6, background:a.active?`${C.green}18`:`${C.muted}18`, color:a.active?C.green:C.muted, fontSize:11, fontWeight:700}}>{a.active?'🟢 ABIERTA':'⏸️ CERRADA'}</span>
-                        <span style={{padding:"2px 8px", borderRadius:6, background:`${C.gold}18`, color:C.gold, fontSize:11, fontWeight:800}}>{a.coins>0?`🪙 ${a.coins}`:'🪙 sin monto fijo'}</span>
+                        <span style={{padding:"2px 8px", borderRadius:6, background:`${C.gold}18`, color:C.gold, fontSize:11, fontWeight:800}}>{a.coins>0?`🪙 ${a.coins}`:'🪙 sin monto'}</span>
+                        {a.event_date && <span style={{padding:"2px 8px", borderRadius:6, background:`${C.blue}18`, color:C.blue, fontSize:11}}>📅 {a.event_date}</span>}
                       </div>
                       <div style={{color:C.text, fontWeight:700, fontSize:14}}>{a.title}</div>
-                      {a.description && <div style={{color:C.muted, fontSize:12, marginTop:4}}>{a.description}</div>}
+                      {a.description && <div style={{color:C.muted, fontSize:12, marginTop:2}}>{a.description}</div>}
                     </div>
-                    <button onClick={() => toggleActive(a)} style={{flexShrink:0, marginLeft:10, padding:"7px 14px", borderRadius:9, border:`1.5px solid ${a.active?C.yellow:C.green}`, background:a.active?C.yellowBg:C.greenBg, color:a.active?C.yellow:C.green, fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit"}}>
-                      {a.active ? '⏸️ Cerrar' : '▶️ Reabrir'}
+                  </div>
+                  {/* Action buttons */}
+                  <div style={{display:"flex", gap:6, flexWrap:"wrap"}}>
+                    <button onClick={() => toggleActive(a)} style={{padding:"6px 12px", borderRadius:8, border:`1.5px solid ${a.active?C.yellow:C.green}`, background:a.active?C.yellowBg:C.greenBg, color:a.active?C.yellow:C.green, fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit"}}>
+                      {a.active ? '⏸️ Pausar' : '▶️ Activar'}
+                    </button>
+                    <button onClick={() => openEdit(a)} style={{padding:"6px 12px", borderRadius:8, border:`1.5px solid ${C.blue}`, background:`${C.blue}12`, color:C.blue, fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit"}}>
+                      ✏️ Editar
+                    </button>
+                    <button onClick={() => resetParticipants(a)} style={{padding:"6px 12px", borderRadius:8, border:`1.5px solid ${C.muted}`, background:C.bg, color:C.muted, fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit"}}>
+                      🔄 Resetear
+                    </button>
+                    <button onClick={() => deleteActivity(a)} style={{padding:"6px 12px", borderRadius:8, border:`1.5px solid ${C.red}`, background:C.red2, color:C.red, fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit"}}>
+                      🗑️ Eliminar
                     </button>
                   </div>
+                  {/* Inline edit form */}
+                  {editId === a.id && (
+                    <div style={{marginTop:12, borderTop:`1px solid ${C.border}`, paddingTop:12, display:"flex", flexDirection:"column", gap:10}}>
+                      <div>
+                        <div style={{color:C.muted, fontSize:10, marginBottom:3}}>TÍTULO</div>
+                        <input value={editForm.title} onChange={e=>setEditForm(f=>({...f,title:e.target.value}))} style={inp} placeholder="Título de la actividad"/>
+                      </div>
+                      <div>
+                        <div style={{color:C.muted, fontSize:10, marginBottom:3}}>DESCRIPCIÓN</div>
+                        <textarea value={editForm.description} onChange={e=>setEditForm(f=>({...f,description:e.target.value}))} rows={2} style={{...inp, resize:"vertical"}} placeholder="Descripción (opcional)"/>
+                      </div>
+                      <div>
+                        <div style={{color:C.muted, fontSize:10, marginBottom:3}}>FECHA DEL EVENTO (opcional)</div>
+                        <input type="date" value={editForm.event_date} onChange={e=>setEditForm(f=>({...f,event_date:e.target.value}))} style={inp}/>
+                      </div>
+                      <div style={{display:"flex", gap:8}}>
+                        <button onClick={() => saveEdit(a.id)} disabled={saving} style={{flex:1, padding:"9px 0", borderRadius:9, border:"none", background:saving?C.muted:C.purple, color:"#fff", fontWeight:800, fontSize:13, cursor:saving?"not-allowed":"pointer", fontFamily:"inherit"}}>{saving?"Guardando...":"💾 Guardar cambios"}</button>
+                        <button onClick={() => setEditId(null)} style={{padding:"9px 14px", borderRadius:9, border:`1.5px solid ${C.border}`, background:C.bg, color:C.muted, fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit"}}>✕</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -376,6 +455,10 @@ export default function Activities({ gameId, isAdmin }: Props) {
               <div style={{marginBottom:10}}>
                 <div style={{color:C.muted, fontSize:11, marginBottom:4}}>COINS POR PARTICIPACIÓN</div>
                 <input type="number" min={1} step={1} value={form.coins} onChange={e=>setForm(p=>({...p,coins:e.target.value}))} style={inp} placeholder="ej. 25"/>
+              </div>
+              <div style={{marginBottom:14}}>
+                <div style={{color:C.muted, fontSize:11, marginBottom:4}}>FECHA DEL EVENTO (opcional)</div>
+                <input type="date" value={form.event_date} onChange={e=>setForm(p=>({...p,event_date:e.target.value}))} style={inp}/>
               </div>
               <div style={{color:C.muted, fontSize:11, marginBottom:14, background:C.bg, borderRadius:8, padding:"8px 10px"}}>
                 ⚠️ Los coins quedan fijos al publicar y <strong>no se pueden modificar después</strong>. Cada agente que cumpla recibirá exactamente esa cantidad. Si te equivocas, cierra la actividad y crea otra.
