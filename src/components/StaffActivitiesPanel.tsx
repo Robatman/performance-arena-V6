@@ -825,18 +825,17 @@ export default function StaffActivitiesPanel({ user }: { user: any }) {
   const isApprover = ["manager", "training_manager", "superadmin"].includes(role);
   const isScored = ["team_coach", "quality_coach", "training_coach"].includes(role);
 
-  const [tab, setTab] = useState<"submit" | "mine" | "approve" | "arena">(
-    isApprover ? "approve" : "submit"
-  );
+  const defaultTab = isApprover ? "approve" : isScored ? "submit" : "arena";
+  const [tab, setTab] = useState<"submit" | "mine" | "approve" | "arena">(defaultTab);
 
   const tabs = [
+    { id: "arena", label: "🎪 Arena" },
     ...(isScored ? [
       { id: "submit", label: "📤 Registrar actividad" },
       { id: "mine", label: "📋 Mis actividades" },
       { id: "kpi", label: "📊 Puntos automáticos" },
     ] : []),
     ...(isApprover ? [{ id: "approve", label: `⚡ Aprobaciones` }] : []),
-    { id: "arena", label: "🎪 Arena" },
   ];
 
   return (
