@@ -21,10 +21,10 @@ async function sbFetch(path, opts: any = {}) {
 }
 
 const db = {
-  getRewards: () => sbFetch("staff_reward_catalog?is_active=eq.true&order=coins_cost.asc"),
-  getAllRewards: () => sbFetch("staff_reward_catalog?order=coins_cost.asc"),
-  createReward: (d) => sbFetch("staff_reward_catalog", { method:"POST", body:JSON.stringify(d) }),
-  updateReward: (id, d) => sbFetch(`staff_reward_catalog?id=eq.${id}`, { method:"PATCH", body:JSON.stringify(d) }),
+  getRewards: () => sbFetch("reward_catalog?is_active=eq.true&order=points_cost.asc"),
+  getAllRewards: () => sbFetch("reward_catalog?order=points_cost.asc"),
+  createReward: (d) => sbFetch("reward_catalog", { method:"POST", body:JSON.stringify(d) }),
+  updateReward: (id, d) => sbFetch(`reward_catalog?id=eq.${id}`, { method:"PATCH", body:JSON.stringify(d) }),
   getRedemptions: () => sbFetch("staff_redemptions?order=created_at.desc&limit=200"),
   getMyRedemptions: (gameId) => sbFetch(`staff_redemptions?staff_game_id=eq.${encodeURIComponent(gameId)}&order=created_at.desc`),
   createRedemption: (d) => sbFetch("staff_redemptions", { method:"POST", body:JSON.stringify(d) }),
@@ -59,7 +59,7 @@ const STag = ({children,color=S.accent}:any) =>
 
 // ─── REWARD CARD ─────────────────────────────────────────────────────────────
 function RewardCard({ reward, coins, onRedeem }) {
-  const cost = reward.coins_cost;
+  const cost = reward.coins_cost || reward.points_cost || 0;
   const canBuy = coins >= cost;
   const noStock = (reward.stock||0) <= 0;
   const cat = CATS[reward.category] || { label:reward.category, emoji:"🎁", color:S.muted };
@@ -120,7 +120,7 @@ function StoreView({ user, staffProfile, onCoinsUpdate }) {
   };
 
   const redeem = async (reward:any) => {
-    const cost = reward.coins_cost;
+    const cost = reward.coins_cost || reward.points_cost || 0;
     try {
       // Read fresh balance to prevent stale-prop double-spend
       const gid = user?.gameId || user?.game_id || "";
@@ -159,6 +159,8 @@ function StoreView({ user, staffProfile, onCoinsUpdate }) {
   const catGroups = Object.entries(CATS).map(([key, meta]) => ({
     key, meta, items: rewards.filter(r => r.category === key),
   })).filter(g => g.items.length > 0);
+  // reward_catalog uses min_level instead of category — fall back to flat list
+  const flatRewards = catGroups.length === 0 ? rewards : [];
 
   const STATUS_COLOR = { pending:S.yellow, approved:S.accent, delivered:S.green };
   const STATUS_LABEL = { pending:"Pendiente", approved:"Aprobado", delivered:"Entregado" };
@@ -226,6 +228,7 @@ function StoreView({ user, staffProfile, onCoinsUpdate }) {
               {items.map(r=><RewardCard key={r.id} reward={r} coins={coins} onRedeem={redeem}/>)}
             </div>
           ))}
+          {flatRewards.map(r=><RewardCard key={r.id} reward={r} coins={coins} onRedeem={redeem}/>)}
         </div>
       )}
 
