@@ -3170,9 +3170,9 @@ export default function App(){
     </div>
     <div style={{marginLeft:isWide?188:0,padding:isWide?"20px 28px 40px":"14px 14px 0",animation:"fadeIn 0.25s ease"}}>
       {screen==="dashboard"&&<Dashboard user={cu} allUsers={users} notifs={notifs} {...scoreProps} isSA={isSA} availableWeeks={availableWeeks} selectedWeek={selectedWeek} lastEvaluatedWeek={lastEvaluatedWeek} onWeekChange={setSelectedWeek} bulletin={bulletin} onOpenActivities={()=>setScreen("activities")}/>}
-      {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="riddle" coinSettings={coinSettings}/>}
-      {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isSA} defaultTab="task" coinSettings={coinSettings}/>}
-      {screen==="activities"&&<Activities gameId={cu.game_id||cu.username||""} isAdmin={isSA}/>}
+      {screen==="riddle"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isAdmin} defaultTab="riddle" coinSettings={coinSettings}/>}
+      {screen==="task"&&<RiddleTask gameId={cu.game_id||cu.username||""} isAdmin={isAdmin} defaultTab="task" coinSettings={coinSettings}/>}
+      {screen==="activities"&&<Activities gameId={cu.game_id||cu.username||""} isAdmin={isAdmin}/>}
       {screen==="leaderboard"&&<Leaderboard user={cu} allUsers={users} shop={shop} coinSettings={coinSettings} lastEvaluatedWeek={lastEvaluatedWeek}/>}
       {screen==="rewards"&&<Rewards user={cu} prizes={prizes} {...scoreProps} weeklyMetrics={agentWeeklyMetrics} onRedeem={async p=>{
         const sc=calcScoreCoins(agentWeeklyMetrics,agentRiddleAnswers,agentTaskSubmissions,cu.kudos,cu.gold_kudos,cu.referrals,coinSettings,agentActivityRegistrations);
