@@ -3082,8 +3082,8 @@ export default function App(){
     // and Kudos for any agent. Everything else in the staff arena is hidden, not
     // deleted: flip this to false to bring the old menu back.
     const STAFF_ARENA_SIMPLE=true;
-    const simpleStaffNav=[{id:"myagents",icon:"🏆",label:"My agents"},{id:"myactivities",icon:"🎉",label:"Activities"},{id:"agentkudos",icon:"👏",label:"Kudos"},{id:"coachrank",icon:"🏅",label:"Coach ranking"},
-      ...(cu?.role==="superadmin"?[{id:"report",icon:"📊",label:"Reporte"},{id:"admin",icon:"⚙️",label:"Admin"}]:[])];
+    const simpleStaffNav=[{id:"myagents",icon:"🏆",label:"My agents"},{id:"myactivities",icon:"🎉",label:"Activities"},{id:"agentkudos",icon:"👏",label:"Kudos"},{id:"coachrank",icon:"🏅",label:"Coach ranking"},{id:"activities",icon:"⭐",label:"Actividades"},{id:"store",icon:"🏪",label:"Tienda"},
+      ...((cu?.role==="superadmin"||cu?.role==="manager"||cu?.role==="training_manager")?[{id:"report",icon:"📊",label:"Reporte"},{id:"admin",icon:"⚙️",label:"Admin"}]:[])];
     const staffNavByRole=isYurito?[{id:"dashboard",icon:"🏠",label:"Home"},{id:"kudos",icon:"👏",label:"Kudos"}]:[
       {id:"dashboard",icon:"🏠",label:"Home"},
       {id:"leaderboard",icon:"🏆",label:"Rankings"},
@@ -3130,8 +3130,8 @@ export default function App(){
         {screen==="activities"&&<StaffActivitiesPanel user={cu}/>}
         {screen==="store"&&<StaffStore user={cu} staffProfile={allStaff.find(s=>s.id===cu?.id)||{...cu,gameId:cu?.gameId||cu?.game_id||cu?.username}} onCoinsUpdate={(coins)=>{setLoggedIn({...cu,coins});}}/>}
         {screen==="profile"&&<StaffProfile user={cu} onUpdate={u=>{setLoggedIn(u);}} toast={toast}/>}
-        {screen==="report"&&cu?.role==="superadmin"&&<StaffPointsReport user={cu}/>}
-        {screen==="admin"&&cu?.role==="superadmin"&&<StaffAdminPanel cu={cu} allStaff={allStaff} toast={toast} reloadStaff={reloadStaff}/>}
+        {screen==="report"&&(cu?.role==="superadmin"||cu?.role==="manager"||cu?.role==="training_manager")&&<StaffPointsReport user={cu}/>}
+        {screen==="admin"&&(cu?.role==="superadmin"||cu?.role==="manager"||cu?.role==="training_manager")&&<StaffAdminPanel cu={cu} allStaff={allStaff} toast={toast} reloadStaff={reloadStaff}/>}
       </div>
       {isWide?(
         <div style={{position:"fixed",top:60,left:0,bottom:0,width:188,zIndex:50,background:S.bgCard,borderRight:`1px solid ${S.border}`,display:"flex",flexDirection:"column",padding:"12px 8px",overflowY:"auto",gap:2}}>
